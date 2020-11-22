@@ -5,12 +5,16 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //===----------------------------------------------------------------------===//
 
-#include "PassDetails.h"
+#include "circt/Conversion/FIRRTLToRTL/FIRRTLToRTL.h"
+
+
+#include "../PassDetail.h"
 #include "circt/Dialect/FIRRTL/Ops.h"
 #include "circt/Dialect/FIRRTL/Passes.h"
 #include "circt/Dialect/FIRRTL/Types.h"
 #include "circt/Dialect/FIRRTL/Visitors.h"
 #include "circt/Support/ImplicitLocOpBuilder.h"
+
 using namespace circt;
 using namespace firrtl;
 

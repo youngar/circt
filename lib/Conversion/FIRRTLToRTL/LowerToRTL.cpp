@@ -2,7 +2,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "PassDetails.h"
+#include "circt/Conversion/FIRRTLToRTL/FIRRTLToRTL.h"
+
+#include "../PassDetail.h"
 #include "circt/Dialect/FIRRTL/Ops.h"
 #include "circt/Dialect/FIRRTL/Passes.h"
 #include "circt/Dialect/FIRRTL/Visitors.h"
@@ -11,6 +13,7 @@
 #include "circt/Support/ImplicitLocOpBuilder.h"
 #include "mlir/IR/StandardTypes.h"
 #include "mlir/Pass/Pass.h"
+
 using namespace circt;
 using namespace firrtl;
 
