@@ -250,8 +250,9 @@ void CircuitLoweringState::warnOnRemainingAnnotations(
   for (auto a : annoSet) {
     auto inserted = alreadyPrinted.insert(a.getClass());
     if (inserted.second)
-      mlir::emitWarning(op->getLoc(), "unprocessed annotation:'" + a.getClass() +
-                      "' still remaining after LowerToHW");
+      mlir::emitWarning(op->getLoc(), "unprocessed annotation:'" +
+                                          a.getClass() +
+                                          "' still remaining after LowerToHW");
   }
 }
 } // end anonymous namespace
@@ -943,6 +944,7 @@ struct FIRRTLLowering : public FIRRTLVisitor<FIRRTLLowering, LogicalResult> {
   enum UnloweredOpResult { AlreadyLowered, NowLowered, LoweringFailure };
   UnloweredOpResult handleUnloweredOp(Operation *op);
   LogicalResult visitExpr(ConstantOp op);
+  LogicalResult visitExpr(SpecialConstantOp op);
   LogicalResult visitExpr(SubfieldOp op);
   LogicalResult visitUnhandledOp(Operation *op) { return failure(); }
   LogicalResult visitInvalidOp(Operation *op) { return failure(); }
@@ -1579,6 +1581,10 @@ FIRRTLLowering::handleUnloweredOp(Operation *op) {
 
 LogicalResult FIRRTLLowering::visitExpr(ConstantOp op) {
   return setLowering(op, getOrCreateIntConstant(op.value()));
+}
+
+LogicalResult FIRRTLLowering::visitExpr(SpecialConstantOp op) {
+  return setLowering(op, getOrCreateIntConstant(APInt(/*bitWidth*/ 1, op.value())));
 }
 
 LogicalResult FIRRTLLowering::visitExpr(SubfieldOp op) {
@@ -2364,9 +2370,7 @@ LogicalResult FIRRTLLowering::visitExpr(MuxPrimOp op) {
 
   // Lower mux(0-bit, x, y) -> y
   if (!cond) {
-    return handleZeroBit(op.sel(), [&]() {
-      return setLowering(op, ifFalse);
-    });
+    return handleZeroBit(op.sel(), [&]() { return setLowering(op, ifFalse); });
   }
 
   return setLoweringTo<comb::MuxOp>(op, ifTrue.getType(), cond, ifTrue,
