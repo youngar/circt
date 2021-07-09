@@ -298,6 +298,21 @@ else()
 endif()
 
 #-------------------------------------------------------------------------------
+# TCL Configuration
+#-------------------------------------------------------------------------------
+
+option(CIRCT_BINDINGS_TCL_ENABLED "Enables CIRCT TCL bindings." OFF)
+
+if(CIRCT_BINDINGS_TCL_ENABLED)
+  message(STATUS "CIRCT TCL bindings are enabled.")
+  find_package(TCL REQUIRED)
+  find_package(TclStub REQUIRED)
+  find_package(Tclsh REQUIRED)
+else()
+  message(STATUS "CIRCT TCL bindings are disabled.")
+endif()
+
+#-------------------------------------------------------------------------------
 # Directory setup
 #-------------------------------------------------------------------------------
 
