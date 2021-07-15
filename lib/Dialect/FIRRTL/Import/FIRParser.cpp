@@ -1830,11 +1830,6 @@ ParseResult FIRStmtParser::parsePrimExp(Value &result) {
   case FIRToken::lp_validif:
     numOperandsExpected = 2;
     break;
-#define TOK_LPKEYWORD_PRIM(SPELLING, CLASS, NUMOPERANDS)                       \
-  case FIRToken::lp_##SPELLING:                                                \
-    numOperandsExpected = NUMOPERANDS;                                         \
-    break;
-#include "FIRTokenKinds.def"
   }
   // Don't add code here, we want these two switch statements to be fused by
   // the compiler.
