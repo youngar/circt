@@ -1581,13 +1581,6 @@ ParseResult FIRStmtParser::parseExpImpl(Value &result, const Twine &message,
                                         bool isLeadingStmt) {
   switch (getToken().getKind()) {
 
-    // Handle all the primitive ops: primop exp* intLit*  ')'
-#define TOK_LPKEYWORD(SPELLING) case FIRToken::lp_##SPELLING:
-#include "FIRTokenKinds.def"
-    if (parsePrimExp(result))
-      return failure();
-    break;
-
   case FIRToken::kw_UInt:
   case FIRToken::kw_SInt:
     if (parseIntegerLiteralExp(result))
