@@ -729,9 +729,6 @@ ParseResult FIRParser::parseId(StringRef &result, const Twine &message) {
   switch (getToken().getKind()) {
   // The most common case is an identifier.
   case FIRToken::identifier:
-// Otherwise it may be a keyword that we're allowing in an id position.
-#define TOK_KEYWORD(spelling) case FIRToken::kw_##spelling:
-#include "FIRTokenKinds.def"
 
     // Yep, this is a valid 'id'.  Turn it into an attribute.
     result = getTokenSpelling();
