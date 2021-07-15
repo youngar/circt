@@ -1876,20 +1876,6 @@ ParseResult FIRStmtParser::parsePrimExp(Value &result) {
     emitError(loc, "primitive not supported yet");
     return failure();
 
-#define TOK_LPKEYWORD_PRIM(SPELLING, CLASS, NUMOPERANDS)                       \
-  case FIRToken::lp_##SPELLING: {                                              \
-    auto resultTy = CLASS::inferReturnType(operands, attrs, {});               \
-    if (!resultTy) {                                                           \
-      /* only call translateLocation on an error case, it is expensive. */     \
-      (void)CLASS::validateAndInferReturnType(operands, attrs,                 \
-                                              translateLocation(loc));         \
-      return failure();                                                        \
-    }                                                                          \
-    result = builder.create<CLASS>(resultTy, operands, attrs);                 \
-    return success();                                                          \
-  }
-#include "FIRTokenKinds.def"
-
   // Expand `validif(a, b)` expressions to `mux(a, b, invalidvalue)`, since we
   // do not provide an operation for `validif`. See docs/RationaleFIRRTL.md for
   // more details on this.
