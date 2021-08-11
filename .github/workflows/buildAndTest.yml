@@ -73,6 +73,7 @@ jobs:
           mkdir configure_unified
           cd configure_unified
           cmake ../llvm/llvm \
+            -DCMAKE_CXX_STANDARD=17 \
             -DBUILD_SHARED_LIBS=ON \
             -DLLVM_ENABLE_PROJECTS=mlir \
             -DLLVM_TARGETS_TO_BUILD=host \
@@ -145,6 +146,7 @@ jobs:
           mkdir build_clang
           cd build_clang
           cmake .. \
+            -DCMAKE_CXX_STANDARD=17 \
             -DBUILD_SHARED_LIBS=ON \
             -DCMAKE_BUILD_TYPE=Release \
             -DLLVM_ENABLE_ASSERTIONS=OFF \
@@ -164,6 +166,7 @@ jobs:
           mkdir build_gcc
           cd build_gcc
           cmake .. \
+            -DCMAKE_CXX_STANDARD=17 \
             -DCMAKE_BUILD_TYPE=Debug \
             -DLLVM_ENABLE_ASSERTIONS=ON \
             -DMLIR_DIR=../llvm/install/lib/cmake/mlir/ \
