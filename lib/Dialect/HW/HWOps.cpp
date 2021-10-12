@@ -525,8 +525,7 @@ static ParseResult parseOptionalParameters(OpAsmParser &parser,
         Type type;
         Attribute value;
 
-        if (!(name = module_like_impl::parsePortName(parser)) ||
-            parser.parseColonType(type))
+        if (parser.parseIdentifier(name) || parser.parseColonType(type))
           return failure();
 
         // Parse the default value if present.
@@ -1006,9 +1005,10 @@ static ParseResult parseInstanceOp(OpAsmParser &parser,
   }
 
   auto parseInputPort = [&]() -> ParseResult {
-    argNames.push_back(module_like_impl::parsePortName(parser));
-    if (!argNames.back())
+    StringAttr portName;
+    if (parser.parseIdentifier(portName))
       return failure();
+    argNames.push_back(portName);
     inputsOperands.push_back({});
     inputsTypes.push_back({});
     return failure(parser.parseColon() ||
@@ -1017,7 +1017,10 @@ static ParseResult parseInstanceOp(OpAsmParser &parser,
   };
 
   auto parseResultPort = [&]() -> ParseResult {
-    resultNames.push_back(module_like_impl::parsePortName(parser));
+    StringAttr portName;
+    if (parser.parseIdentifier(portName))
+      return failure();
+    resultNames.push_back(portName);
     if (!resultNames.back())
       return failure();
     allResultTypes.push_back({});
@@ -1061,7 +1064,7 @@ static void printInstanceOp(OpAsmPrinter &p, InstanceOp op) {
       return;
     }
 
-    module_like_impl::printPortName(portList[nextPort++].name, p.getStream());
+    p.printIdentifier(portList[nextPort++].name.getValue());
     p << ": ";
   };
 
