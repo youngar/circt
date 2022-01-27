@@ -160,7 +160,7 @@ static cl::opt<bool>
 
 static cl::opt<bool>
     dedup("dedup", cl::desc("deduplicate structurally identical modules"),
-          cl::init(false));
+          cl::init(true));
 
 static cl::opt<bool>
     ignoreFIRLocations("ignore-fir-locators",
@@ -344,12 +344,9 @@ processBuffer(MLIRContext &context, TimingScope &ts, llvm::SourceMgr &sourceMgr,
         firrtl::createLowerFIRRTLAnnotationsPass(disableAnnotationsUnknown,
                                                  disableAnnotationsClassless));
 
-  if (!disableOptimization) {
+  if (!disableOptimization)
     pm.nest<firrtl::CircuitOp>().nest<firrtl::FModuleOp>().addPass(
         createCSEPass());
-    if (dedup)
-      pm.nest<firrtl::CircuitOp>().addPass(firrtl::createDedupPass());
-  }
 
   if (lowerCHIRRTL)
     pm.nest<firrtl::CircuitOp>().nest<firrtl::FModuleOp>().addPass(
@@ -361,6 +358,9 @@ processBuffer(MLIRContext &context, TimingScope &ts, llvm::SourceMgr &sourceMgr,
 
   if (inferResets)
     pm.nest<firrtl::CircuitOp>().addPass(firrtl::createInferResetsPass());
+
+  if (!disableOptimization && dedup)
+    pm.nest<firrtl::CircuitOp>().addPass(firrtl::createDedupPass());
 
   if (wireDFT)
     pm.nest<firrtl::CircuitOp>().addPass(firrtl::createWireDFTPass());
