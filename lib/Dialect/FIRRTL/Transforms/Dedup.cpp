@@ -37,6 +37,7 @@ using NLAMap = DenseMap<Attribute, std::vector<NonLocalAnchor>>;
 NLAMap createNLAMap(CircuitOp circuit) {
   DenseMap<Attribute, std::vector<NonLocalAnchor>> nlaMap;
   for (auto nla : circuit.getBody()->getOps<NonLocalAnchor>()) {
+    llvm::errs() << "dump nla: " << nla << "\n";
     for (auto element : nla.namepath()) {
       if (auto moduleRef = element.dyn_cast<FlatSymbolRefAttr>())
         nlaMap[moduleRef.getAttr()].push_back(nla);
@@ -448,6 +449,7 @@ private:
       namepath[0] = OpAnnoTarget(inst).getNLAReference(getNamespace(parent));
       auto arrayAttr = builder.getArrayAttr(namepath);
       auto nla = builder.create<NonLocalAnchor>(loc, "nla", arrayAttr);
+      llvm::errs() << "create nla: " << nla << "\n";
       // Insert it into the symbol table to get a unique name.
       symbolTable.insert(nla);
       auto nlaName = nla.getNameAttr();
@@ -542,10 +544,12 @@ private:
     SmallVector<Attribute> namepath;
     for (auto element : nla.namepath().getValue()) {
       if (auto innerRef = element.dyn_cast<InnerRefAttr>()) {
-        if (innerRef.getModule() == fromName)
+        if (innerRef.getModule() == fromName) {
+          auto to = renameMap[innerRef.getName()];
+          assert(to && "should have been renamed");
           namepath.push_back(
               InnerRefAttr::get(toName, renameMap[innerRef.getName()]));
-        else
+        } else
           namepath.push_back(element);
       } else if (element == fromRef) {
         namepath.push_back(FlatSymbolRefAttr::get(toName));
@@ -601,13 +605,15 @@ private:
     // Create a copy of the current NLAs. We will be pushing and removing
     // NLAs from this op as we go.
     auto nlas = nlaMap[fromModule.getNameAttr()];
+    llvm::errs() << "to: " << toModule.getNameAttr()
+                 << " from: " << fromModule.getNameAttr() << "\n";
     for (auto nla : nlas) {
       // Change the NLA to target the toModule.
+
+      llvm::errs() << "0nla: " << nla << "\n";
       if (toModule != fromModule)
         renameModuleInNLA(renameMap, toName, fromName, nla);
-      llvm::errs() << "to: " << toModule.getNameAttr()
-                   << " from: " << fromModule.getNameAttr() << "\n";
-      llvm::errs() << "nla: " << nla << "\n";
+      llvm::errs() << "1nla: " << nla << "\n";
       llvm::errs() << "nla.namepath " << nla.namepath() << "\n";
       // llvm::errs() << "nla.namepath " << nla.namepath().getValue() << "\n";
       auto elements = nla.namepath().getValue();
@@ -699,9 +705,8 @@ private:
         nonLocalIndex = val.index();
         attributes.push_back(NamedAttribute(nonLocalString, nonLocalString));
         break;
-      } else {
-        attributes.push_back(attr);
       }
+      attributes.push_back(attr);
     }
     if (nonLocalIndex == -1) {
       // Push the "circt.nonlocal" to the last slot.
