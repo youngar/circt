@@ -97,12 +97,12 @@ private:
   }
 
   void update(const void *pointer) {
-    auto addr = reinterpret_cast<const uint8_t *>(&pointer);
+    auto *addr = reinterpret_cast<const uint8_t *>(&pointer);
     sha.update(ArrayRef(addr, sizeof pointer));
   }
 
   void update(unsigned value) {
-    auto addr = reinterpret_cast<const uint8_t *>(&value);
+    auto *addr = reinterpret_cast<const uint8_t *>(&value);
     sha.update(ArrayRef(addr, sizeof value));
   }
 
@@ -605,6 +605,11 @@ private:
       // Change the NLA to target the toModule.
       if (toModule != fromModule)
         renameModuleInNLA(renameMap, toName, fromName, nla);
+      llvm::errs() << "to: " << toModule.getNameAttr()
+                   << " from: " << fromModule.getNameAttr() << "\n";
+      llvm::errs() << "nla: " << nla << "\n";
+      llvm::errs() << "nla.namepath " << nla.namepath() << "\n";
+      // llvm::errs() << "nla.namepath " << nla.namepath().getValue() << "\n";
       auto elements = nla.namepath().getValue();
 
       // If we don't need to add more context, we're done here.
@@ -688,7 +693,8 @@ private:
         targetMap[nlaName] = from;
         newAnnotations.push_back(anno);
         return;
-      } else if (compare == 1) {
+      }
+      if (compare == 1) {
         // Push an empty place holder for the non-local annotation.
         nonLocalIndex = val.index();
         attributes.push_back(NamedAttribute(nonLocalString, nonLocalString));
@@ -747,8 +753,8 @@ private:
     }
 
     // This is a helper to skip already handled annotations.
-    auto it = alreadyHandled.begin();
-    auto end = alreadyHandled.end();
+    auto *it = alreadyHandled.begin();
+    auto *end = alreadyHandled.end();
     auto getNextHandledIndex = [&]() -> unsigned {
       if (it == end)
         return -1;
