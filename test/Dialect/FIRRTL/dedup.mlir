@@ -296,35 +296,73 @@ firrtl.module @Chain() {
 // Check that we fixup subfields, partial connects, and connects, when an
 // instance op starts returning a different bundle type.
 // CHECK: firrtl.module @Bundle0
-firrtl.module @Bundle0(out %a: !firrtl.bundle<b: bundle<c: uint<1>, d: uint<1>>>) { }
+firrtl.module @Bundle0(out %a: !firrtl.bundle<b: bundle<c flip: uint<1>, d: uint<1>>>) { }
 // CHECK-NOT: firrtl.module @Bundle1
-firrtl.module @Bundle1(out %e: !firrtl.bundle<f: bundle<g: uint<1>, h: uint<1>>>) { }
+firrtl.module @Bundle1(out %e: !firrtl.bundle<f: bundle<g flip: uint<1>, h: uint<1>>>) { }
 firrtl.module @Bundle() {
   // CHECK: firrtl.instance bundle0  @Bundle0
-  %a = firrtl.instance bundle0 @Bundle0(out a: !firrtl.bundle<b: bundle<c: uint<1>, d: uint<1>>>)
+  %a = firrtl.instance bundle0 @Bundle0(out a: !firrtl.bundle<b: bundle<c flip: uint<1>, d: uint<1>>>)
   // CHECK: firrtl.instance bundle1  @Bundle0
-  %e = firrtl.instance bundle1 @Bundle1(out e: !firrtl.bundle<f: bundle<g: uint<1>, h: uint<1>>>)
+  %e = firrtl.instance bundle1 @Bundle1(out e: !firrtl.bundle<f: bundle<g flip: uint<1>, h: uint<1>>>)
   
   // CHECK: [[B:%.+]] = firrtl.subfield %bundle0_a(0)
-  %b = firrtl.subfield %a(0) : (!firrtl.bundle<b: bundle<c: uint<1>, d: uint<1>>>) -> !firrtl.bundle<c: uint<1>, d: uint<1>>
+  %b = firrtl.subfield %a(0) : (!firrtl.bundle<b: bundle<c flip: uint<1>, d: uint<1>>>) -> !firrtl.bundle<c flip: uint<1>, d: uint<1>>
   // CHECK: [[F:%.+]] = firrtl.subfield %bundle1_a(0)
-  %f = firrtl.subfield %e(0) : (!firrtl.bundle<f: bundle<g: uint<1>, h: uint<1>>>) -> !firrtl.bundle<g: uint<1>, h: uint<1>>
+  %f = firrtl.subfield %e(0) : (!firrtl.bundle<f: bundle<g flip: uint<1>, h: uint<1>>>) -> !firrtl.bundle<g flip: uint<1>, h: uint<1>>
 
   // Check that we properly fixup connects when the field names change.
-  %w0 = firrtl.wire : !firrtl.bundle<g: uint<1>, h: uint<1>>
+  %w0 = firrtl.wire : !firrtl.bundle<g flip: uint<1>, h: uint<1>>
   // CHECK: [[W0_G:%.+]] = firrtl.subfield %w0(0)
   // CHECK: [[F_G:%.+]] = firrtl.subfield [[F]](0)
   // CHECK: firrtl.connect [[W0_G]], [[F_G]]
-  firrtl.connect %w0, %f : !firrtl.bundle<g: uint<1>, h: uint<1>>, !firrtl.bundle<g: uint<1>, h: uint<1>>
+  firrtl.connect %w0, %f : !firrtl.bundle<g flip: uint<1>, h: uint<1>>, !firrtl.bundle<g flip: uint<1>, h: uint<1>>
   
   // Check that we properly fixup partial connects when the field names change.
-  %w1 = firrtl.wire : !firrtl.bundle<g: uint<1>>
+  %w1 = firrtl.wire : !firrtl.bundle<g flip: uint<1>>
   // CHECK: [[W1_G:%.+]] = firrtl.subfield %w1(0)
   // CHECK: [[F_G:%.+]] = firrtl.subfield [[F]](0)
   // CHECK: firrtl.partialconnect [[W1_G]], [[F_G]]
-  firrtl.partialconnect %w1, %f : !firrtl.bundle<g: uint<1>>, !firrtl.bundle<g: uint<1>, h: uint<1>>
+  firrtl.partialconnect %w1, %f : !firrtl.bundle<g flip: uint<1>>, !firrtl.bundle<g flip: uint<1>, h: uint<1>>
 }
 
+// Make sure flipped fields are handled properly. This should pass flow
+// verification checking.
+firrtl.module @Flip0(out %io: !firrtl.bundle<foo flip: uint<1>, fuzz: uint<1>>) {
+  %0 = firrtl.subfield %io(0) : (!firrtl.bundle<foo flip: uint<1>, fuzz: uint<1>>) -> !firrtl.uint<1>
+  %1 = firrtl.subfield %io(1) : (!firrtl.bundle<foo flip: uint<1>, fuzz: uint<1>>) -> !firrtl.uint<1>
+  firrtl.connect %1, %0 : !firrtl.uint<1>, !firrtl.uint<1>
+}
+firrtl.module @Flip1(out %io: !firrtl.bundle<bar flip: uint<1>, buzz: uint<1>>) {
+  %0 = firrtl.subfield %io(0) : (!firrtl.bundle<bar flip: uint<1>, buzz: uint<1>>) -> !firrtl.uint<1>
+  %1 = firrtl.subfield %io(1) : (!firrtl.bundle<bar flip: uint<1>, buzz: uint<1>>) -> !firrtl.uint<1>
+  firrtl.connect %1, %0 : !firrtl.uint<1>, !firrtl.uint<1>
+}
+firrtl.module @Flip(out %io: !firrtl.bundle<foo: bundle<foo flip: uint<1>, fuzz: uint<1>>, bar: bundle<bar flip: uint<1>, buzz: uint<1>>>) {
+  %0 = firrtl.subfield %io(1) : (!firrtl.bundle<foo: bundle<foo flip: uint<1>, fuzz: uint<1>>, bar: bundle<bar flip: uint<1>, buzz: uint<1>>>) -> !firrtl.bundle<bar flip: uint<1>, buzz: uint<1>>
+  %1 = firrtl.subfield %io(0) : (!firrtl.bundle<foo: bundle<foo flip: uint<1>, fuzz: uint<1>>, bar: bundle<bar flip: uint<1>, buzz: uint<1>>>) -> !firrtl.bundle<foo flip: uint<1>, fuzz: uint<1>>
+  %foo_io = firrtl.instance foo  @Flip0(out io: !firrtl.bundle<foo flip: uint<1>, fuzz: uint<1>>)
+  %bar_io = firrtl.instance bar  @Flip1(out io: !firrtl.bundle<bar flip: uint<1>, buzz: uint<1>>)
+  firrtl.partialconnect %1, %foo_io : !firrtl.bundle<foo flip: uint<1>, fuzz: uint<1>>, !firrtl.bundle<foo flip: uint<1>, fuzz: uint<1>>
+  firrtl.connect %0, %bar_io : !firrtl.bundle<bar flip: uint<1>, buzz: uint<1>>, !firrtl.bundle<bar flip: uint<1>, buzz: uint<1>>
+}
+
+
+// Don't attach empty annotations onto ops without annotations.
+// CHECK-LABEL: 
+firrtl.module @NoEmptyAnnos0() {
+  // CHECK: %w = firrtl.wire  : !firrtl.bundle<a: uint<1>>
+  // CHECK: %0 = firrtl.subfield %w(0) : (!firrtl.bundle<a: uint<1>>) -> !firrtl.uint<1>
+  %w = firrtl.wire : !firrtl.bundle<a: uint<1>>
+  %0 = firrtl.subfield %w(0) : (!firrtl.bundle<a: uint<1>>) -> !firrtl.uint<1>
+}
+firrtl.module @NoEmptyAnnos1() {
+  %w = firrtl.wire : !firrtl.bundle<a: uint<1>>
+  %0 = firrtl.subfield %w(0) : (!firrtl.bundle<a: uint<1>>) -> !firrtl.uint<1>
+}
+firrtl.module @NoEmptyAnnos() {
+  firrtl.instance empty0 @NoEmptyAnnos0()
+  firrtl.instance empty1 @NoEmptyAnnos1()
+}
 
 // Don't deduplicate modules with NoDedup, this has identical structure to the
 // Simple0 module.
@@ -349,6 +387,8 @@ firrtl.module @Dedup(in %i0: !firrtl.uint<1>) {
   firrtl.instance extmoduletest @ExtModuleTest()
   firrtl.instance chain @Chain()
   firrtl.instance bundle @Bundle()
+  %flip_io = firrtl.instance flip @Flip(out io: !firrtl.bundle<foo: bundle<foo flip: uint<1>, fuzz: uint<1>>, bar: bundle<bar flip: uint<1>, buzz: uint<1>>>)
+  firrtl.instance noemptyannos @NoEmptyAnnos()
   firrtl.instance nodedup @NoDedup()
 }
 }

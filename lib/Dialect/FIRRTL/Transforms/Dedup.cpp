@@ -295,8 +295,12 @@ private:
     for (unsigned i = 0; i < dstBundle.getNumElements(); ++i) {
       auto dstField = builder.create<SubfieldOp>(dst, i);
       auto srcField = builder.create<SubfieldOp>(src, i);
-      fixupConnect(builder, dstField, dstBundle.getElementType(i), srcField,
-                   srcBundle.getElementType(i));
+      if (!dstBundle.getElement(i).isFlip)
+        fixupConnect(builder, dstField, dstBundle.getElementType(i), srcField,
+                     srcBundle.getElementType(i));
+      else
+        fixupConnect(builder, srcField, srcBundle.getElementType(i), dstField,
+                     dstBundle.getElementType(i));
     }
   }
 
@@ -319,35 +323,42 @@ private:
       auto dstNewBundle = dstOldType.cast<BundleType>();
       auto srcNewBundle = dstNewType.cast<BundleType>();
       auto srcOldBundle = srcOldType.cast<BundleType>();
-      for (auto &dstElement : llvm::enumerate(dstOldBundle)) {
+      for (auto &pair : llvm::enumerate(dstOldBundle)) {
         // Find a matching field in the old type.
-        auto fieldName = dstElement.value().name;
-        auto maybeIndex = srcOldBundle.getElementIndex(fieldName);
+        auto dstField = pair.value();
+        auto maybeIndex = srcOldBundle.getElementIndex(dstField.name);
         if (!maybeIndex)
           continue;
-        auto dstIndex = dstElement.index();
+        auto dstIndex = pair.index();
         auto srcIndex = *maybeIndex;
         // Recurse on the matching field. The code is complicated because we are
         // trying to avoid creating subfield operations when no field ultimately
         // matches.
         Value dstValue;
+        auto dstLazy = [&](ImplicitLocOpBuilder &builder) {
+          if (!dstValue)
+            dstValue = builder.create<SubfieldOp>(dst(builder), dstIndex);
+          return dstValue;
+        };
         Value srcValue;
-        fixupPartialConnect(
-            builder,
-            [&](ImplicitLocOpBuilder &builder) {
-              if (!dstValue)
-                dstValue = builder.create<SubfieldOp>(dst(builder), dstIndex);
-              return dstValue;
-            },
-            dstNewBundle.getElementType(dstIndex),
-            dstOldBundle.getElementType(dstIndex),
-            [&](ImplicitLocOpBuilder &builder) {
-              if (!srcValue)
-                srcValue = builder.create<SubfieldOp>(src(builder), srcIndex);
-              return srcValue;
-            },
-            srcNewBundle.getElementType(srcIndex),
-            srcOldBundle.getElementType(srcIndex));
+        auto srcLazy = [&](ImplicitLocOpBuilder &builder) {
+          if (!srcValue)
+            srcValue = builder.create<SubfieldOp>(src(builder), srcIndex);
+          return srcValue;
+        };
+        if (!dstField.isFlip) {
+          fixupPartialConnect(builder, dstLazy,
+                              dstNewBundle.getElementType(dstIndex),
+                              dstOldBundle.getElementType(dstIndex), srcLazy,
+                              srcNewBundle.getElementType(srcIndex),
+                              srcOldBundle.getElementType(srcIndex));
+        } else {
+          fixupPartialConnect(builder, srcLazy,
+                              srcNewBundle.getElementType(srcIndex),
+                              srcOldBundle.getElementType(srcIndex), dstLazy,
+                              dstNewBundle.getElementType(dstIndex),
+                              dstOldBundle.getElementType(dstIndex));
+        }
       }
       return;
     }
@@ -787,7 +798,8 @@ private:
     }
 
     // Copy over all the new annotations.
-    to.setAnnotations(AnnotationSet(newAnnotations, context));
+    if (!newAnnotations.empty())
+      to.setAnnotations(AnnotationSet(newAnnotations, context));
   }
 
   /// Merge all annotations and port annotations on two operations.
