@@ -621,11 +621,12 @@ private:
     for (auto nla : nlas) {
       // Change the NLA to target the toModule.
 
-      llvm::errs() << "0nla: " << nla << "\n";
+      llvm::errs() << "0nla: " << nla.getNameAttr() << "\n";
+      llvm::errs() << "    " << nla << "\n";
       if (toModule != fromModule)
         renameModuleInNLA(renameMap, toName, fromName, nla);
-      llvm::errs() << "1nla: " << nla << "\n";
-      llvm::errs() << "nla.namepath " << nla.namepath() << "\n";
+      llvm::errs() << "    " << nla << "\n";
+      //llvm::errs() << "nla.namepath " << nla.namepath() << "\n";
       // llvm::errs() << "nla.namepath " << nla.namepath().getValue() << "\n";
       auto elements = nla.namepath().getValue();
 
