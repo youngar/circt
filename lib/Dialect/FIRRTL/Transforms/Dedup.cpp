@@ -207,8 +207,13 @@ struct Deduper {
         nonLocalString(StringAttr::get(context, "circt.nonlocal")),
         classString(StringAttr::get(context, "class")) {}
 
+  /// Remove the "fromModule", and replace all references to it with the
+  /// "toModule".  Modules should be deduplicated in a bottom-up order.  Any
+  /// module which is not deduplicated needs to be recorded with the `record`
+  /// call.
   void dedup(FModuleLike toModule, FModuleLike fromModule) {
-    // A map of instance names which are changed, used to update NLAs.
+    // A map of operation (e.g. wires, nodes) names which are changed, which is
+    // used to update NLAs that reference the "fromModule".
     DenseMap<StringAttr, StringAttr> renameMap;
     // Merge the two modules.
     mergeOps(renameMap, toModule, toModule, fromModule, fromModule);
@@ -233,7 +238,13 @@ struct Deduper {
   }
 
 private:
-  /// Record which
+  /// Get a cached namespace for a module.
+  ModuleNamespace &getNamespace(Operation *module) {
+    auto [it, inserted] = moduleNamespaces.try_emplace(module, module);
+    return it->second;
+  }
+
+  /// Record all targets which use an NLA.
   void recordAnnotations(Operation *op) {
     for (auto anno : AnnotationSet(op)) {
       if (auto nlaRef = anno.getMember<FlatSymbolRefAttr>("circt.nonlocal")) {
@@ -244,27 +255,29 @@ private:
         targetMap[nlaRef.getAttr()] = OpAnnoTarget(op);
       }
     }
+
     auto portAnnotations = op->getAttrOfType<ArrayAttr>("portAnnotations");
     if (!portAnnotations)
       return;
+    auto module = dyn_cast<FModuleOp>(op);
+    auto mem = dyn_cast<MemOp>(op);
     for (auto pair : llvm::enumerate(portAnnotations))
       for (auto anno : AnnotationSet(pair.value().cast<ArrayAttr>()))
         if (auto nlaRef = anno.getMember<FlatSymbolRefAttr>("circt.nonlocal")) {
           // Breadcrumbs don't appear on port annotations, so we can skip the
           // class check that we have above.
-          targetMap[nlaRef.getAttr()] = PortAnnoTarget(op, pair.index());
+          if (module)
+            targetMap[nlaRef.getAttr()] = PortAnnoTarget(module, pair.index());
+          else if (mem)
+            targetMap[nlaRef.getAttr()] = PortAnnoTarget(mem, pair.index());
+          else
+            llvm_unreachable("unknown operaiton with ports");
         }
   }
 
-  /// Get a cached namespace for a module.
-  ModuleNamespace &getNamespace(Operation *module) {
-    auto [it, inserted] = moduleNamespaces.try_emplace(module, module);
-    return it->second;
-  }
-
   /// This fixes up connects when the field names of a bundle type changes.  It
-  /// finds all fields which were bulk connected and legalizes it into
-  /// a connect for each field.
+  /// finds all fields which were previously bulk connected and legalizes it
+  /// into a connect for each field.
   void fixupConnect(ImplicitLocOpBuilder &builder, Value dst, Type dstType,
                     Value src, Type srcType) {
     // If its not a bundle type, the types are guaranteed to be unchanged.  If
@@ -286,8 +299,8 @@ private:
   }
 
   /// This fixes up a partial connect when the field names of a bundle type
-  /// changes.  It finds all the fields which used to be connected and replaces
-  /// them with new partial connects.
+  /// changes.  It finds all the fields which were previously connected and
+  /// replaces them with new partial connects.
   using LazyValue = llvm::function_ref<Value(ImplicitLocOpBuilder &)>;
   void fixupPartialConnect(ImplicitLocOpBuilder &builder, LazyValue dst,
                            Type dstNewType, Type dstOldType, LazyValue src,
@@ -391,6 +404,9 @@ private:
     }
   }
 
+  /// This is the root method to fixup module references when a module changes.
+  /// It matches all the results of "to" module with the results of the "from"
+  /// module.
   void fixupReferences(FModuleLike toModule, Operation *fromModule) {
     // Replace all instances of the other module.
     auto *node = instanceGraph[fromModule];
@@ -414,9 +430,10 @@ private:
     }
   }
 
-  /// Private NLA creation method.  Requires an attribute array with a
-  /// placeholder in the first element. Clones the NLA for each instantiation fo
-  /// the "fromModule".
+  /// Private NLA creation method.  This function requires an attribute array
+  /// with a placeholder in the first element, where the root refence of the NLA
+  /// will be inserted. This clones the NLA for each instantiation of the
+  /// "fromModule".
   SmallVector<FlatSymbolRefAttr>
   createNLAsImpl(OpBuilder &builder, StringAttr toModuleName, AnnoTarget to,
                  Operation *fromModule, SmallVectorImpl<Attribute> &namepath) {
@@ -425,8 +442,7 @@ private:
     for (auto *instanceRecord : instanceGraph[fromModule]->uses()) {
       auto parent = cast<FModuleOp>(instanceRecord->getParent()->getModule());
       auto inst = instanceRecord->getInstance();
-      auto instSym = OpAnnoTarget(inst).getNLAReference(getNamespace(parent));
-      namepath[0] = instSym;
+      namepath[0] = OpAnnoTarget(inst).getNLAReference(getNamespace(parent));
       auto arrayAttr = builder.getArrayAttr(namepath);
       auto nla = builder.create<NonLocalAnchor>(loc, "nla", arrayAttr);
       // Insert it into the symbol table to get a unique name.
@@ -470,7 +486,7 @@ private:
     return nlas;
   }
 
-  /// Look up the instantiations fo the this module and create an NLA for each
+  /// Look up the instantiations of the this module and create an NLA for each
   /// one, appending the baseNamepath to each NLA. This is used to add more
   /// context to an already existing NLA.
   SmallVector<FlatSymbolRefAttr> createNLAs(OpBuilder &builder,
@@ -514,8 +530,8 @@ private:
     }
   }
 
-  /// This finds all references to the "from" module and renames them to target
-  /// the "to" module.
+  /// This finds all NLAs which contain the "from" module, and renames any
+  /// reference to the "to" module.
   void renameModuleInNLA(DenseMap<StringAttr, StringAttr> &renameMap,
                          StringAttr toName, StringAttr fromName,
                          NonLocalAnchor nla) {
@@ -537,8 +553,8 @@ private:
     nla.namepathAttr(ArrayAttr::get(context, namepath));
   }
 
-  /// This erases the NLA and all breadcrumb trails, but this does not delete it
-  /// from the operation.
+  /// This erases the NLA and all breadcrumb trails, but it does not delete it
+  /// the NLA reference from the target operation's annotations.
   void eraseNLA(NonLocalAnchor nla) {
     auto nlaRef = FlatSymbolRefAttr::get(nla.getNameAttr());
     auto nonLocalClass = NamedAttribute(classString, nonLocalString);
@@ -594,9 +610,8 @@ private:
 
       // We need to clone the annotation for each new NLA.
       auto target = targetMap[nla.sym_nameAttr()];
-      assert(target &&
-             "Target of NLA never encountered.  All modules should be "
-             "reachable from the top module.");
+      assert(target && "Target of NLA never encountered.  All modules should "
+                       "be reachable from the top module.");
       SmallVector<Attribute> namepath(elements.begin(), elements.end());
       SmallVector<Annotation> newAnnotations;
       auto nlas = createNLAs(builder, toModule, target, fromModule, namepath);
@@ -696,6 +711,8 @@ private:
     cloneAnnotation(nlas, anno, attributes, nonLocalIndex, newAnnotations);
   }
 
+  /// Merge the annotations of a specific target, either a operation or a port
+  /// on an operation.
   void mergeAnnotations(FModuleLike toModule, AnnoTarget to,
                         AnnotationSet toAnnos, FModuleLike fromModule,
                         AnnoTarget from, AnnotationSet fromAnnos) {
@@ -759,6 +776,7 @@ private:
     to.setAnnotations(AnnotationSet(newAnnotations, context));
   }
 
+  /// Merge all annotations and port annotations on two operations.
   void mergeAnnotations(FModuleLike toModule, Operation *to,
                         FModuleLike fromModule, Operation *from) {
     // Merge op annotations.
@@ -785,7 +803,7 @@ private:
   }
 
   // Record the symbol name change of the operation or any of its ports when
-  // merging the two operations.  The renamed symbols are used to update the
+  // merging two operations.  The renamed symbols are used to update the
   // target of any NLAs.  This will add symbols to the "to" operation if needed.
   void recordSymRenames(DenseMap<StringAttr, StringAttr> &renameMap,
                         FModuleLike toModule, Operation *to,
@@ -842,6 +860,7 @@ private:
     to->setAttr("portSyms", ArrayAttr::get(context, newPortSyms));
   }
 
+  /// Recursively merge two operations.
   void mergeOps(DenseMap<StringAttr, StringAttr> &renameMap,
                 FModuleLike toModule, Operation *to, FModuleLike fromModule,
                 Operation *from) {
@@ -857,6 +876,7 @@ private:
     recordSymRenames(renameMap, toModule, to, fromModule, from);
   }
 
+  /// Recursively merge two blocks.
   void mergeBlocks(DenseMap<StringAttr, StringAttr> &renameMap,
                    FModuleLike toModule, Block &toBlock, FModuleLike fromModule,
                    Block &fromBlock) {
@@ -865,6 +885,7 @@ private:
                &std::get<1>(ops));
   }
 
+  // Recursively merge two regions.
   void mergeRegions(DenseMap<StringAttr, StringAttr> &renameMap,
                     FModuleLike toModule, Region &toRegion,
                     FModuleLike fromModule, Region &fromRegion) {

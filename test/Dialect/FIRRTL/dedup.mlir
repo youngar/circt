@@ -333,10 +333,11 @@ firrtl.module @Dedup(in %i0: !firrtl.uint<1>) {
   
   // These just needs to be referenced from the root module.
   firrtl.instance breadcrumb @Breadcrumb()
-  firrtl.instance chain @Chain()
-  firrtl.instance bundle @Bundle()
   firrtl.instance context @Context()
-  firrtl.instance nodedup @NoDedup()
   firrtl.instance extmoduletest @ExtModuleTest()
+  firrtl.instance chain @Chain()
+  firrtl.instance mutliuse @PortContext()
+  firrtl.instance bundle @Bundle()
+  firrtl.instance nodedup @NoDedup()
 }
 }
