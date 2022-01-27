@@ -268,8 +268,30 @@ static LogicalResult verifyCircuitOp(CircuitOp circuit) {
   // that defines it and has no parameters.
   llvm::DenseMap<Attribute, FExtModuleOp> defnameMap;
 
+  // Store a map of all the symbol names and the corresponding operation.
+  llvm::DenseMap<StringAttr, Operation *> symbolNameMap;
+
+  // Store a map of module name to the map of the inner_sym to the operation.
+  // We only store the InstanceOp, which will be used to verify the instance
+  // path of the NonLocalAnchors.
+  llvm::DenseMap<StringAttr, llvm::DenseMap<StringAttr, Operation *>>
+      moduleInnerRefMap;
+
   // Verify external modules.
   for (auto &op : *circuit.getBody()) {
+    // Record all the symbol names and the corresponding operation.
+    if (auto symname =
+            op.getAttrOfType<StringAttr>(SymbolTable::getSymbolAttrName()))
+      symbolNameMap[symname] = &op;
+    if (auto mod = dyn_cast<FModuleOp>(op)) {
+      // Record the inner_sym on all the instances in the module.
+      // This will be used to verify the NonLocalAnchor op.
+      auto modName = mod.getNameAttr();
+      if (!mod.body().empty())
+        for (auto instOp : mod.getBody()->getOps<InstanceOp>())
+          if (auto innerSym = instOp.inner_symAttr())
+            moduleInnerRefMap[modName][innerSym] = instOp;
+    }
     auto extModule = dyn_cast<FExtModuleOp>(op);
     if (!extModule)
       continue;
@@ -364,6 +386,192 @@ static LogicalResult verifyCircuitOp(CircuitOp circuit) {
         diag.attachNote(collidingExtModule.getLoc())
             << "previous extmodule definition occurred here";
         return failure();
+      }
+    }
+  }
+
+  // Verify the NonLocalAnchor.
+  // 1. Iterate over the namepath.
+  // 2. The namepath should be a valid instance path, specified either on a
+  // module or a declaration inside a module.
+  // 3. Each element in the namepath is an InnerRefAttr except possibly the
+  // last element.
+  // 4. Make sure that the InnerRefAttr is legal, by verifying the module name
+  // and the corresponding inner_sym on the instance.
+  // 5. Make sure that the instance path is legal, by verifying the sequence of
+  // instance and the expected module occurs as the next element in the path.
+  // 6. The last element of the namepath, can be an InnerRefAttr on either a
+  // module port or a declaration inside the module.
+  // 7. The last element of the namepath can also be a module symbol.
+  for (auto sMap : symbolNameMap) {
+    if (auto nla = dyn_cast<NonLocalAnchor>(sMap.second)) {
+      auto nlaName = sMap.first;
+      // Make sure that the instance path is correct, the next element's module
+      // name should match with the corresponding instance.
+      StringAttr expectedModuleName = {};
+      auto namepath = nla.namepath();
+      if (namepath.size() == 0)
+        continue;
+      if (namepath.size() == 1) {
+        nla.emitOpError() << "the instance path cannot be a single element, it "
+                             "must specify an instance path.";
+        return failure();
+      }
+
+      for (unsigned i = 0, s = namepath.size() - 1; i < s; ++i) {
+        auto innerRef = namepath[i].dyn_cast<hw::InnerRefAttr>();
+        if (!innerRef) {
+          nla.emitOpError()
+              << "the instance path can only contain inner sym reference"
+              << ", only the leaf can refer to a module symbol";
+          return failure();
+        }
+        auto modName = innerRef.getModule();
+        // The expected module name is set from the last instance. This should
+        // match with the current module name.
+        if (i != 0 && expectedModuleName != modName) {
+          nla.emitOpError()
+              << "instance path is incorrect. Expected module:"
+              << expectedModuleName << " instead found:" << modName;
+          return failure();
+        }
+        // Check if the module exists in the circuit.
+        auto mapIter = symbolNameMap.find(modName);
+        bool modFound = mapIter != symbolNameMap.end();
+        FModuleOp mod;
+        if (modFound)
+          mod = dyn_cast<FModuleOp>(mapIter->second);
+        if (!mod)
+          modFound = false;
+
+        if (!modFound) {
+          nla.emitOpError()
+              << " module:" << modName << " doesnot exist in the circuit";
+          return failure();
+        }
+        // Now search for an instance with the symbol.
+        auto map2Iter = moduleInnerRefMap.find(modName);
+        bool instFound = (map2Iter != moduleInnerRefMap.end());
+        InstanceOp instOp;
+        if (instFound) {
+          // Check if Instance with the symbol exists.
+          auto map3Iter = map2Iter->second.find(innerRef.getName());
+          instFound = map3Iter != map2Iter->second.end();
+          if (instFound)
+            instOp = dyn_cast<InstanceOp>(map3Iter->second);
+          instFound = instOp != nullptr;
+        }
+
+        if (!instFound) {
+          nla.emitOpError() << " module:" << modName
+                            << " doesnot contain any instance with symbol::"
+                            << innerRef.getName();
+          return failure();
+        }
+        AnnotationSet annos(instOp);
+        // Reuse the instFound flag, to search for nonlocal annotation with the
+        // anchor.
+        instFound = false;
+        for (auto anno : annos) {
+          if (auto nla = anno.getMember("circt.nonlocal")) {
+            instFound = nla.cast<FlatSymbolRefAttr>().getAttr() == nlaName;
+            if (instFound)
+              break;
+          }
+        }
+        if (instFound)
+          expectedModuleName = instOp.moduleNameAttr().getAttr();
+        else {
+          auto diag = nla.emitOpError()
+                      << " instance with symbol:" << innerRef
+                      << " does not contain a reference to the NonLocalAnchor";
+          diag.attachNote(instOp.getLoc()) << "the instance was defined here";
+          return failure();
+        }
+      }
+      // The instnace path has been verified. Now verify the last element.
+      auto ref = namepath[namepath.size() - 1];
+      if (auto innerRef = ref.dyn_cast<hw::InnerRefAttr>()) {
+        auto modName = innerRef.getModule();
+        auto mapIter = symbolNameMap.find(modName);
+        bool modFound = mapIter != symbolNameMap.end();
+        FModuleOp mod;
+        FExtModuleOp extMod;
+        if (modFound) {
+          mod = dyn_cast<FModuleOp>(mapIter->second);
+          extMod = dyn_cast<FExtModuleOp>(mapIter->second);
+        }
+        if (!mod && !extMod)
+          modFound = false;
+
+        if (!modFound) {
+          nla.emitOpError()
+              << " module:" << modName << " doesnot exist in the circuit";
+          return failure();
+        }
+        bool refFound = false;
+        ArrayRef<Attribute> portSyms;
+        if (extMod)
+          portSyms = extMod.getPortSymbols();
+        else
+          portSyms = mod.getPortSymbols();
+        // It can either be an inner_sym on a port.
+        for (auto sym : portSyms) {
+          refFound = sym == innerRef.getName();
+          if (refFound)
+            break;
+        }
+        // Or it can be an inner_sym on any operation inside the module.
+        WalkResult opFound = WalkResult::interrupt();
+        if (!refFound && mod)
+          opFound = mod.walk([&](Operation *op) {
+            auto attr = op->getAttrOfType<StringAttr>("inner_sym");
+            bool fallBackNameRefFound = false;
+            // fallBackNameRefFound, is is a hack, which looks for the case,
+            // when the inner_sym does not exist, and the symbol name is instead
+            // matched with the operation name. This case occurs when the
+            // nonlocal anchor is present on the field of a bundle. We don't
+            // want to add symbol to the entire bundle. LowerTypes is supposed
+            // to fix this case when the aggregate is lowered.
+            if (!attr)
+              fallBackNameRefFound =
+                  (op->getAttrOfType<StringAttr>("name") == innerRef.getName());
+            if (attr == innerRef.getName() || fallBackNameRefFound) {
+              AnnotationSet annos(op);
+              refFound = false;
+              for (auto anno : annos)
+                if (auto n = anno.getMember("circt.nonlocal")) {
+                  refFound = n.cast<FlatSymbolRefAttr>().getAttr() == nlaName;
+                  if (refFound)
+                    break;
+                }
+              if (!refFound) {
+                auto diag =
+                    nla.emitOpError()
+                    << " operation with symbol:" << innerRef
+                    << " does not contain a reference to the NonLocalAnchor";
+                diag.attachNote(op->getLoc()) << "the symbol was defined here";
+                return WalkResult::interrupt();
+              }
+              // The correct inner_sym found, now interrupt the module walk.
+              return WalkResult::interrupt();
+            }
+            return WalkResult::advance();
+          });
+        if (!opFound.wasInterrupted()) {
+          nla.emitOpError() << " operation with symbol:" << innerRef
+                            << " was not found in module:" << modName;
+          return failure();
+        }
+        if (!refFound)
+          return failure();
+
+      } else {
+        // This is the case when the nla is applied to a module.
+        if (expectedModuleName != ref.cast<FlatSymbolRefAttr>().getAttr()) {
+          nla.emitOpError()
+              << "expected module::" << expectedModuleName << " not found";
+        }
       }
     }
   }
