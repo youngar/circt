@@ -291,11 +291,12 @@ private:
     // manually decompose the bulk connect into a connect for each field.
     auto dstBundle = dstType.cast<BundleType>();
     auto srcBundle = srcType.cast<BundleType>();
-    for (unsigned i = 0; i < dstBundle.getNumElements(); ++i)
-      fixupConnect(builder, builder.create<SubfieldOp>(dst, i),
-                   dstBundle.getElementType(i),
-                   builder.create<SubfieldOp>(src, i),
+    for (unsigned i = 0; i < dstBundle.getNumElements(); ++i) {
+      auto dstField = builder.create<SubfieldOp>(dst, i);
+      auto srcField = builder.create<SubfieldOp>(src, i);
+      fixupConnect(builder, dstField, dstBundle.getElementType(i), srcField,
                    srcBundle.getElementType(i));
+    }
   }
 
   /// This fixes up a partial connect when the field names of a bundle type
@@ -307,7 +308,9 @@ private:
                            Type srcNewType, Type srcOldType) {
     // If the types didn't change, just emit a partial connect.
     if (dstOldType == dstNewType && srcOldType == srcNewType) {
-      builder.create<PartialConnectOp>(dst(builder), src(builder));
+      auto dstField = dst(builder);
+      auto srcField = src(builder);
+      builder.create<PartialConnectOp>(dstField, srcField);
       return;
     }
     // Check if they are bundle types.
