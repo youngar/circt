@@ -116,11 +116,11 @@ firrtl.module @PortAnnotations0(in %in : !firrtl.uint<1> [{class = "port0"}]) {
   // CHECK-SAME: portAnnotations =
   // CHECK-SAME:  {circt.nonlocal = [[NLA2]], class = "mem1"},
   // CHECK-SAME:  {circt.nonlocal = [[NLA3]], class = "mem0"}
-  %bar_r = firrtl.mem Undefined  {depth = 16 : i64, name = "bar", portAnnotations = [[{class = "mem0"}]], portNames = ["r"], readLatency = 0 : i32, writeLatency = 1 : i32} : !firrtl.bundle<addr: uint<4>, en: uint<1>, clk: clock, data flip: uint<8>>
+  //%bar_r = firrtl.mem Undefined  {depth = 16 : i64, name = "bar", portAnnotations = [[{class = "mem0"}]], portNames = ["r"], readLatency = 0 : i32, writeLatency = 1 : i32} : !firrtl.bundle<addr: uint<4>, en: uint<1>, clk: clock, data flip: uint<8>>
 }
 // CHECK-NOT: firrtl.module @PortAnnotations1
 firrtl.module @PortAnnotations1(in %in : !firrtl.uint<1> [{class = "port1"}])  {
-  %bar_r = firrtl.mem Undefined  {depth = 16 : i64, name = "bar", portAnnotations = [[{class = "mem1"}]], portNames = ["r"], readLatency = 0 : i32, writeLatency = 1 : i32} : !firrtl.bundle<addr: uint<4>, en: uint<1>, clk: clock, data flip: uint<8>>
+  //%bar_r = firrtl.mem Undefined  {depth = 16 : i64, name = "bar", portAnnotations = [[{class = "mem1"}]], portNames = ["r"], readLatency = 0 : i32, writeLatency = 1 : i32} : !firrtl.bundle<addr: uint<4>, en: uint<1>, clk: clock, data flip: uint<8>>
 }
 firrtl.module @PortAnnotations() {
   %portannos0_in = firrtl.instance portannos0 @PortAnnotations0(in in: !firrtl.uint<1>)
@@ -258,6 +258,13 @@ firrtl.module @ExtModuleTest() {
 }
 
 
+// CHECK: firrtl.nla [[NLA1]] [#hw.innerNameRef<@Chain::@chainB0>, #hw.innerNameRef<@ChainB0::@chainA0>, #hw.innerNameRef<@ChainA0::@extchain0>, @ExtChain0]
+// CHECK: firrtl.nla [[NLA0]] [#hw.innerNameRef<@Chain::@chainB1>, #hw.innerNameRef<@ChainB0::@chainA0>, #hw.innerNameRef<@ChainA0::@extchain0>, @ExtChain0]
+// CHECK: firrtl.module @ChainB0()
+firrtl.module @ChainB0() {
+  // CHECK: {annotations = [{circt.nonlocal = [[NLA1]], class = "circt.nonlocal"}, {circt.nonlocal = [[NLA0]], class = "circt.nonlocal"}]}
+  firrtl.instance chainA0 @ChainA0()
+}
 // As we dedup modules, the chain on NLAs should continuously grow.
 // CHECK: firrtl.extmodule @ExtChain0() attributes {annotations = [
 // CHECK-SAME:  {circt.nonlocal = [[NLA0:@nla.+]], class = "1"},
@@ -270,20 +277,13 @@ firrtl.module @ChainA0()  {
   // CHECK: {circt.nonlocal = [[NLA1]], class = "circt.nonlocal"}, {circt.nonlocal = [[NLA0]], class = "circt.nonlocal"}
   firrtl.instance extchain0 @ExtChain0()
 }
-// CHECK-NOT: firrtl.module @ChainA1()
-firrtl.module @ChainA1()  {
-  firrtl.instance extchain1 @ExtChain1()
-}
-// CHECK: firrtl.nla [[NLA1]] [#hw.innerNameRef<@Chain::@chainB0>, #hw.innerNameRef<@ChainB0::@chainA0>, #hw.innerNameRef<@ChainA0::@extchain0>, @ExtChain0]
-// CHECK: firrtl.nla [[NLA0]] [#hw.innerNameRef<@Chain::@chainB1>, #hw.innerNameRef<@ChainB0::@chainA0>, #hw.innerNameRef<@ChainA0::@extchain0>, @ExtChain0]
-// CHECK: firrtl.module @ChainB0()
-firrtl.module @ChainB0() {
-  // CHECK: {annotations = [{circt.nonlocal = [[NLA1]], class = "circt.nonlocal"}, {circt.nonlocal = [[NLA0]], class = "circt.nonlocal"}]}
-  firrtl.instance chainA0 @ChainA0()
-}
 // CHECK-NOT: firrtl.module @ChainB1()
 firrtl.module @ChainB1() {
   firrtl.instance chainA1 @ChainA1()
+}
+// CHECK-NOT: firrtl.module @ChainA1()
+firrtl.module @ChainA1()  {
+  firrtl.instance extchain1 @ExtChain1()
 }
 firrtl.module @Chain() {
   // CHECK: firrtl.instance chainB0 sym @chainB0  {annotations = [{circt.nonlocal = [[NLA1]], class = "circt.nonlocal"}]} @ChainB0()

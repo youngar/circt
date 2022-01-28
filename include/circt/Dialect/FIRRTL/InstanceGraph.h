@@ -192,6 +192,19 @@ public:
   // of both InstanceOps must be the same.
   void replaceInstance(InstanceOp inst, InstanceOp newInst);
 
+  /// Record a newly created instance of a node.  The parent must be the
+  /// parent of module of the instance, and the target must be the
+  /// instantiated module.
+  InstanceRecord *recordInstance(InstanceGraphNode *parent, InstanceOp instance,
+                                 InstanceGraphNode *target);
+
+  /// Delete an instance of a node.  The parent must be the parent of module of
+  /// the instance, and the target must be the instantiated module.
+  //void deleteInstance(InstanceRecord *instance);
+
+  /// Delete a module and all instances of this module.
+  //void deleteModule(InstanceGraphNode *module)
+
 private:
   /// Get the node corresponding to the module.  If the node has does not exist
   /// yet, it will be created.

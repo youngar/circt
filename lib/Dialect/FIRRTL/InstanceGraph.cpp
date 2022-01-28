@@ -138,6 +138,46 @@ bool InstanceGraph::isAncestor(FModuleLike child, FModuleOp parent) {
   return false;
 }
 
+InstanceRecord *InstanceGraph::recordInstance(InstanceGraphNode *parent,
+                                              InstanceOp instance,
+                                              InstanceGraphNode *target) {
+  auto *instanceRecord = parent->recordInstance(instance, target);
+  target->recordUse(instanceRecord);
+  return instanceRecord;
+}
+
+// void InstanceGraph::deleteInstance(InstanceRecord *instance) {
+//   llvm::errs() << "deleting instrecord: " << instance << "\n";
+//   for (auto *use : instance->target->moduleUses) {
+//     llvm::errs() << "   use: " << use << "\n";
+//   }
+//   llvm::erase_value(instance->target->moduleUses, instance);
+//   for (auto *use : instance->target->moduleUses) {
+//     llvm::errs() << "   use: " << use << "\n";
+//   }
+//   llvm::erase_if(instance->parent->moduleInstances,
+//                  [&](const auto &record) { return &record == instance; });
+// }
+
+// void InstanceGraph::deleteModule(InstanceGraphNode *node) {
+//   // Since we are deleting all instance ops in this module, we have to remove
+//   // each instance from the target module's use list.
+//   llvm::for_each(node->moduleInstances, [](const auto &instanceRecord) {
+//     llvm::erase_value(instanceRecord.target->moduleUses, &instanceRecord);
+//   });
+//   // Double check that we have deleted all instances of this module already.
+//   assert(node->uses().empty() && "cannot delete a module that still has uses.");
+//   // Erase the node from the graph.
+//   auto it = nodeMap.find(cast<FModuleLike>(node->getModule()).moduleNameAttr());
+//   assert(it != nodeMap.end() && "module not in the instance graph");
+//   auto index = it->second;
+//   nodes.erase(nodes.begin() + index);
+//   nodeMap.erase(it);
+//   for (auto &pair : nodeMap)
+//     if (pair.second > index)
+//       --pair.second;
+// }
+
 ArrayRef<InstancePath> InstancePathCache::getAbsolutePaths(Operation *op) {
   assert((isa<FModuleOp, FExtModuleOp>(op))); // extra parens makes parser smile
 

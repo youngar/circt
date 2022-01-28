@@ -424,9 +424,12 @@ private:
   /// module.
   void fixupReferences(FModuleLike toModule, Operation *fromModule) {
     // Replace all instances of the other module.
-    auto *node = instanceGraph[fromModule];
-    for (auto *use : node->uses()) {
-      auto oldInst = use->getInstance();
+    auto *fromNode = instanceGraph[fromModule];
+    auto *toNode = instanceGraph[toModule];
+    llvm::errs() << "replacing instances of" << fromModule->getAttr("sym_name")
+                 << "\n";
+    for (auto *oldInstRec : fromNode->uses()) {
+      auto oldInst = oldInstRec->getInstance();
       // Create an instance to replace the old module.
       auto newInst = OpBuilder(oldInst).create<InstanceOp>(
           oldInst.getLoc(), toModule, oldInst.nameAttr());
@@ -434,15 +437,22 @@ private:
       auto oldInnerSym = oldInst.inner_symAttr();
       if (oldInnerSym)
         newInst.inner_symAttr(oldInnerSym);
+
       // We have to replaceAll before fixing up references, we walk the new
       // usages when fixing up any references.
       oldInst.replaceAllUsesWith(newInst.getResults());
-      // Update bulk connections and subfield operations.
+      instanceGraph.recordInstance(oldInstRec->getParent(), newInst, toNode);
+      //  Update bulk connections and subfield operations.
       for (auto results :
            llvm::zip(newInst.getResults(), oldInst.getResultTypes()))
         fixupReferences(std::get<0>(results), std::get<1>(results));
+      llvm::errs() << "erasing: " << oldInst << " from "
+                   << oldInstRec->getParent()->getModule()->getAttr("sym_name")
+                   << "\n";
+      // instanceGraph.deleteInstance(oldInstRec);
       oldInst->erase();
     }
+    // instanceGraph.deleteModule(fromNode);
   }
 
   /// Private NLA creation method.  This function requires an attribute array
@@ -487,7 +497,9 @@ private:
         auto *node = instanceGraph.lookup(innerRef.getModule());
         // Find the instance referenced by the NLA.
         auto targetInstanceName = innerRef.getName();
+        llvm::errs() << "looking for " << innerRef << "\n";
         auto it = llvm::find_if(*node, [&](InstanceRecord *record) {
+          llvm::errs() << "comparing: " << record->getInstance() << "\n";
           return record->getInstance().inner_symAttr() == targetInstanceName;
         });
         assert(it != node->end() &&
@@ -571,16 +583,20 @@ private:
     nla.namepathAttr(ArrayAttr::get(context, namepath));
   }
 
-  /// This erases the NLA and all breadcrumb trails, but it does not delete it
-  /// the NLA reference from the target operation's annotations.
+  /// This erases the NLA op, all breadcrumb trails, and removes the NLA from
+  /// every module's NLA map, but it does not delete it the NLA reference from
+  /// the target operation's annotations.
   void eraseNLA(NonLocalAnchor nla) {
+    llvm::errs() << "erasing NLA " << nla << "\n";
     auto nlaRef = FlatSymbolRefAttr::get(nla.getNameAttr());
     auto nonLocalClass = NamedAttribute(classString, nonLocalString);
     auto dict =
         DictionaryAttr::get(context, {{nonLocalString, nlaRef}, nonLocalClass});
-    for (auto attr : nla.namepath().getValue().drop_back()) {
+    auto namepath = nla.namepath().getValue();
+    for (auto attr : namepath.drop_back()) {
       auto innerRef = attr.cast<InnerRefAttr>();
       auto moduleName = innerRef.getModule();
+      llvm::errs() << "  deleting from module " << moduleName << "\n";
       llvm::erase_value(nlaMap[moduleName], nla);
       // Find the instance referenced by the NLA.
       auto *node = instanceGraph.lookup(moduleName);
@@ -596,6 +612,12 @@ private:
       instAnnos.removeAnnotation(dict);
       instAnnos.applyToOperation(inst);
     }
+    // Erase the NLA from the leaf module's nlaMap.
+    auto back = namepath.back();
+    if (auto ref = back.dyn_cast<InnerRefAttr>())
+      llvm::erase_value(nlaMap[ref.getModule()], nla);
+    else
+      llvm::erase_value(nlaMap[back.cast<FlatSymbolRefAttr>().getAttr()], nla);
     targetMap.erase(nla.getNameAttr());
     nla->erase();
   }
@@ -626,8 +648,8 @@ private:
       if (toModule != fromModule)
         renameModuleInNLA(renameMap, toName, fromName, nla);
       llvm::errs() << "    " << nla << "\n";
-      //llvm::errs() << "nla.namepath " << nla.namepath() << "\n";
-      // llvm::errs() << "nla.namepath " << nla.namepath().getValue() << "\n";
+      // llvm::errs() << "nla.namepath " << nla.namepath() << "\n";
+      //  llvm::errs() << "nla.namepath " << nla.namepath().getValue() << "\n";
       auto elements = nla.namepath().getValue();
 
       // If we don't need to add more context, we're done here.
@@ -698,6 +720,7 @@ private:
                               SmallVector<Annotation> &newAnnotations) {
     // Start constructing a new annotation, pushing a "circt.nonLocal" field
     // into the correct spot if its not already a non-local annotation.
+    llvm::errs() << "making annotation non-local" << anno.getDict() << "\n";
     SmallVector<NamedAttribute> attributes;
     int nonLocalIndex = -1;
     for (auto val : llvm::enumerate(anno)) {
@@ -839,6 +862,8 @@ private:
     // "to" operation also has an `inner_sym` and then record the renaming.
     if (auto fromSym = from->getAttrOfType<StringAttr>("inner_sym")) {
       auto toSym = OpAnnoTarget(to).getInnerSym(getNamespace(toModule));
+      llvm::errs() << "recording rename from: " << fromSym << " to " << toSym
+                   << "\n";
       renameMap[fromSym] = toSym;
     }
 
@@ -891,8 +916,6 @@ private:
   void mergeOps(DenseMap<StringAttr, StringAttr> &renameMap,
                 FModuleLike toModule, Operation *to, FModuleLike fromModule,
                 Operation *from) {
-    // Merge the annotations.
-    mergeAnnotations(toModule, to, fromModule, from);
 
     // Recurse into any regions.
     for (auto regions : llvm::zip(to->getRegions(), from->getRegions()))
@@ -900,7 +923,19 @@ private:
                    std::get<1>(regions));
 
     // Record any inner_sym renamings that happened.
-    recordSymRenames(renameMap, toModule, to, fromModule, from);
+    if (to != from)
+      recordSymRenames(renameMap, toModule, to, fromModule, from);
+    if (!isa<FModuleOp>(from)) {
+
+      llvm::errs() << "AFTER RENAME\n";
+      llvm::errs() << "from module:\n";
+      from->getParentOfType<FModuleOp>()->dump();
+      llvm::errs() << "to module:\n";
+      to->getParentOfType<FModuleOp>()->dump();
+    }
+
+    // Merge the annotations.
+    mergeAnnotations(toModule, to, fromModule, from);
   }
 
   /// Recursively merge two blocks.
@@ -966,9 +1001,15 @@ class DedupPass : public DedupBase<DedupPass> {
     llvm::StringMap<Operation *> moduleHashes;
 
     // We must iterate the modules from the bottom up so that we can properly
-    // deduplicate the modules.
-    for (auto *node : llvm::post_order(&instanceGraph)) {
-      auto module = cast<FModuleLike>(node->getModule());
+    // deduplicate the modules. We have to store the visit order first so that
+    // we can safely delete nodes as we go from the instance graph.
+    SmallVector<Operation *> modules;
+    for (auto *node : llvm::post_order(&instanceGraph))
+      modules.push_back(node->getModule());
+
+    for (auto op : modules) {
+      circuit.dump();
+      auto module = cast<FModuleLike>(op);
       // If the module is marked with NoDedup, just skip it.
       if (AnnotationSet(module).hasAnnotation(noDedupClass))
         continue;
