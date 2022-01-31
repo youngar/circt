@@ -227,8 +227,6 @@ struct Deduper {
     // If the module returns a different bundle type we have to fix up anything
     // connecting to an instance of it.
     fixupReferences(toModule, fromModule);
-    // Erase the deduplicated module.
-    fromModule->erase();
   }
 
   /// Record the usages of any NLA's in this module, so that we may update the
@@ -449,10 +447,10 @@ private:
       llvm::errs() << "erasing: " << oldInst << " from "
                    << oldInstRec->getParent()->getModule()->getAttr("sym_name")
                    << "\n";
-      // instanceGraph.deleteInstance(oldInstRec);
+      oldInstRec->erase();
       oldInst->erase();
     }
-    // instanceGraph.deleteModule(fromNode);
+    instanceGraph.erase(fromNode);
   }
 
   /// Private NLA creation method.  This function requires an attribute array
@@ -925,14 +923,6 @@ private:
     // Record any inner_sym renamings that happened.
     if (to != from)
       recordSymRenames(renameMap, toModule, to, fromModule, from);
-    if (!isa<FModuleOp>(from)) {
-
-      llvm::errs() << "AFTER RENAME\n";
-      llvm::errs() << "from module:\n";
-      from->getParentOfType<FModuleOp>()->dump();
-      llvm::errs() << "to module:\n";
-      to->getParentOfType<FModuleOp>()->dump();
-    }
 
     // Merge the annotations.
     mergeAnnotations(toModule, to, fromModule, from);
@@ -1008,7 +998,6 @@ class DedupPass : public DedupBase<DedupPass> {
       modules.push_back(node->getModule());
 
     for (auto op : modules) {
-      circuit.dump();
       auto module = cast<FModuleLike>(op);
       // If the module is marked with NoDedup, just skip it.
       if (AnnotationSet(module).hasAnnotation(noDedupClass))

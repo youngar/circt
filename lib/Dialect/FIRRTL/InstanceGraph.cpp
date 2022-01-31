@@ -12,14 +12,38 @@
 using namespace circt;
 using namespace firrtl;
 
+void InstanceRecord::erase() {
+  // Erase this module from the parent list.
+  getParent()->instances.erase(this);
+  prevUse->nextUse = nextUse;
+  if (nextUse)
+    nextUse->prevUse = prevUse;
+}
+
 InstanceRecord *InstanceGraphNode::recordInstance(InstanceOp instance,
                                                   InstanceGraphNode *target) {
-  moduleInstances.emplace_back(instance, this, target);
-  return &moduleInstances.back();
+  auto instanceRecord = new InstanceRecord(this, instance, target);
+  instances.push_back(instanceRecord);
+  return instanceRecord;
 }
 
 void InstanceGraphNode::recordUse(InstanceRecord *record) {
-  moduleUses.push_back(record);
+  record->nextUse = firstUse;
+  if (firstUse)
+    firstUse->prevUse = record;
+  firstUse = record;
+}
+
+
+InstanceGraphNode *InstanceGraph::getOrAddNode(StringAttr name) {
+  // Try to insert an InstanceGraphNode. If its not inserted, it returns
+  // an iterator pointing to the node.
+  auto *&node = nodeMap[name];
+  if (!node) {
+    node = new InstanceGraphNode();
+    nodes.push_back(node);
+  }
+  return node;
 }
 
 InstanceGraph::InstanceGraph(Operation *operation) {
@@ -28,20 +52,25 @@ InstanceGraph::InstanceGraph(Operation *operation) {
       if ((operation = dyn_cast<CircuitOp>(&op)))
         break;
 
-  auto circuitOp = cast<CircuitOp>(operation);
+  // llvm::errs() << "building instance graph\n";
+  auto circuit = cast<CircuitOp>(operation);
+  auto topModuleName = circuit.nameAttr();
 
-  // We insert the top level module first in to the node map.  Getting the node
-  // here is enough to ensure that it is the first one added.
-  getOrAddNode(circuitOp.nameAttr());
-
-  for (auto &op : *circuitOp.getBody()) {
+  for (auto &op : *circuit.getBody()) {
     if (auto extModule = dyn_cast<FExtModuleOp>(op)) {
-      auto *currentNode = getOrAddNode(extModule.getNameAttr());
+      // llvm::errs() << "adding ext module";
+      auto name = extModule.getNameAttr();
+      auto currentNode = getOrAddNode(name);
       currentNode->module = extModule;
+      if (name == topModuleName)
+        topLevelNode = currentNode;
     }
     if (auto module = dyn_cast<FModuleOp>(op)) {
-      auto *currentNode = getOrAddNode(module.getNameAttr());
+      auto name = module.getNameAttr();
+      auto *currentNode = getOrAddNode(name);
       currentNode->module = module;
+      if (name == topModuleName)
+        topLevelNode = currentNode;
       // Find all instance operations in the module body.
       module.body().walk([&](InstanceOp instanceOp) {
         // Add an edge to indicate that this module instantiates the target.
@@ -54,12 +83,17 @@ InstanceGraph::InstanceGraph(Operation *operation) {
   }
 }
 
-InstanceGraphNode *InstanceGraph::getTopLevelNode() {
-  // The graph always puts the top level module in the array first.
-  if (!nodes.size())
-    return nullptr;
-  return &nodes[0];
+void InstanceGraph::erase(InstanceGraphNode *node) {
+  assert(node->noUses() &&
+         "all instances of this module must have been erased.");
+  // Erase all instances inside this module.
+  for (auto *instanceRecord : *node)
+    instanceRecord->erase();
+  nodes.remove(node);
 }
+
+
+InstanceGraphNode *InstanceGraph::getTopLevelNode() { return topLevelNode; }
 
 FModuleLike InstanceGraph::getTopLevelModule() {
   return getTopLevelNode()->getModule();
@@ -68,7 +102,7 @@ FModuleLike InstanceGraph::getTopLevelModule() {
 InstanceGraphNode *InstanceGraph::lookup(StringAttr name) {
   auto it = nodeMap.find(name);
   assert(it != nodeMap.end() && "Module not in InstanceGraph!");
-  return &nodes[it->second];
+  return it->second;
 }
 
 InstanceGraphNode *InstanceGraph::lookup(Operation *op) {
@@ -79,21 +113,6 @@ InstanceGraphNode *InstanceGraph::lookup(Operation *op) {
     return lookup(module.getNameAttr());
   }
   llvm_unreachable("Can only look up module operations.");
-}
-
-InstanceGraphNode *InstanceGraph::getOrAddNode(StringAttr name) {
-  // Try to insert an InstanceGraphNode. If its not inserted, it returns
-  // an iterator pointing to the node.
-  auto itAndInserted = nodeMap.try_emplace(name, 0);
-  auto &index = itAndInserted.first->second;
-  if (itAndInserted.second) {
-    // This is a new node, we have to add an element to the NodeVec.
-    nodes.emplace_back();
-    // Store the node storage index in to the map.
-    index = nodes.size() - 1;
-    return &nodes.back();
-  }
-  return &nodes[index];
 }
 
 Operation *InstanceGraph::getReferencedModule(InstanceOp op) {
@@ -166,9 +185,11 @@ InstanceRecord *InstanceGraph::recordInstance(InstanceGraphNode *parent,
 //     llvm::erase_value(instanceRecord.target->moduleUses, &instanceRecord);
 //   });
 //   // Double check that we have deleted all instances of this module already.
-//   assert(node->uses().empty() && "cannot delete a module that still has uses.");
+//   assert(node->uses().empty() && "cannot delete a module that still has
+//   uses.");
 //   // Erase the node from the graph.
-//   auto it = nodeMap.find(cast<FModuleLike>(node->getModule()).moduleNameAttr());
+//   auto it =
+//   nodeMap.find(cast<FModuleLike>(node->getModule()).moduleNameAttr());
 //   assert(it != nodeMap.end() && "module not in the instance graph");
 //   auto index = it->second;
 //   nodes.erase(nodes.begin() + index);
