@@ -373,7 +373,7 @@ private:
     while (!workList.empty()) {
       auto [newValue, oldType] = workList.pop_back_val();
       auto newType = newValue.getType();
-      for (auto *op : newValue.getUsers()) {
+      for (auto *op : llvm::make_early_inc_range(newValue.getUsers())) {
         // If the two types are identical, we don't need to do anything.
         if (oldType == newType)
           continue;
@@ -426,7 +426,7 @@ private:
     auto *toNode = instanceGraph[toModule];
     llvm::errs() << "replacing instances of" << fromModule->getAttr("sym_name")
                  << "\n";
-    for (auto *oldInstRec : fromNode->uses()) {
+    for (auto *oldInstRec : llvm::make_early_inc_range(fromNode->uses())) {
       auto oldInst = oldInstRec->getInstance();
       // Create an instance to replace the old module.
       auto newInst = OpBuilder(oldInst).create<InstanceOp>(

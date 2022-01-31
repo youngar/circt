@@ -78,7 +78,7 @@ private:
   InstanceGraphNode *target;
   /// Intrusive linked list for other uses.
   InstanceRecord *nextUse = nullptr;
-  InstanceRecord *prevUse;
+  InstanceRecord *prevUse = nullptr;
 };
 
 /// This is a Node in the InstanceGraph.  Each node represents a Module in a
@@ -96,6 +96,9 @@ public:
   using iterator = detail::AddressIterator<InstanceList::iterator>;
   iterator begin() { return instances.begin(); }
   iterator end() { return instances.end(); }
+  
+
+  /// Get the first use.
 
   /// Get the number of direct instantiations of this module.
   size_t getNumUses() {
@@ -183,6 +186,7 @@ public:
   /// Create a new module graph of a circuit.  This must be called on a FIRRTL
   /// CircuitOp or MLIR ModuleOp.
   explicit InstanceGraph(Operation *operation);
+  ~InstanceGraph();
 
   /// Get the node corresponding to the top-level module of a circuit.
   InstanceGraphNode *getTopLevelNode();

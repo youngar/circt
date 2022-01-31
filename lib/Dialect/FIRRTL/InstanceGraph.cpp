@@ -13,11 +13,12 @@ using namespace circt;
 using namespace firrtl;
 
 void InstanceRecord::erase() {
-  // Erase this module from the parent list.
-  getParent()->instances.erase(this);
-  prevUse->nextUse = nextUse;
+  if (prevUse)
+    prevUse->nextUse = nextUse;
   if (nextUse)
     nextUse->prevUse = prevUse;
+  // Erase this module from the parent list.
+  getParent()->instances.erase(this);
 }
 
 InstanceRecord *InstanceGraphNode::recordInstance(InstanceOp instance,
@@ -33,7 +34,6 @@ void InstanceGraphNode::recordUse(InstanceRecord *record) {
     firstUse->prevUse = record;
   firstUse = record;
 }
-
 
 InstanceGraphNode *InstanceGraph::getOrAddNode(StringAttr name) {
   // Try to insert an InstanceGraphNode. If its not inserted, it returns
@@ -83,15 +83,19 @@ InstanceGraph::InstanceGraph(Operation *operation) {
   }
 }
 
+InstanceGraph::~InstanceGraph() {
+  while(!nodes.empty())
+    nodes.pop_back();
+}
+
 void InstanceGraph::erase(InstanceGraphNode *node) {
   assert(node->noUses() &&
          "all instances of this module must have been erased.");
   // Erase all instances inside this module.
-  for (auto *instanceRecord : *node)
-    instanceRecord->erase();
-  nodes.remove(node);
+  while (!node->noUses())
+    (*node->begin())->erase();
+  nodes.erase(node);
 }
-
 
 InstanceGraphNode *InstanceGraph::getTopLevelNode() { return topLevelNode; }
 
