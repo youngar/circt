@@ -37,7 +37,6 @@ using NLAMap = DenseMap<Attribute, std::vector<NonLocalAnchor>>;
 NLAMap createNLAMap(CircuitOp circuit) {
   DenseMap<Attribute, std::vector<NonLocalAnchor>> nlaMap;
   for (auto nla : circuit.getBody()->getOps<NonLocalAnchor>()) {
-    llvm::errs() << "dump nla: " << nla << "\n";
     for (auto element : nla.namepath()) {
       if (auto moduleRef = element.dyn_cast<FlatSymbolRefAttr>())
         nlaMap[moduleRef.getAttr()].push_back(nla);
@@ -424,8 +423,6 @@ private:
     // Replace all instances of the other module.
     auto *fromNode = instanceGraph[fromModule];
     auto *toNode = instanceGraph[toModule];
-    llvm::errs() << "replacing instances of" << fromModule->getAttr("sym_name")
-                 << "\n";
     for (auto *oldInstRec : llvm::make_early_inc_range(fromNode->uses())) {
       auto oldInst = oldInstRec->getInstance();
       // Create an instance to replace the old module.
@@ -439,18 +436,16 @@ private:
       // We have to replaceAll before fixing up references, we walk the new
       // usages when fixing up any references.
       oldInst.replaceAllUsesWith(newInst.getResults());
-      instanceGraph.recordInstance(oldInstRec->getParent(), newInst, toNode);
+      instanceGraph.addInstance(oldInstRec->getParent(), newInst, toNode);
       //  Update bulk connections and subfield operations.
       for (auto results :
            llvm::zip(newInst.getResults(), oldInst.getResultTypes()))
         fixupReferences(std::get<0>(results), std::get<1>(results));
-      llvm::errs() << "erasing: " << oldInst << " from "
-                   << oldInstRec->getParent()->getModule()->getAttr("sym_name")
-                   << "\n";
       oldInstRec->erase();
       oldInst->erase();
     }
     instanceGraph.erase(fromNode);
+    fromModule->erase();
   }
 
   /// Private NLA creation method.  This function requires an attribute array
@@ -468,7 +463,6 @@ private:
       namepath[0] = OpAnnoTarget(inst).getNLAReference(getNamespace(parent));
       auto arrayAttr = builder.getArrayAttr(namepath);
       auto nla = builder.create<NonLocalAnchor>(loc, "nla", arrayAttr);
-      llvm::errs() << "create nla: " << nla << "\n";
       // Insert it into the symbol table to get a unique name.
       symbolTable.insert(nla);
       auto nlaName = nla.getNameAttr();
@@ -495,9 +489,7 @@ private:
         auto *node = instanceGraph.lookup(innerRef.getModule());
         // Find the instance referenced by the NLA.
         auto targetInstanceName = innerRef.getName();
-        llvm::errs() << "looking for " << innerRef << "\n";
         auto it = llvm::find_if(*node, [&](InstanceRecord *record) {
-          llvm::errs() << "comparing: " << record->getInstance() << "\n";
           return record->getInstance().inner_symAttr() == targetInstanceName;
         });
         assert(it != node->end() &&
@@ -585,7 +577,6 @@ private:
   /// every module's NLA map, but it does not delete it the NLA reference from
   /// the target operation's annotations.
   void eraseNLA(NonLocalAnchor nla) {
-    llvm::errs() << "erasing NLA " << nla << "\n";
     auto nlaRef = FlatSymbolRefAttr::get(nla.getNameAttr());
     auto nonLocalClass = NamedAttribute(classString, nonLocalString);
     auto dict =
@@ -594,7 +585,6 @@ private:
     for (auto attr : namepath.drop_back()) {
       auto innerRef = attr.cast<InnerRefAttr>();
       auto moduleName = innerRef.getModule();
-      llvm::errs() << "  deleting from module " << moduleName << "\n";
       llvm::erase_value(nlaMap[moduleName], nla);
       // Find the instance referenced by the NLA.
       auto *node = instanceGraph.lookup(moduleName);
@@ -636,24 +626,14 @@ private:
     // Create a copy of the current NLAs. We will be pushing and removing
     // NLAs from this op as we go.
     auto nlas = nlaMap[fromModule.getNameAttr()];
-    llvm::errs() << "to: " << toModule.getNameAttr()
-                 << " from: " << fromModule.getNameAttr() << "\n";
     for (auto nla : nlas) {
       // Change the NLA to target the toModule.
-
-      llvm::errs() << "0nla: " << nla.getNameAttr() << "\n";
-      llvm::errs() << "    " << nla << "\n";
       if (toModule != fromModule)
         renameModuleInNLA(renameMap, toName, fromName, nla);
-      llvm::errs() << "    " << nla << "\n";
-      // llvm::errs() << "nla.namepath " << nla.namepath() << "\n";
-      //  llvm::errs() << "nla.namepath " << nla.namepath().getValue() << "\n";
       auto elements = nla.namepath().getValue();
-
       // If we don't need to add more context, we're done here.
       if (elements[0].cast<InnerRefAttr>().getModule() != toName)
         continue;
-
       // We need to clone the annotation for each new NLA.
       auto target = targetMap[nla.sym_nameAttr()];
       assert(target && "Target of NLA never encountered.  All modules should "
@@ -718,7 +698,6 @@ private:
                               SmallVector<Annotation> &newAnnotations) {
     // Start constructing a new annotation, pushing a "circt.nonLocal" field
     // into the correct spot if its not already a non-local annotation.
-    llvm::errs() << "making annotation non-local" << anno.getDict() << "\n";
     SmallVector<NamedAttribute> attributes;
     int nonLocalIndex = -1;
     for (auto val : llvm::enumerate(anno)) {
@@ -726,7 +705,7 @@ private:
       // Is this field "circt.nonlocal"?
       auto compare = attr.getName().compare(nonLocalString);
       if (compare == 0) {
-        // This annotation is already a non-local annotaiton. Record that this
+        // This annotation is already a non-local annotation. Record that this
         // operation uses that NLA and stop processing this annotation.
         auto nlaName = attr.getValue().cast<FlatSymbolRefAttr>().getAttr();
         targetMap[nlaName] = from;
@@ -860,8 +839,6 @@ private:
     // "to" operation also has an `inner_sym` and then record the renaming.
     if (auto fromSym = from->getAttrOfType<StringAttr>("inner_sym")) {
       auto toSym = OpAnnoTarget(to).getInnerSym(getNamespace(toModule));
-      llvm::errs() << "recording rename from: " << fromSym << " to " << toSym
-                   << "\n";
       renameMap[fromSym] = toSym;
     }
 
@@ -1022,8 +999,8 @@ class DedupPass : public DedupBase<DedupPass> {
       moduleHashes[h] = module;
     }
 
-    if (!anythingChanged)
-      markAllAnalysesPreserved();
+    //if (!anythingChanged)
+      //markAllAnalysesPreserved();
   }
 };
 } // end anonymous namespace

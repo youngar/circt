@@ -62,9 +62,6 @@ private:
   InstanceRecord(InstanceGraphNode *parent, InstanceOp instance,
                  InstanceGraphNode *target)
       : parent(parent), instance(instance), target(target) {
-    // Insert self into the use-list.
-    // nextUse = target->firstUse;
-    // target->firstUse = this;
   }
   InstanceRecord(const InstanceRecord &) = delete;
 
@@ -96,9 +93,6 @@ public:
   using iterator = detail::AddressIterator<InstanceList::iterator>;
   iterator begin() { return instances.begin(); }
   iterator end() { return instances.end(); }
-  
-
-  /// Get the first use.
 
   /// Get the number of direct instantiations of this module.
   size_t getNumUses() {
@@ -110,11 +104,11 @@ public:
     }
     return count;
   }
-  
-  bool noUses() {
-    return firstUse;
-  }
 
+  /// Return true if there are no more instances of this module.
+  bool noUses() { return !firstUse; }
+
+  /// Iterator for module uses.
   struct UseIterator
       : public llvm::iterator_facade_base<
             UseIterator, std::forward_iterator_tag, InstanceRecord *> {
@@ -186,7 +180,6 @@ public:
   /// Create a new module graph of a circuit.  This must be called on a FIRRTL
   /// CircuitOp or MLIR ModuleOp.
   explicit InstanceGraph(Operation *operation);
-  ~InstanceGraph();
 
   /// Get the node corresponding to the top-level module of a circuit.
   InstanceGraphNode *getTopLevelNode();
@@ -227,7 +220,7 @@ public:
   // on a CircuitOp.
 
   InstanceGraphNode *addModule(Operation *op);
-  
+
   /// Remove this module from the instance graph. This will also remove all
   /// InstanceRecords in this module.  All instances of this module must have
   /// been removed from the graph.
@@ -240,15 +233,8 @@ public:
   /// Record a newly created instance of a node.  The parent must be the
   /// parent of module of the instance, and the target must be the
   /// instantiated module.
-  InstanceRecord *recordInstance(InstanceGraphNode *parent, InstanceOp instance,
-                                 InstanceGraphNode *target);
-
-  /// Delete an instance of a node.  The parent must be the parent of module of
-  /// the instance, and the target must be the instantiated module.
-  // void deleteInstance(InstanceRecord *instance);
-
-  /// Delete a module and all instances of this module.
-  // void deleteModule(InstanceGraphNode *module)
+  InstanceRecord *addInstance(InstanceGraphNode *parent, InstanceOp instance,
+                              InstanceGraphNode *target);
 
   /// Returns pointer to member of operation list.
   static NodeList InstanceGraph::*

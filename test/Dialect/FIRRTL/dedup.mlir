@@ -61,22 +61,22 @@ firrtl.module @PrimOps() {
 firrtl.nla @annos_nla0 [#hw.innerNameRef<@Annotations::@annotations0>, #hw.innerNameRef<@Annotations0::@d>]
 // CHECK: firrtl.nla @annos_nla1 [#hw.innerNameRef<@Annotations::@annotations1>, #hw.innerNameRef<@Annotations0::@d>]
 firrtl.nla @annos_nla1 [#hw.innerNameRef<@Annotations::@annotations1>, #hw.innerNameRef<@Annotations1::@i>]
-// CHECK: firrtl.nla [[NLA0:@nla.*]] [#hw.innerNameRef<@Annotations::@annotations1>, @Annotations0]
-// CHECK: firrtl.nla [[NLA1:@nla.*]] [#hw.innerNameRef<@Annotations::@annotations1>, #hw.innerNameRef<@Annotations0::@b>]
-// CHECK: firrtl.nla [[NLA2:@nla.*]] [#hw.innerNameRef<@Annotations::@annotations0>, #hw.innerNameRef<@Annotations0::@c>]
-// CHECK: firrtl.nla [[NLA3:@nla.+]] [#hw.innerNameRef<@Annotations::@annotations0>, #hw.innerNameRef<@Annotations0::@e>]
-// CHECK: firrtl.module @Annotations0() attributes {annotations = [{circt.nonlocal = [[NLA0]], class = "one"}]} 
+// CHECK: firrtl.nla [[NLA0:@nla.*]] [#hw.innerNameRef<@Annotations::@annotations1>, #hw.innerNameRef<@Annotations0::@b>]
+// CHECK: firrtl.nla [[NLA1:@nla.*]] [#hw.innerNameRef<@Annotations::@annotations0>, #hw.innerNameRef<@Annotations0::@c>]
+// CHECK: firrtl.nla [[NLA2:@nla.+]] [#hw.innerNameRef<@Annotations::@annotations0>, #hw.innerNameRef<@Annotations0::@e>]
+// CHECK: firrtl.nla [[NLA3:@nla.*]] [#hw.innerNameRef<@Annotations::@annotations1>, @Annotations0]
+// CHECK: firrtl.module @Annotations0() attributes {annotations = [{circt.nonlocal = [[NLA3]], class = "one"}]} 
 firrtl.module @Annotations0() {
   // Same annotation on both ops should stay local.
   // CHECK: %a = firrtl.wire  {annotations = [{class = "both"}]}
   %a = firrtl.wire {annotations = [{class = "both"}]} : !firrtl.uint<1>
   
   // Annotation from other module becomes non-local.
-  // CHECK: %b = firrtl.wire sym @b  {annotations = [{circt.nonlocal = [[NLA1]], class = "one"}]}
+  // CHECK: %b = firrtl.wire sym @b  {annotations = [{circt.nonlocal = [[NLA0]], class = "one"}]}
   %b = firrtl.wire : !firrtl.uint<1>
   
   // Annotation from this module becomes non-local.
-  // CHECK: %c = firrtl.wire sym @c  {annotations = [{circt.nonlocal = [[NLA2]], class = "one"}]}
+  // CHECK: %c = firrtl.wire sym @c  {annotations = [{circt.nonlocal = [[NLA1]], class = "one"}]}
   %c = firrtl.wire {annotations = [{class = "one"}]} : !firrtl.uint<1>
   
   // Two non-local annotations are unchanged, as they have enough context in the NLA already.
@@ -84,7 +84,7 @@ firrtl.module @Annotations0() {
   %d = firrtl.wire sym @d {annotations = [{circt.nonlocal = @annos_nla0, class = "NonLocal"}]} : !firrtl.uint<1>
   
   // Subannotations should be handled correctly.
-  // CHECK: %e = firrtl.wire sym @e  {annotations = [#firrtl.subAnno<fieldID = 1, {circt.nonlocal = [[NLA3]], class = "subanno"}>]}
+  // CHECK: %e = firrtl.wire sym @e  {annotations = [#firrtl.subAnno<fieldID = 1, {circt.nonlocal = [[NLA2]], class = "subanno"}>]}
   %e = firrtl.wire {annotations = [#firrtl.subAnno<fieldID = 1, {class = "subanno"}>]} : !firrtl.bundle<a: uint<1>>
 }
 // CHECK-NOT: firrtl.module @Annotations1
@@ -96,8 +96,8 @@ firrtl.module @Annotations1() attributes {annotations = [{class = "one"}]} {
   %j = firrtl.wire : !firrtl.bundle<a: uint<1>>
 }
 firrtl.module @Annotations() {
-  // CHECK: firrtl.instance annotations0 sym @annotations0 {annotations = [{circt.nonlocal = @annos_nla0, class = "circt.nonlocal"}, {circt.nonlocal = [[NLA2]], class = "circt.nonlocal"}, {circt.nonlocal = [[NLA3]], class = "circt.nonlocal"}]} @Annotations0()
-  // CHECK: firrtl.instance annotations1 sym @annotations1 {annotations = [{circt.nonlocal = @annos_nla1, class = "circt.nonlocal"}, {circt.nonlocal = [[NLA0]], class = "circt.nonlocal"}, {circt.nonlocal = [[NLA1]], class = "circt.nonlocal"}]} @Annotations0()
+  // CHECK: firrtl.instance annotations0 sym @annotations0 {annotations = [{circt.nonlocal = @annos_nla0, class = "circt.nonlocal"}, {circt.nonlocal = [[NLA1]], class = "circt.nonlocal"}, {circt.nonlocal = [[NLA2]], class = "circt.nonlocal"}]} @Annotations0()
+  // CHECK: firrtl.instance annotations1 sym @annotations1 {annotations = [{circt.nonlocal = @annos_nla1, class = "circt.nonlocal"}, {circt.nonlocal = [[NLA0]], class = "circt.nonlocal"}, {circt.nonlocal = [[NLA0]], class = "circt.nonlocal"}]} @Annotations0()
   firrtl.instance annotations0 sym @annotations0 {annotations = [{circt.nonlocal = @annos_nla0, class = "circt.nonlocal"}]} @Annotations0()
   firrtl.instance annotations1 sym @annotations1 {annotations = [{circt.nonlocal = @annos_nla1, class = "circt.nonlocal"}]} @Annotations1()
 }
@@ -348,7 +348,7 @@ firrtl.module @Flip(out %io: !firrtl.bundle<foo: bundle<foo flip: uint<1>, fuzz:
 
 
 // Don't attach empty annotations onto ops without annotations.
-// CHECK-LABEL: 
+// CHECK-LABEL: @NoEmptyAnnos0()
 firrtl.module @NoEmptyAnnos0() {
   // CHECK: %w = firrtl.wire  : !firrtl.bundle<a: uint<1>>
   // CHECK: %0 = firrtl.subfield %w(0) : (!firrtl.bundle<a: uint<1>>) -> !firrtl.uint<1>

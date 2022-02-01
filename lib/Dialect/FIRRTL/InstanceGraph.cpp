@@ -12,18 +12,24 @@
 using namespace circt;
 using namespace firrtl;
 
+static Attribute getName(Operation *op) { return {}; }
+
 void InstanceRecord::erase() {
+  // Update the prev node to point to the next node.
   if (prevUse)
     prevUse->nextUse = nextUse;
+  else
+    target->firstUse = nextUse;
+  // Update the next node to point to the prev node.
   if (nextUse)
     nextUse->prevUse = prevUse;
-  // Erase this module from the parent list.
   getParent()->instances.erase(this);
 }
 
 InstanceRecord *InstanceGraphNode::recordInstance(InstanceOp instance,
                                                   InstanceGraphNode *target) {
   auto instanceRecord = new InstanceRecord(this, instance, target);
+  target->recordUse(instanceRecord);
   instances.push_back(instanceRecord);
   return instanceRecord;
 }
@@ -52,13 +58,11 @@ InstanceGraph::InstanceGraph(Operation *operation) {
       if ((operation = dyn_cast<CircuitOp>(&op)))
         break;
 
-  // llvm::errs() << "building instance graph\n";
   auto circuit = cast<CircuitOp>(operation);
   auto topModuleName = circuit.nameAttr();
 
   for (auto &op : *circuit.getBody()) {
     if (auto extModule = dyn_cast<FExtModuleOp>(op)) {
-      // llvm::errs() << "adding ext module";
       auto name = extModule.getNameAttr();
       auto currentNode = getOrAddNode(name);
       currentNode->module = extModule;
@@ -75,25 +79,19 @@ InstanceGraph::InstanceGraph(Operation *operation) {
       module.body().walk([&](InstanceOp instanceOp) {
         // Add an edge to indicate that this module instantiates the target.
         auto *targetNode = getOrAddNode(instanceOp.moduleNameAttr().getAttr());
-        auto *instanceRecord =
-            currentNode->recordInstance(instanceOp, targetNode);
-        targetNode->recordUse(instanceRecord);
+        addInstance(currentNode, instanceOp, targetNode);
       });
     }
   }
-}
-
-InstanceGraph::~InstanceGraph() {
-  while(!nodes.empty())
-    nodes.pop_back();
 }
 
 void InstanceGraph::erase(InstanceGraphNode *node) {
   assert(node->noUses() &&
          "all instances of this module must have been erased.");
   // Erase all instances inside this module.
-  while (!node->noUses())
-    (*node->begin())->erase();
+  for (auto *instance : llvm::make_early_inc_range(*node))
+    instance->erase();
+  nodeMap.erase(cast<FModuleLike>(node->getModule()).moduleNameAttr());
   nodes.erase(node);
 }
 
@@ -161,47 +159,11 @@ bool InstanceGraph::isAncestor(FModuleLike child, FModuleOp parent) {
   return false;
 }
 
-InstanceRecord *InstanceGraph::recordInstance(InstanceGraphNode *parent,
-                                              InstanceOp instance,
-                                              InstanceGraphNode *target) {
-  auto *instanceRecord = parent->recordInstance(instance, target);
-  target->recordUse(instanceRecord);
-  return instanceRecord;
+InstanceRecord *InstanceGraph::addInstance(InstanceGraphNode *parent,
+                                           InstanceOp instance,
+                                           InstanceGraphNode *target) {
+  return parent->recordInstance(instance, target);
 }
-
-// void InstanceGraph::deleteInstance(InstanceRecord *instance) {
-//   llvm::errs() << "deleting instrecord: " << instance << "\n";
-//   for (auto *use : instance->target->moduleUses) {
-//     llvm::errs() << "   use: " << use << "\n";
-//   }
-//   llvm::erase_value(instance->target->moduleUses, instance);
-//   for (auto *use : instance->target->moduleUses) {
-//     llvm::errs() << "   use: " << use << "\n";
-//   }
-//   llvm::erase_if(instance->parent->moduleInstances,
-//                  [&](const auto &record) { return &record == instance; });
-// }
-
-// void InstanceGraph::deleteModule(InstanceGraphNode *node) {
-//   // Since we are deleting all instance ops in this module, we have to remove
-//   // each instance from the target module's use list.
-//   llvm::for_each(node->moduleInstances, [](const auto &instanceRecord) {
-//     llvm::erase_value(instanceRecord.target->moduleUses, &instanceRecord);
-//   });
-//   // Double check that we have deleted all instances of this module already.
-//   assert(node->uses().empty() && "cannot delete a module that still has
-//   uses.");
-//   // Erase the node from the graph.
-//   auto it =
-//   nodeMap.find(cast<FModuleLike>(node->getModule()).moduleNameAttr());
-//   assert(it != nodeMap.end() && "module not in the instance graph");
-//   auto index = it->second;
-//   nodes.erase(nodes.begin() + index);
-//   nodeMap.erase(it);
-//   for (auto &pair : nodeMap)
-//     if (pair.second > index)
-//       --pair.second;
-// }
 
 ArrayRef<InstancePath> InstancePathCache::getAbsolutePaths(Operation *op) {
   assert((isa<FModuleOp, FExtModuleOp>(op))); // extra parens makes parser smile
