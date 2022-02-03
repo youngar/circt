@@ -23,7 +23,7 @@ if (TARGET EsiCosimDpiServer)
   set(ESI_COSIM_PATH ${ESI_COSIM_LIB_DIR}/libEsiCosimDpiServer.so)
 endif()
 
-set(CIRCT_INTEGRATION_TIMEOUT 60) # Set a 60s timeout on individual tests.
+#set(CIRCT_INTEGRATION_TIMEOUT 300) # Set a 60s timeout on individual tests.
 configure_lit_site_cfg(
   ${CMAKE_CURRENT_SOURCE_DIR}/lit.site.cfg.py.in
   ${CMAKE_CURRENT_BINARY_DIR}/lit.site.cfg.py
@@ -40,3 +40,5 @@ set_target_properties(check-circt-integration PROPERTIES FOLDER "IntegrationTest
 add_lit_testsuites(CIRCT_INTEGRATION ${CMAKE_CURRENT_SOURCE_DIR}
   DEPENDS ${CIRCT_INTEGRATION_TEST_DEPS}
 )
+
+add_subdirectory(Dialect)

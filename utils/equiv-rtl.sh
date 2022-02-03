@@ -18,24 +18,54 @@ else
     mdir=.
 fi
 
-echo "Comparing $1 and $2 with $3 Missing Dir $mdir"
-yosys -q -p "
+echo "==== First One ===="
+/usr/bin/time yosys -q -p "
  read_verilog $1
- hierarchy -libdir $mdir
  rename $3 top1
  proc
  memory
  flatten top1
+ hierarchy -libdir $mdir -top top1
  read_verilog $2
- hierarchy -libdir $mdir 
  rename $3 top2
  proc
  memory
  flatten top2
- clean -purge
- opt -purge
+
  equiv_make top1 top2 equiv
  hierarchy -top equiv
+ clean -purge
+ opt -purge
+ equiv_simple -short
+ equiv_induct
+ equiv_status -assert
+"
+if [ $? -eq 0 ]
+then
+  echo "PASS,INDUCT"
+  #exit 0
+fi
+
+
+echo "==== Second One ===="
+echo "Comparing $1 and $2 with $3 Missing Dir $mdir"
+/usr/bin/time yosys -q -p "
+ read_verilog $1
+ rename $3 top1
+ proc
+ memory
+ flatten top1
+ hierarchy -libdir $mdir -top top1
+ read_verilog $2
+ rename $3 top2
+ proc
+ memory
+ flatten top2
+
+ equiv_make top1 top2 equiv
+ hierarchy -top equiv
+ clean -purge
+ opt -purge
  equiv_simple -undef
  equiv_induct -undef
  equiv_status -assert
@@ -43,20 +73,20 @@ yosys -q -p "
 if [ $? -eq 0 ]
 then
   echo "PASS,INDUCT"
-  exit 0
+  #exit 0
 fi
 
 #repeat with sat
+echo "==== Third One ===="
 echo "Trying SAT $1 and $2 with $3 Missing Dir $mdir"
-yosys -q -p "
+/usr/bin/time yosys -q -p "
  read_verilog $1
- hierarchy -libdir $mdir
  rename $3 top1
  proc
  memory
  flatten top1
+ hierarchy -top top1
  read_verilog $2
- hierarchy -libdir $mdir 
  rename $3 top2
  proc
  memory
@@ -70,9 +100,8 @@ yosys -q -p "
 if [ $? -eq 0 ]
 then
   echo "PASS,SAT"
-  exit 0
+  #exit 0
 fi
 
 echo "FAIL"
 exit 1
-
