@@ -18,7 +18,9 @@
 #include "circt/Dialect/FIRRTL/Passes.h"
 #include "circt/Dialect/HW/HWAttributes.h"
 #include "circt/Support/LLVM.h"
+#include "mlir/IR/BlockAndValueMapping.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
+#include "mlir/Support/LogicalResult.h"
 #include "llvm/ADT/DepthFirstIterator.h"
 #include "llvm/ADT/PostOrderIterator.h"
 #include "llvm/ADT/StringMap.h"
@@ -118,9 +120,7 @@ private:
     update(type.getAsOpaquePointer());
   }
 
-  void update(BlockArgument arg) {
-    indexes[arg] = currentIndex++;
-  }
+  void update(BlockArgument arg) { indexes[arg] = currentIndex++; }
 
   void update(OpResult result) {
     indexes[result] = currentIndex++;
@@ -198,6 +198,270 @@ private:
   // This is the actual running hash calculation. This is a stateful element
   // that should be reinitialized after each hash is produced.
   llvm::SHA256 sha;
+};
+
+//===----------------------------------------------------------------------===//
+// Equivalence
+//===----------------------------------------------------------------------===//
+
+/// This class is for reporting differences between two modules which should
+/// have been deduplicated.
+struct Equivalence {
+  Equivalence(MLIRContext *context, InstanceGraph &instanceGraph)
+      : instanceGraph(instanceGraph) {
+    portTypesAttr = StringAttr::get(context, "portTypes");
+    nonessentialAttributes.insert(StringAttr::get(context, "annotations"));
+    nonessentialAttributes.insert(StringAttr::get(context, "name"));
+    nonessentialAttributes.insert(StringAttr::get(context, "portAnnotations"));
+    nonessentialAttributes.insert(StringAttr::get(context, "portNames"));
+    nonessentialAttributes.insert(StringAttr::get(context, "portTypes"));
+    nonessentialAttributes.insert(StringAttr::get(context, "portSyms"));
+    nonessentialAttributes.insert(StringAttr::get(context, "sym_name"));
+    nonessentialAttributes.insert(StringAttr::get(context, "inner_sym"));
+  }
+  InFlightDiagnostic printError(Operation *a, Operation *b,
+                                const Twine &message, bool printOps = true) {
+    auto diag = emitError(a->getLoc(), message + "\n");
+    for (auto operand : a->getOperands()) {
+      diag << "operand: " << getFieldName(getFieldRefFromValue(operand))
+           << "\n";
+    }
+    if (printOps)
+      diag << a;
+    auto &note = diag.attachNote(b->getLoc()) << "second operation here\n";
+    for (auto operand : b->getOperands()) {
+      note << "operand: " << getFieldName(getFieldRefFromValue(operand))
+           << "\n";
+    }
+    if (printOps)
+      note << b;
+    return diag;
+  }
+
+  LogicalResult checkDict(Operation *a, DictionaryAttr aDict, Operation *b,
+                          DictionaryAttr bDict) {
+    return success();
+  }
+
+  LogicalResult check(const Twine &message, Operation *a, BundleType aType,
+                      Operation *b, BundleType bType) {
+    if (aType.getNumElements() != bType.getNumElements())
+      return printError(
+          a, b, message + " bundle type has different number of elements");
+    for (auto elementPair :
+         llvm::zip(aType.getElements(), bType.getElements())) {
+      auto aElement = std::get<0>(elementPair);
+      auto bElement = std::get<1>(elementPair);
+      if (aElement.isFlip != bElement.isFlip)
+        return printError(a, b, message + " flip of element does not match.");
+      if (failed(check(message, a, aElement.type, b, bElement.type)))
+        return failure();
+    }
+    return success();
+  }
+
+  LogicalResult check(const Twine &message, Operation *a, Type aType,
+                      Operation *b, Type bType) {
+    if (auto aBundle = aType.dyn_cast<BundleType>()) {
+      auto bBundle = bType.dyn_cast<BundleType>();
+      if (!bType)
+        return printError(a, b, message + " types don't match");
+      return check(message, a, aBundle, b, bBundle);
+    }
+    if (aType != bType) {
+      auto diag = printError(a, b, message + " types don't match");
+      diag.attachNote() << "first type is: " << aType << " "
+                        << (uint64_t)aType.getAsOpaquePointer();
+      diag.attachNote() << "second type is: " << bType << " "
+                        << (uint64_t)bType.getAsOpaquePointer();
+      return failure();
+    }
+    return success();
+  }
+
+  LogicalResult check(BlockAndValueMapping &map, Operation *a, Block &aBlock,
+                      Operation *b, Block &bBlock) {
+
+    // Block Arguments.
+    if (aBlock.getNumArguments() != bBlock.getNumArguments())
+      return printError(a, b, "blocks have a different number of arguments");
+
+    // Block argument types.
+    for (auto argPair :
+         llvm::zip(aBlock.getArguments(), bBlock.getArguments())) {
+      auto &aArg = std::get<0>(argPair);
+      auto &bArg = std::get<1>(argPair);
+      if (failed(check("block argument", a, aArg.getType(), b, bArg.getType())))
+        return failure();
+      map.map(aArg, bArg);
+    }
+
+    // Block operations.
+    auto aIt = aBlock.begin();
+    auto aEnd = aBlock.end();
+    auto bIt = bBlock.begin();
+    auto bEnd = bBlock.end();
+    while (aIt != aEnd && bIt != bEnd)
+      if (failed(check(map, &*aIt++, &*bIt++)))
+        return failure();
+    if (aIt != aEnd) {
+      return printError(a, b, "a extra op");
+    } else if (bIt != bEnd) {
+      return printError(a, b, "b extra op");
+    }
+
+    return success();
+  }
+
+  LogicalResult check(BlockAndValueMapping &map, Operation *a, Region &aRegion,
+                      Operation *b, Region &bRegion) {
+    auto aIt = aRegion.begin();
+    auto aEnd = aRegion.end();
+    auto bIt = bRegion.begin();
+    auto bEnd = bRegion.end();
+
+    // Region blocks.
+    while (aIt != aEnd && bIt != bEnd)
+      if (failed(check(map, a, *aIt++, b, *bIt++)))
+        return failure();
+    if (aIt != aEnd) {
+      return printError(a, b, "a extra block");
+    } else if (bIt != bEnd) {
+      return printError(a, b, "b extra block");
+    }
+    return success();
+  }
+
+  LogicalResult check(BlockAndValueMapping &map, Operation *a,
+                      DictionaryAttr aDict, Operation *b,
+                      DictionaryAttr bDict) {
+    auto aIt = aDict.begin();
+    auto aEnd = aDict.end();
+    auto bIt = bDict.begin();
+    auto bEnd = bDict.end();
+
+    // Region blocks.
+    while (aIt != aEnd && bIt != bEnd) {
+      auto aAttr = *aIt++;
+      auto bAttr = *bIt++;
+      if (aAttr.getName() != bAttr.getName()) {
+        auto diag = printError(a, b, "operations have different attributes");
+        diag << "first:  " << aAttr.getName() << " " << aAttr.getValue()
+             << "\n";
+        diag << "second: " << bAttr.getName() << " " << bAttr.getValue();
+        return diag;
+      }
+
+      if (nonessentialAttributes.contains(aAttr.getName()))
+        continue;
+
+      if (aAttr.getValue() != bAttr.getValue()) {
+        auto diag = printError(a, b, "operations have different attributes");
+        diag << "first:  " << aAttr.getName() << " " << aAttr.getValue()
+             << "\n";
+        diag << "second: " << bAttr.getName() << " " << bAttr.getValue();
+        return diag;
+      }
+    }
+    if (aIt != aEnd) {
+      return printError(a, b, "a extra block");
+    } else if (bIt != bEnd) {
+      return printError(a, b, "b extra block");
+    }
+    return success();
+  }
+
+  LogicalResult check(InstanceOp a, InstanceOp b) {
+    auto aModule = a.moduleNameAttr().getAttr();
+    auto bModule = b.moduleNameAttr().getAttr();
+    // If the modules instantiate are different we will want to know why the sub
+    // module did not dedupliate. This code recursively checks the child module.
+    if (aModule != bModule) {
+      {
+        auto diag =
+            printError(a, b, "instances target different modules", false);
+        diag << "first module is " << aModule;
+        diag << ", second module is " << bModule << "\n";
+      }
+      check(instanceGraph.getReferencedModule(a),
+            instanceGraph.getReferencedModule(b));
+      return failure();
+    }
+    return success();
+  }
+
+  LogicalResult check(BlockAndValueMapping &map, Operation *a, Operation *b) {
+    // Operation name.
+    if (a->getName() != b->getName())
+      return printError(a, b, "operations are different");
+
+    if (auto aInst = dyn_cast<InstanceOp>(a)) {
+      auto bInst = cast<InstanceOp>(b);
+      if (failed(check(aInst, bInst)))
+        return failure();
+    }
+
+    // Operation results.
+    if (a->getNumResults() != b->getNumResults())
+      return printError(a, b, "operations have different number of results");
+    for (auto resultPair : llvm::zip(a->getResults(), b->getResults())) {
+      auto &aValue = std::get<0>(resultPair);
+      auto &bValue = std::get<1>(resultPair);
+      if (failed(
+              check("result type", a, aValue.getType(), b, bValue.getType())))
+        return failure();
+      map.map(aValue, bValue);
+    }
+
+    // Operations operands.
+    if (a->getNumOperands() != b->getNumOperands())
+      return printError(a, b, "operations have different number of operands");
+    for (auto operandPair : llvm::zip(a->getOperands(), b->getOperands())) {
+      auto &aValue = std::get<0>(operandPair);
+      auto &bValue = std::get<1>(operandPair);
+      if (failed(
+              check("operand types", a, aValue.getType(), b, bValue.getType())))
+        return failure();
+      if (bValue != map.lookup(aValue)) {
+        auto diag = printError(a, b, "operations use different operands");
+        diag << "\nfirst operand is:\n"
+             << getFieldName(getFieldRefFromValue(aValue)) << "\n "
+             << "second operand is:\n"
+             << getFieldName(getFieldRefFromValue(bValue))
+             << "\n but should have been\n"
+             << getFieldName(getFieldRefFromValue(map.lookup(aValue))) << "\n";
+        return diag;
+      }
+    }
+
+    // Operation attributes.
+    if (failed(
+            check(map, a, a->getAttrDictionary(), b, b->getAttrDictionary())))
+      return failure();
+
+    // Operation regions.
+    if (a->getNumRegions() != b->getNumRegions())
+      return printError(a, b, "operations have different number of regions");
+    for (auto regionPair : llvm::zip(a->getRegions(), b->getRegions())) {
+      auto &aRegion = std::get<0>(regionPair);
+      auto &bRegion = std::get<1>(regionPair);
+      if (failed(check(map, a, aRegion, b, bRegion)))
+        return failure();
+    }
+    return success();
+  }
+
+  void check(Operation *a, Operation *b) {
+    BlockAndValueMapping map;
+    check(map, a, b);
+  }
+
+  // This is a cached "portTypes" string attr.
+  StringAttr portTypesAttr;
+  // This is a set of every attribute we should ignore.
+  DenseSet<Attribute> nonessentialAttributes;
+
+  InstanceGraph &instanceGraph;
 };
 
 //===----------------------------------------------------------------------===//
@@ -945,6 +1209,7 @@ class DedupPass : public DedupBase<DedupPass> {
     NLAMap nlaMap = createNLAMap(circuit);
     Deduper deduper(instanceGraph, symbolTable, nlaMap, circuit);
     StructuralHasher hasher(&getContext());
+    Equivalence equiv(context, instanceGraph);
     auto anythingChanged = false;
 
     // Modules annotated with this should not be considered for deduplication.
@@ -976,6 +1241,8 @@ class DedupPass : public DedupBase<DedupPass> {
       if (it != moduleHashes.end()) {
         auto original = cast<FModuleLike>(it->second);
         // Record the group ID of the other module.
+        llvm::errs() << original.moduleNameAttr() << " <- "
+                     << module.moduleNameAttr() << "\n";
         groupMap[module.moduleNameAttr()] = groupMap[original.moduleNameAttr()];
         deduper.dedup(original, module);
         erasedModules++;
@@ -998,11 +1265,13 @@ class DedupPass : public DedupBase<DedupPass> {
 
     // Get the group number from a module path.
     auto failed = false;
-    auto getGroup = [&](Attribute path) -> unsigned {
+    auto parseModule = [&](Attribute path) -> StringAttr {
       // Each module is listed as a target "~Circuit|Module" which we have to
       // parse.
       auto [_, rhs] = path.cast<StringAttr>().getValue().split('|');
-      auto module = StringAttr::get(context, rhs);
+      return StringAttr::get(context, rhs);
+    };
+    auto getGroup = [&](StringAttr module) -> unsigned {
       auto it = groupMap.find(module);
       if (it == groupMap.end()) {
         auto diag =
@@ -1031,17 +1300,22 @@ class DedupPass : public DedupBase<DedupPass> {
       if (modules.size() == 0)
         return true;
       // Get the first element.
-      auto first = getGroup(modules[0]);
+      auto firstModule = parseModule(modules[0]);
+      auto first = getGroup(firstModule);
       if (failed)
         return false;
       // Verify that the remaining elements are all the same as the first.
       for (auto attr : modules.getValue().drop_front()) {
-        auto next = getGroup(attr);
+        auto nextModule = parseModule(attr);
+        auto next = getGroup(nextModule);
         if (failed)
           return false;
         if (first != next) {
-          circuit->emitError("module ")
+          emitError(circuit->getLoc(), "module ")
               << attr << " not deduplicated with " << modules[0];
+          auto a = instanceGraph.lookup(firstModule)->getModule();
+          auto b = instanceGraph.lookup(nextModule)->getModule();
+          equiv.check(a, b);
           failed = true;
           return false;
         }

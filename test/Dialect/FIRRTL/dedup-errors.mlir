@@ -31,3 +31,4 @@ firrtl.circuit "MustDedup" attributes {annotations = [{
     firrtl.instance test1 @Test1(in i : !firrtl.uint<8>)
   }
 }
+// expected-error@below {{asdas}}

@@ -1721,6 +1721,50 @@ void FIRStmtParser::emitConnect(ImplicitLocOpBuilder &builder, Value dst,
   }
 }
 
+void FIRStmtParser::emitPartialConnect(ImplicitLocOpBuilder &builder, Value dst,
+                                Value src) {
+  auto type = dst.getType().cast<FIRRTLType>();
+  if (!type.containsAnalog()) {
+    builder.create<ConnectOp>(dst, src);
+  } else if (type.isa<AnalogType>()) {
+    builder.create<AttachOp>(SmallVector{dst, src});
+  } else if (auto bundle = type.dyn_cast<BundleType>()) {
+    for (size_t i = 0, e = bundle.getNumElements(); i < e; ++i) {
+      auto &dstField = moduleContext.getCachedSubaccess(dst, i);
+      if (!dstField) {
+        OpBuilder::InsertionGuard guard(builder);
+        builder.setInsertionPointAfterValue(dst);
+        dstField = builder.create<SubfieldOp>(dst, i);
+      }
+      auto &srcField = moduleContext.getCachedSubaccess(src, i);
+      if (!srcField) {
+        OpBuilder::InsertionGuard guard(builder);
+        builder.setInsertionPointAfterValue(src);
+        srcField = builder.create<SubfieldOp>(src, i);
+      }
+      emitConnect(builder, dstField, srcField);
+    }
+  } else if (auto vector = type.dyn_cast<FVectorType>()) {
+    for (size_t i = 0, e = vector.getNumElements(); i != e; ++i) {
+      auto &dstField = moduleContext.getCachedSubaccess(dst, i);
+      if (!dstField) {
+        OpBuilder::InsertionGuard guard(builder);
+        builder.setInsertionPointAfterValue(dst);
+        dstField = builder.create<SubindexOp>(dst, i);
+      }
+      auto &srcField = moduleContext.getCachedSubaccess(src, i);
+      if (!srcField) {
+        OpBuilder::InsertionGuard guard(builder);
+        builder.setInsertionPointAfterValue(src);
+        srcField = builder.create<SubindexOp>(src, i);
+      }
+      emitConnect(builder, dstField, srcField);
+    }
+  } else {
+    llvm_unreachable("unknown type");
+  }
+}
+
 //===-------------------------------
 // FIRStmtParser Expression Parsing.
 

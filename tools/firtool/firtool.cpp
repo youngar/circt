@@ -166,6 +166,11 @@ static cl::opt<bool>
                    cl::init(false));
 
 static cl::opt<bool>
+    earlyExpandConnects("early-expand-connects",
+                   cl::desc("Enables connect expansion in the parser"),
+                   cl::init(false));
+
+static cl::opt<bool>
     dedup("dedup", cl::desc("deduplicate structurally identical modules"),
           cl::init(false));
 
@@ -386,6 +391,7 @@ processBuffer(MLIRContext &context, TimingScope &ts, llvm::SourceMgr &sourceMgr,
     options.ignoreInfoLocators = ignoreFIRLocations;
     options.rawAnnotations = newAnno;
     options.numAnnotationFiles = numAnnotationFiles;
+    options.expandConnects = earlyExpandConnects;
     options.disableNamePreservation = disableNamePreservation;
     module = importFIRFile(sourceMgr, &context, options);
   } else {
@@ -432,8 +438,11 @@ processBuffer(MLIRContext &context, TimingScope &ts, llvm::SourceMgr &sourceMgr,
   if (inferResets)
     pm.nest<firrtl::CircuitOp>().addPass(firrtl::createInferResetsPass());
 
-  if (!disableOptimization && dedup)
+  if (!disableOptimization && dedup) {
+    //pm.addNestedPass<firrtl::CircuitOp>(firrtl::createLowerFIRRTLTypesPass(
+    //    replSeqMem, preserveAggregate, preservePublicTypes));
     pm.nest<firrtl::CircuitOp>().addPass(firrtl::createDedupPass());
+  }
 
   if (wireDFT)
     pm.nest<firrtl::CircuitOp>().addPass(firrtl::createWireDFTPass());

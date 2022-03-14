@@ -38,6 +38,9 @@ struct FIRParserOptions {
   /// This, along with numOMIRFiles provides structure to the buffers in the
   /// source manager.
   unsigned numAnnotationFiles;
+  /// If this is set to true, the parser will immediately recursively expand any
+  /// bulk connects.
+  bool expandConnects = false;
   /// If true, then the parser will NOT generate debug taps for "named" wires
   /// and nodes.  A "named" wire/node is one whose name does NOT beging with a
   /// leading "_".  If false, debug-ability is greatly increased.  If true, much
