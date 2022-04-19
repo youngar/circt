@@ -6,13 +6,15 @@
 //===----------------------------------------------------------------------===//
 //
 // This pass removes invalid values from the circuit.  This is a combination of
-// the Scala FIRRTL Compiler's RemoveRests pass and RemoveValidIf.  This is done
-// to remove two "interpretations" of invalid.  Namely: (1) registers that are
-// initialized to an invalid value (module scoped and looking through wires and
-// connects only) are converted to an unitialized register and (2) invalid
+// the Scala FIRRTL Compiler's RemoveResets pass and RemoveValidIf.  This is
+// done to remove two "interpretations" of invalid.  Namely: (1) registers that
+// are initialized to an invalid value (module scoped and looking through wires
+// and connects only) are converted to an unitialized register and (2) invalid
 // values are converted to zero (after rule 1 is applied).
 //
 //===----------------------------------------------------------------------===//
+
+
 
 #include "PassDetails.h"
 #include "circt/Dialect/FIRRTL/FIRRTLUtils.h"

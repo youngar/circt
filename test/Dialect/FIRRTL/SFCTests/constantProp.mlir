@@ -174,8 +174,8 @@ firrtl.circuit "padZeroReg"   {
   // CHECK-LABEL: firrtl.module @padZeroReg
   firrtl.module @padZeroReg(in %clock: !firrtl.clock, out %z: !firrtl.uint<16>) {
       %r = firrtl.reg %clock  :  !firrtl.uint<8>
-      %c0_ui1 = firrtl.constant 0 : !firrtl.uint<1>
-      %0 = firrtl.or %r, %c0_ui1 : (!firrtl.uint<8>, !firrtl.uint<1>) -> !firrtl.uint<8>
+      %c0_ui8 = firrtl.constant 0 : !firrtl.uint<8>
+      %0 = firrtl.or %r, %c0_ui8 : (!firrtl.uint<8>, !firrtl.uint<8>) -> !firrtl.uint<8>
       firrtl.connect %r, %0 : !firrtl.uint<8>, !firrtl.uint<8>
       %c171_ui8 = firrtl.constant 171 : !firrtl.uint<8>
       %n = firrtl.node %c171_ui8  : !firrtl.uint<8>

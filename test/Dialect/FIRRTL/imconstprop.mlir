@@ -70,8 +70,8 @@ firrtl.circuit "Test" {
     firrtl.connect %extWire, %c0_ui1 : !firrtl.uint<2>, !firrtl.uint<1>
 
     // Connects of invalid values shouldn't hurt.
-    %invalid = firrtl.invalidvalue : !firrtl.uint<2>
-    firrtl.connect %extWire, %invalid : !firrtl.uint<2>, !firrtl.uint<2>
+    //%invalid = firrtl.invalidvalue : !firrtl.uint<2>
+    //firrtl.connect %extWire, %invalid : !firrtl.uint<2>, !firrtl.uint<2>
 
     // CHECK: firrtl.connect %result5, %c0_ui2
     firrtl.connect %result5, %extWire: !firrtl.uint<2>, !firrtl.uint<2>
@@ -91,9 +91,9 @@ firrtl.circuit "Test" {
     // CHECK: firrtl.connect %result7, %c0_ui4
     firrtl.connect %result7, %reg: !firrtl.uint<4>, !firrtl.uint<4>
 
-    // Wire without connects to it should turn into 'invalid'.
+    // Wire without connects to it is illegal, it should remain an unknown value.
     %unconnectedWire = firrtl.wire : !firrtl.uint<2>
-    // CHECK: firrtl.connect %result8, %invalid_ui2
+    // CHECK: firrtl.connect %result8, %unconnectedWire
     firrtl.connect %result8, %unconnectedWire: !firrtl.uint<4>, !firrtl.uint<2>
 
     %c1_ui2 = firrtl.constant 1 : !firrtl.uint<2>

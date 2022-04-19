@@ -10,6 +10,7 @@
 #include "circt/Dialect/FIRRTL/FIRRTLAnnotations.h"
 #include "circt/Dialect/FIRRTL/FIRRTLAttributes.h"
 #include "circt/Dialect/FIRRTL/FIRRTLInstanceGraph.h"
+#include "circt/Dialect/FIRRTL/FIRRTLUtils.h"
 #include "circt/Dialect/FIRRTL/Passes.h"
 #include "circt/Support/APInt.h"
 #include "mlir/IR/Threading.h"
@@ -39,7 +40,7 @@ static bool isDeletableWireOrReg(Operation *op) {
 //===----------------------------------------------------------------------===//
 
 namespace {
-/// This class represents a single lattice value. A lattive value corresponds to
+/// This class represents a single lattice value. A lattice value corresponds to
 /// the various different states that a value in the SCCP dataflow analysis can
 /// take. See 'Kind' below for more details on the different states a value can
 /// take.
@@ -49,14 +50,16 @@ class LatticeValue {
     /// anything, it hasn't been processed by IMConstProp.
     Unknown,
 
-    /// An FIRRTL 'invalidvalue' value, carrying the result of an
-    /// InvalidValueOp.  Wires and other stateful values start out in this
-    /// state.
-    ///
-    /// This is named "InvalidValue" instead of "Invalid" to avoid confusion
-    /// about whether the lattice value is corrupted.  "InvalidValue" is a
-    /// valid lattice state, and a can move up to Constant or Overdefined.
-    InvalidValue,
+    /// The value is the initial state of a register. This tracks the register
+    /// which this value originates from. This is the weakest state and can be
+    /// upgraded with any of the other states.
+    Undefined,
+
+    /// This represents the combined dataflow of a constant and the intial state
+    /// of a register. This state tracks the originating register as well as the
+    /// constant value. If this state is merged with a different constant or a
+    /// different register, it becomes Overdefined.
+    UndefinedOrConst,
 
     /// A value that is known to be a constant. This state may be changed to
     /// overdefined.
@@ -67,16 +70,40 @@ class LatticeValue {
     Overdefined
   };
 
+  /// For most lattice values, we only need to store a single attribute or
+  /// operation pointer.  For UndefOrConst we need to store both, so we malloc
+  /// the memory to hold the information.
+  struct UndefOrConstData {
+    UndefOrConstData(Operation *operation, Attribute attribute)
+        : operation(operation), attribute(attribute) {}
+    bool operator==(const UndefOrConstData &other) {
+      return operation == other.operation && attribute == other.attribute;
+    }
+    Operation *operation;
+    Attribute attribute;
+  };
+
+  /// Get
+  void *getPointer() const { return valueAndTag.getPointer(); }
+
+
+  UndefOrConstData *getUndefOrConstData() const {
+    assert(getKind() == Kind::UndefinedOrConst);
+    return reinterpret_cast<UndefOrConstData *>(getPointer());
+  }
+
 public:
+
+  // TODO: should this be private? Using it right now for debugging.
+  Kind getKind() const { return valueAndTag.getInt(); }
+
   /// Initialize a lattice value with "Unknown".
   /*implicit*/ LatticeValue() : valueAndTag(nullptr, Kind::Unknown) {}
   /// Initialize a lattice value with a constant.
   /*implicit*/ LatticeValue(IntegerAttr attr)
-      : valueAndTag(attr, Kind::Constant) {}
-
-  /// Initialize a lattice value with an InvalidValue constant.
-  /*implicit*/ LatticeValue(InvalidValueAttr attr)
-      : valueAndTag(attr, Kind::InvalidValue) {}
+      : valueAndTag(const_cast<void *>(attr.getAsOpaquePointer()),
+                    Kind::Constant) {}
+  /*implicit*/ LatticeValue(Operation *op) : valueAndTag(op, Kind::Undefined) {}
 
   static LatticeValue getOverdefined() {
     LatticeValue result;
@@ -85,60 +112,95 @@ public:
   }
 
   bool isUnknown() const { return valueAndTag.getInt() == Kind::Unknown; }
-  bool isInvalidValue() const {
-    return valueAndTag.getInt() == Kind::InvalidValue;
-  }
+  bool isUndefined() const { return valueAndTag.getInt() == Kind::Undefined; }
   bool isConstant() const { return valueAndTag.getInt() == Kind::Constant; }
+  bool isUndefinedOrConst() const {
+    return valueAndTag.getInt() == Kind::UndefinedOrConst;
+  }
   bool isOverdefined() const {
     return valueAndTag.getInt() == Kind::Overdefined;
   }
 
   /// Mark the lattice value as overdefined.
   void markOverdefined() {
-    valueAndTag.setPointerAndInt(nullptr, Kind::Overdefined);
-  }
-
-  void markInvalidValue(InvalidValueAttr value) {
-    valueAndTag.setPointerAndInt(value, Kind::InvalidValue);
+    valueAndTag.setPointerAndInt({}, Kind::Overdefined);
   }
 
   /// Mark the lattice value as constant.
   void markConstant(IntegerAttr value) {
-    valueAndTag.setPointerAndInt(value, Kind::Constant);
+    valueAndTag.setPointerAndInt(const_cast<void *>(value.getAsOpaquePointer()),
+                                 Kind::Constant);
   }
-
-  /// If this lattice is constant or invalid value, return the attribute.
-  /// Returns nullptr otherwise.
-  Attribute getValue() const { return valueAndTag.getPointer(); }
+  void markUndefinedOrConst(Operation *op, IntegerAttr value) {
+    if (isUndefinedOrConst()) {
+      getUndefOrConstData()->operation = op;
+      getUndefOrConstData()->attribute = value;
+    } else {
+      valueAndTag.setPointerAndInt(new UndefOrConstData(op, value),
+                                   Kind::UndefinedOrConst);
+    }
+  }
 
   /// If this is in the constant state, return the IntegerAttr.
   IntegerAttr getConstant() const {
-    assert(isConstant());
-    return getValue().dyn_cast_or_null<IntegerAttr>();
+    if (isConstant())
+      return Attribute::getFromOpaquePointer(valueAndTag.getPointer())
+          .cast<IntegerAttr>();
+    assert(isUndefinedOrConst() && "must be a lattice value with consts");
+    return getUndefOrConstData()->attribute.cast<IntegerAttr>();
+  }
+
+  Operation *getOperation() const {
+    if (isUndefined())
+      return reinterpret_cast<Operation *>(valueAndTag.getPointer());
+    assert(isUndefinedOrConst());
+    return getUndefOrConstData()->operation;
   }
 
   /// Merge in the value of the 'rhs' lattice into this one. Returns true if the
   /// lattice value changed.
   bool mergeIn(LatticeValue rhs) {
+    llvm::errs() << "merging in from " << getKind() << " to " << rhs.getKind()
+                 << "\n";
     // If we are already overdefined, or rhs is unknown, there is nothing to do.
     if (isOverdefined() || rhs.isUnknown())
       return false;
 
     // If we are unknown, just take the value of rhs.
     if (isUnknown()) {
+      llvm::errs() << "lhs is unknown\n";
       valueAndTag = rhs.valueAndTag;
       return true;
     }
 
-    // If the right side is InvalidValue then it won't contribute anything to
-    // our state since we're either already InvalidValue or a constant here.
-    if (rhs.isInvalidValue())
-      return false;
+    // If the initial values originate from different locations, then they
+    // can never be equal.  This is a limitation inherited from the SFC.
+    if (isUndefined() || isUndefinedOrConst()) {
+      if (rhs.isUndefined() || rhs.isUndefinedOrConst()) {
+        if (getOperation() != rhs.getOperation()) {
+          llvm::errs() << "operations don't match, going overdefined\n";
+          markOverdefined();
+          return true;
+        }
+      }
+    }
 
-    // If we are an InvalidValue, then upgrade to Constant or Overdefined.
-    if (isInvalidValue()) {
-      valueAndTag = rhs.valueAndTag;
-      return true;
+    // If we have a
+    if (isUndefinedOrConst() && rhs.isUndefinedOrConst()) {
+      if (getConstant() != rhs.getConstant()) {
+        llvm::errs() << "constant don't match, going overdefined\n";
+        markOverdefined();
+        return true;
+      }
+    }
+
+    // If we are undefined and the RHS has a constant, upgrade to UndefOrConst.
+    if (isUndefined()) {
+      if (rhs.isUndefinedOrConst() || rhs.isConstant()) {
+        llvm::errs() << "going to undef or constant\n";
+        markUndefinedOrConst(getOperation(), rhs.getConstant());
+        return true;
+      }
     }
 
     // Otherwise, if this value doesn't match rhs go straight to overdefined.
@@ -152,16 +214,21 @@ public:
   }
 
   bool operator==(const LatticeValue &other) const {
+    if (getKind() == Kind::UndefinedOrConst)
+      return other.getKind() == Kind::UndefinedOrConst &&
+             *getUndefOrConstData() == *other.getUndefOrConstData();
     return valueAndTag == other.valueAndTag;
   }
-  bool operator!=(const LatticeValue &other) const {
-    return valueAndTag != other.valueAndTag;
-  }
+  bool operator!=(const LatticeValue &other) const { return !(*this == other); }
 
 private:
+  struct ThreeFreeBits : llvm::PointerLikeTypeTraits<void *> {
+    static constexpr int NumLowBitsAvailable = 3;
+  };
+
   /// The attribute value if this is a constant and the tag for the element
   /// kind.  The attribute is always an IntegerAttr.
-  llvm::PointerIntPair<Attribute, 2, Kind> valueAndTag;
+  llvm::PointerIntPair<void *, 3, Kind, ThreeFreeBits> valueAndTag;
 };
 } // end anonymous namespace
 
@@ -183,6 +250,7 @@ struct IMConstPropPass : public IMConstPropBase<IMConstPropPass> {
   /// Mark the given value as overdefined. This means that we cannot refine a
   /// specific constant for this value.
   void markOverdefined(Value value) {
+    llvm::errs() << "markOverdefined: " << value << "\n";
     auto &entry = latticeValues[value];
     if (!entry.isOverdefined()) {
       entry.markOverdefined();
@@ -247,7 +315,7 @@ struct IMConstPropPass : public IMConstPropBase<IMConstPropPass> {
 
   /// Mark the given block as executable.
   void markBlockExecutable(Block *block);
-  void markWireOrUnresetableRegOp(Operation *wireOrReg);
+  void markRegOp(RegOp reg);
   void markRegResetOp(RegResetOp regReset);
   void markMemOp(MemOp mem);
 
@@ -259,6 +327,8 @@ struct IMConstPropPass : public IMConstPropBase<IMConstPropPass> {
   void visitConnect(ConnectOp connect);
   void visitStrictConnect(StrictConnectOp connect);
   void visitPartialConnect(PartialConnectOp connect);
+  void visitRegReset(RegResetOp regReset);
+  void visitMuxOp(MuxPrimOp mux);
   void visitOperation(Operation *op);
 
 private:
@@ -333,12 +403,9 @@ LatticeValue IMConstPropPass::getExtendedLatticeValue(Value value,
     return LatticeValue();
 
   auto result = it->second;
-  // Unknown/overdefined stay whatever they are.
-  if (result.isUnknown() || result.isOverdefined())
+  // Unknown/overdefined/undefined stay whatever they are.
+  if (!result.isConstant() && !result.isUndefinedOrConst())
     return result;
-  // InvalidValue gets wider.
-  if (result.isInvalidValue())
-    return InvalidValueAttr::get(destType);
 
   auto constant = result.getConstant();
 
@@ -369,11 +436,8 @@ void IMConstPropPass::markBlockExecutable(Block *block) {
     return; // Already executable.
 
   for (auto &op : *block) {
-
     // Handle each of the special operations in the firrtl dialect.
-    if (isa<WireOp>(op) || isa<RegOp>(op))
-      markWireOrUnresetableRegOp(&op);
-    else if (auto constant = dyn_cast<ConstantOp>(op))
+    if (auto constant = dyn_cast<ConstantOp>(op))
       markConstantOp(constant);
     else if (auto specialConstant = dyn_cast<SpecialConstantOp>(op))
       markSpecialConstantOp(specialConstant);
@@ -381,6 +445,8 @@ void IMConstPropPass::markBlockExecutable(Block *block) {
       markInvalidValueOp(invalid);
     else if (auto instance = dyn_cast<InstanceOp>(op))
       markInstanceOp(instance);
+    else if (auto reg = dyn_cast<RegOp>(op))
+      markRegOp(reg);
     else if (auto regReset = dyn_cast<RegResetOp>(op))
       markRegResetOp(regReset);
     else if (auto mem = dyn_cast<MemOp>(op))
@@ -388,36 +454,28 @@ void IMConstPropPass::markBlockExecutable(Block *block) {
   }
 }
 
-void IMConstPropPass::markWireOrUnresetableRegOp(Operation *wireOrReg) {
+void IMConstPropPass::markRegOp(RegOp reg) {
   // If the wire/reg has a non-ground type, then it is too complex for us to
   // handle, mark it as overdefined.
   // TODO: Eventually add a field-sensitive model.
-  auto resultValue = wireOrReg->getResult(0);
-  if (!resultValue.getType().cast<FIRRTLType>().getPassiveType().isGround())
-    return markOverdefined(resultValue);
+  auto type = reg.getType();
+  if (!type.isGround())
+    return markOverdefined(reg);
 
-  // Otherwise, this starts out as InvalidValue and is upgraded by connects.
-  mergeLatticeValue(resultValue, InvalidValueAttr::get(resultValue.getType()));
+  // Otherwise, this starts out as Undefined and is upgraded by connects.
+  mergeLatticeValue(reg, LatticeValue(reg));
 }
 
 void IMConstPropPass::markRegResetOp(RegResetOp regReset) {
   // If the reg has a non-ground type, then it is too complex for us to handle,
   // mark it as overdefined.
   // TODO: Eventually add a field-sensitive model.
-  if (!regReset.getType().getPassiveType().isGround())
+  auto type = regReset.getType();
+  if (!type.isGround())
     return markOverdefined(regReset);
 
-  // The reset value may be known - if so, merge it in if the enable is greater
-  // than invalid.
-  auto srcValue = getExtendedLatticeValue(regReset.resetValue(),
-                                          regReset.getType().cast<FIRRTLType>(),
-                                          /*allowTruncation=*/true);
-  auto enable = getExtendedLatticeValue(regReset.resetSignal(),
-                                        regReset.getType().cast<FIRRTLType>(),
-                                        /*allowTruncation=*/true);
-  if (enable.isOverdefined() ||
-      (enable.isConstant() && !enable.getConstant().getValue().isZero()))
-    mergeLatticeValue(regReset, srcValue);
+  // Otherwise, this starts out as Undefined and is upgraded by connects.
+  mergeLatticeValue(regReset, LatticeValue(regReset));
 }
 
 void IMConstPropPass::markMemOp(MemOp mem) {
@@ -434,7 +492,9 @@ void IMConstPropPass::markSpecialConstantOp(SpecialConstantOp specialConstant) {
 }
 
 void IMConstPropPass::markInvalidValueOp(InvalidValueOp invalid) {
-  mergeLatticeValue(invalid, InvalidValueAttr::get(invalid.getType()));
+  // Treat invalid values as a zero.  Technically we should not see any
+  // InvalidValue operation at this point.
+  mergeLatticeValue(invalid, LatticeValue(getIntZerosAttr(invalid.getType())));
 }
 
 /// Instances have no operands, so they are visited exactly once when their
@@ -516,10 +576,22 @@ void IMConstPropPass::visitConnect(ConnectOp connect) {
 
   auto dest = connect.dest().cast<mlir::OpResult>();
 
-  // For wires and registers, we drive the value of the wire itself, which
-  // automatically propagates to users.
-  if (isWireOrReg(dest.getOwner()))
+  // For wires we drive the value of the wire itself, which automatically
+  // propagates to users.
+  if (isa<WireOp>(dest.getOwner()))
     return mergeLatticeValue(connect.dest(), srcValue);
+
+  if (isa<RegOp, RegResetOp>(dest.getOwner())) {
+    auto reg = dest.getOwner();
+    // Special handling: if a register only has a self connect, or a mux of
+    // itself and a constant, then it is optimized to 0 or to the constant,
+    // respectively.
+    if (srcValue.isUndefined() && srcValue.getOperation() == reg)
+      return setLatticeValue(dest, getIntZerosAttr(destType));
+    if (srcValue.isUndefinedOrConst() && srcValue.getOperation() == reg)
+      return setLatticeValue(dest, srcValue.getConstant());
+    return mergeLatticeValue(dest, srcValue);
+  }
 
   // Driving an instance argument port drives the corresponding argument of the
   // referenced module.
@@ -568,10 +640,22 @@ void IMConstPropPass::visitStrictConnect(StrictConnectOp connect) {
 
   auto dest = connect.dest().cast<mlir::OpResult>();
 
-  // For wires and registers, we drive the value of the wire itself, which
-  // automatically propagates to users.
-  if (isWireOrReg(dest.getOwner()))
+  // For wires we drive the value of the wire itself, which automatically
+  // propagates to users.
+  if (isa<WireOp>(dest.getOwner()))
     return mergeLatticeValue(connect.dest(), srcValue);
+
+  if (isa<RegOp, RegResetOp>(dest.getOwner())) {
+    auto reg = dest.getOwner();
+    // Special handling: if a register only has a self connect, or a mux of
+    // itself and a constant, then it is optimized to 0 or to the constant,
+    // respectively.
+    if (srcValue.isUndefined() && srcValue.getOperation() == reg)
+      return setLatticeValue(dest, getIntZerosAttr(destType));
+    if (srcValue.isUndefinedOrConst() && srcValue.getOperation() == reg)
+      return setLatticeValue(dest, srcValue.getConstant());
+    return mergeLatticeValue(dest, srcValue);
+  }
 
   // Driving an instance argument port drives the corresponding argument of the
   // referenced module.
@@ -609,6 +693,46 @@ void IMConstPropPass::visitPartialConnect(PartialConnectOp partialConnect) {
   partialConnect.emitError("IMConstProp cannot handle partial connect");
 }
 
+void IMConstPropPass::visitRegReset(RegResetOp regReset) {
+  // The reset value may be known - if so, merge it in if the enable is greater
+  // than Undefined.
+  auto srcValue = getExtendedLatticeValue(regReset.resetValue(),
+                                          regReset.getType().cast<FIRRTLType>(),
+                                          /*allowTruncation=*/true);
+  auto enable = getExtendedLatticeValue(regReset.resetSignal(),
+                                        regReset.getType().cast<FIRRTLType>(),
+                                        /*allowTruncation=*/true);
+  if (enable.isOverdefined() ||
+      (enable.isConstant() && !enable.getConstant().getValue().isZero()))
+    mergeLatticeValue(regReset, srcValue);
+}
+
+void IMConstPropPass::visitMuxOp(MuxPrimOp mux) {
+  // Merge the state of all operands.
+  LatticeValue enable = getExtendedLatticeValue(
+      mux.sel(), mux.sel().getType().cast<FIRRTLType>());
+  LatticeValue high = getExtendedLatticeValue(mux.high(), mux.getType());
+  LatticeValue low = getExtendedLatticeValue(mux.low(), mux.getType());
+
+  // If the enable line is constant, forward the respective state.
+  if (enable.isConstant()) {
+    if (enable.getConstant().getValue().isZero())
+      return setLatticeValue(mux, low);
+    return setLatticeValue(mux, high);
+  }
+
+  // Merge the two cases together.
+  LatticeValue result;
+  for (auto operand : mux->getOperands()) {
+    auto operandValue = latticeValues[operand];
+    // We don't want to push state forward if we have unknown values.
+    if (operandValue.isUnknown())
+      return;
+    result.mergeIn(operandValue);
+  }
+  setLatticeValue(mux, result);
+}
+
 /// This method is invoked when an operand of the specified op changes its
 /// lattice value state and when the block containing the operation is first
 /// noticed as being alive.
@@ -624,7 +748,9 @@ void IMConstPropPass::visitOperation(Operation *op) {
   if (auto partialConnectOp = dyn_cast<PartialConnectOp>(op))
     return visitPartialConnect(partialConnectOp);
   if (auto regResetOp = dyn_cast<RegResetOp>(op))
-    return markRegResetOp(regResetOp);
+    return visitRegReset(regResetOp);
+  if (auto muxOp = dyn_cast<MuxPrimOp>(op))
+    return visitMuxOp(muxOp);
 
   // The clock operand of regop changing doesn't change its result value.
   if (isa<RegOp>(op))
@@ -650,10 +776,10 @@ void IMConstPropPass::visitOperation(Operation *op) {
     if (operandLattice.isUnknown())
       return;
 
-    // Otherwise, it must be constant, invalid, or overdefined.  Translate them
-    // into attributes that the fold hook can look at.
-    if (operandLattice.isConstant() || operandLattice.isInvalidValue())
-      operandConstants.push_back(operandLattice.getValue());
+    // Otherwise, it must be constant, undefined, or overdefined.  Translate
+    // them into attributes that the fold hook can look at.
+    if (operandLattice.isConstant())
+      operandConstants.push_back(operandLattice.getConstant());
     else
       operandConstants.push_back({});
   }
@@ -682,8 +808,6 @@ void IMConstPropPass::visitOperation(Operation *op) {
     if (Attribute foldAttr = foldResult.dyn_cast<Attribute>()) {
       if (auto intAttr = foldAttr.dyn_cast<IntegerAttr>())
         resultLattice = LatticeValue(intAttr);
-      else if (auto invalidValueAttr = foldAttr.dyn_cast<InvalidValueAttr>())
-        resultLattice = invalidValueAttr;
       else // Treat non integer constants as overdefined.
         resultLattice = LatticeValue::getOverdefined();
     } else { // Folding to an operand results in its value.
@@ -692,7 +816,7 @@ void IMConstPropPass::visitOperation(Operation *op) {
 
     // We do not "merge" the lattice value in, we set it.  This is because the
     // fold functions can produce different values over time, e.g. in the
-    // presence of InvalidValue operands that get resolved to other constants.
+    // presence of Undefined operands that get resolved to other constants.
     setLatticeValue(op->getResult(i), resultLattice);
   }
 }
@@ -705,16 +829,20 @@ void IMConstPropPass::rewriteModuleBody(FModuleOp module) {
 
   auto builder = OpBuilder::atBlockBegin(body);
 
-  // If the lattice value for the specified value is a constant or
-  // InvalidValue, update it and return true.  Otherwise return false.
+  // If the lattice value for the specified value is a constant, update it and
+  // return true.  Otherwise return false.
   auto replaceValueIfPossible = [&](Value value) -> bool {
     auto it = latticeValues.find(value);
-    if (it == latticeValues.end() || it->second.isOverdefined() ||
-        it->second.isUnknown())
+    llvm::errs() << " for value: " << value << "\n";
+    if (it == latticeValues.end())
+      return false;
+    llvm::errs() << "   lattice is " << it->second.getKind() << "\n";
+
+    if (!it->second.isConstant() && !it->second.isUndefinedOrConst())
       return false;
 
     // TODO: Unique constants into the entry block of the module.
-    Attribute constantValue = it->second.getValue();
+    Attribute constantValue = it->second.getConstant();
     auto *cst = module->getDialect()->materializeConstant(
         builder, constantValue, value.getType(), value.getLoc());
     assert(cst && "all FIRRTL constants can be materialized");
