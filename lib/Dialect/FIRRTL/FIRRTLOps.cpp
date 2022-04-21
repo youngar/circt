@@ -1461,7 +1461,10 @@ void MemOp::build(OpBuilder &builder, OperationState &result,
       "depth", builder.getIntegerAttr(builder.getIntegerType(64), depth));
   result.addAttribute("ruw", ::RUWAttrAttr::get(builder.getContext(), ruw));
   result.addAttribute("portNames", builder.getArrayAttr(portNames));
-  result.addAttribute("name", builder.getStringAttr(name));
+  auto nameAttr = builder.getStringAttr(name);
+  result.addAttribute("name", nameAttr);
+  // The generated module name matches the instance name by default.
+  result.addAttribute("moduleName", nameAttr);
   result.addAttribute("annotations", builder.getArrayAttr(annotations));
   if (innerSym)
     result.addAttribute("inner_sym", innerSym);
@@ -3235,13 +3238,21 @@ static void printImplicitSSAName(OpAsmPrinter &p, Operation *op,
 //===----------------------------------------------------------------------===//
 
 static ParseResult parseMemOp(OpAsmParser &parser, NamedAttrList &resultAttrs) {
-  return parseElidePortAnnotations(parser, resultAttrs);
+  if (parseElidePortAnnotations(parser, resultAttrs))
+    return failure();
+  // The dictionary will not have a moduleName if it matches the instance name.
+  if (!resultAttrs.get("moduleName"))
+    resultAttrs.append("moduleName", resultAttrs.get("name"));
+  return success();
 }
 
 /// Always elide "ruw" and elide "annotations" if it exists or if it is empty.
 static void printMemOp(OpAsmPrinter &p, Operation *op, DictionaryAttr attr) {
   // "ruw" and "inner_sym" is always elided.
-  printElidePortAnnotations(p, op, attr, {"ruw", "inner_sym"});
+  SmallVector<StringRef> elides = {"ruw", "inner_sym"};
+  if (op->getAttr("moduleName") == op->getAttr("name"))
+    elides.push_back("moduleName");
+  printElidePortAnnotations(p, op, attr, elides);
 }
 
 //===----------------------------------------------------------------------===//

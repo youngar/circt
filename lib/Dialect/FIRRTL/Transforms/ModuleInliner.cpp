@@ -520,7 +520,7 @@ void Inliner::rename(StringRef prefix, Operation *op,
   // Add a prefix to things that has a "name" attribute.  We don't prefix
   // memories since it will affect the name of the generated module.
   // TODO: We should find a way to prefix the instance of a memory module.
-  if (!isa<MemOp, SeqMemOp, CombMemOp, MemoryPortOp>(op)) {
+  if (!isa<SeqMemOp, CombMemOp, MemoryPortOp>(op)) {
     if (auto nameAttr = op->getAttrOfType<StringAttr>("name"))
       op->setAttr("name", StringAttr::get(op->getContext(),
                                           (prefix + nameAttr.getValue())));

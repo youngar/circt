@@ -1736,10 +1736,6 @@ void RegResetOp::getCanonicalizationPatterns(RewritePatternSet &results,
 }
 
 LogicalResult MemOp::canonicalize(MemOp op, PatternRewriter &rewriter) {
-  patterns::DropNameMem dnm(op.getContext());
-  if (succeeded(dnm.matchAndRewrite(op, rewriter)))
-    return success();
-
   // If memory has known, but zero width, eliminate it.
   if (op.getDataType().getBitWidthOrSentinel() != 0)
     return failure();

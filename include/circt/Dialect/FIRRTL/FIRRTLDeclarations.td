@@ -99,7 +99,7 @@ def MemOp : FIRRTLOp<"mem", [HasCustomSSAName]> {
     (ins Confined<I32Attr, [IntMinValue<0>]>:$readLatency,
          Confined<I32Attr, [IntMinValue<1>]>:$writeLatency,
          Confined<I64Attr, [IntMinValue<1>]>:$depth, RUWAttr:$ruw,
-         StrArrayAttr:$portNames, StrAttr:$name,
+         StrArrayAttr:$portNames, StrAttr:$name, StrAttr:$moduleName,
          AnnotationArrayAttr:$annotations,
          PortAnnotationsAttr:$portAnnotations,
          OptionalAttr<SymbolNameAttr>:$inner_sym,
@@ -115,8 +115,7 @@ def MemOp : FIRRTLOp<"mem", [HasCustomSSAName]> {
     OpBuilder<(ins "::mlir::TypeRange":$resultTypes,
                    "uint32_t":$readLatency, "uint32_t":$writeLatency,
                    "uint64_t":$depth, "RUWAttr":$ruw,
-                   "ArrayRef<Attribute>":$portNames,
-                   CArg<"StringRef", "{}">:$name,
+                   "ArrayRef<Attribute>":$portNames, "StringRef":$name,
                    CArg<"ArrayRef<Attribute>", "{}">:$annotations,
                    CArg<"ArrayRef<Attribute>", "{}">:$portAnnotations,
                    CArg<"StringAttr", "StringAttr()">:$inner_sym)>

@@ -2584,7 +2584,7 @@ LogicalResult FIRRTLLowering::visitDecl(RegResetOp op) {
 }
 
 LogicalResult FIRRTLLowering::visitDecl(MemOp op) {
-  auto memName = op.name();
+  auto memName = op.moduleName();
   if (memName.empty())
     memName = "mem";
 
@@ -2746,7 +2746,7 @@ LogicalResult FIRRTLLowering::visitDecl(MemOp op) {
 
   // Create the instance to replace the memop.
   auto inst = builder.create<hw::InstanceOp>(
-      resultTypes, builder.getStringAttr(memName), memModuleAttr, operands,
+      resultTypes, op.nameAttr(), memModuleAttr, operands,
       builder.getArrayAttr(argNames), builder.getArrayAttr(resultNames),
       /*parameters=*/builder.getArrayAttr({}),
       /*sym_name=*/op.inner_symAttr());

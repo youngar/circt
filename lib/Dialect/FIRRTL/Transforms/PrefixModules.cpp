@@ -175,7 +175,8 @@ void PrefixModulesPass::renameModuleBody(std::string prefix, FModuleOp module) {
         op, std::bind(canRemoveAnno, std::placeholders::_1, op));
     if (auto memOp = dyn_cast<MemOp>(op)) {
       // Memories will be turned into modules and should be prefixed.
-      memOp.nameAttr(StringAttr::get(context, prefix + memOp.name()));
+      memOp.moduleNameAttr(
+          StringAttr::get(context, prefix + memOp.moduleName()));
       memOp.groupIDAttr(
           IntegerAttr::get(IntegerType::get(context, 32), groupID));
     } else if (auto instanceOp = dyn_cast<InstanceOp>(op)) {

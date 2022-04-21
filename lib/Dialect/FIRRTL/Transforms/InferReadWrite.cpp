@@ -124,7 +124,7 @@ struct InferReadWritePass : public InferReadWriteBase<InferReadWritePass> {
       auto rwMem = builder.create<MemOp>(
           resultTypes, memOp.readLatency(), memOp.writeLatency(), memOp.depth(),
           RUWAttr::Undefined, builder.getArrayAttr(resultNames),
-          memOp.nameAttr(), memOp.annotations(),
+          memOp.nameAttr(), memOp.moduleNameAttr(), memOp.annotations(),
           builder.getArrayAttr(portAnnotations), memOp.inner_symAttr(),
           memOp.groupIDAttr());
       auto rwPort = rwMem->getResult(0);
