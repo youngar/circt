@@ -881,10 +881,11 @@ void EmitOMIRPass::emitTrackedTarget(DictionaryAttr node,
           return;
         }
         if (auto memOp = dyn_cast<MemOp>(tracker.op)) {
+          llvm_unreachable("uhhhhhh");
           target.push_back('/');
           target.append(addSymbol(componentName));
           target.push_back(':');
-          target.append(memOp.getSummary().getFirMemoryName());
+          // target.append(memOp.getSummary().getFirMemoryName());
           return;
         }
       }

@@ -26,11 +26,11 @@ namespace firrtl {
 class FIRRTLType;
 
 /// This holds the name and type that describes the module's ports.
-struct PortInfo {
+struct PortInfo {  
   StringAttr name;
   FIRRTLType type;
   Direction direction;
-  StringAttr sym = {};
+  StringAttr sym;
   Location loc = UnknownLoc::get(type.getContext());
   AnnotationSet annotations = AnnotationSet(type.getContext());
 

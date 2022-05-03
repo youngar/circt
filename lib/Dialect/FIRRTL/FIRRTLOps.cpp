@@ -442,18 +442,25 @@ SmallVector<PortInfo> FModuleOp::getPorts() {
 }
 
 /// This function can extract information about ports from a module and an
-/// extmodule.
-SmallVector<PortInfo> FExtModuleOp::getPorts() {
+/// extmodule or genmodule.
+static SmallVector<PortInfo> getPorts(FModuleLike module) {
   // FExtModuleOp's don't have block arguments or locations for their ports.
-  auto loc = getLoc();
-
+  auto loc = module->getLoc();
   SmallVector<PortInfo> results;
-  for (unsigned i = 0, e = getNumPorts(); i < e; ++i) {
-    results.push_back({getPortNameAttr(i), getPortType(i), getPortDirection(i),
-                       getPortSymbolAttr(i), loc,
-                       AnnotationSet::forPort(*this, i)});
+  for (unsigned i = 0, e = module.getNumPorts(); i < e; ++i) {
+    results.push_back({module.getPortNameAttr(i), module.getPortType(i),
+                       module.getPortDirection(i), module.getPortSymbolAttr(i),
+                       loc, AnnotationSet::forPort(module, i)});
   }
   return results;
+}
+
+SmallVector<PortInfo> FExtModuleOp::getPorts() {
+  return ::getPorts(cast<FModuleLike>((Operation *)*this));
+}
+
+SmallVector<PortInfo> FMemModuleOp::getPorts() {
+  return ::getPorts(cast<FModuleLike>((Operation *)*this));
 }
 
 // Return the port with the specified name.
@@ -656,6 +663,29 @@ void FExtModuleOp::build(OpBuilder &builder, OperationState &result,
     result.addAttribute("defname", builder.getStringAttr(defnameAttr));
   if (!parameters)
     result.addAttribute("parameters", builder.getArrayAttr({}));
+}
+
+void FMemModuleOp::build(OpBuilder &builder, OperationState &result,
+                         StringAttr name, ArrayRef<PortInfo> ports,
+                         uint32_t numReadPorts, uint32_t numWritePorts,
+                         uint32_t numReadWritePorts, FIRRTLType dataType,
+                         uint32_t maskBits, uint32_t readLatency,
+                         uint32_t writeLatency, uint64_t depth,
+                         ArrayAttr annotations) {
+  auto context = builder.getContext();
+  buildModule(builder, result, name, ports, annotations);
+  auto i32Type = IntegerType::get(context, 32);
+  auto i64Type = IntegerType::get(context, 64);
+  result.addAttribute("numReadPorts", IntegerAttr::get(i32Type, numReadPorts));
+  result.addAttribute("numWritePorts",
+                      IntegerAttr::get(i32Type, numWritePorts));
+  result.addAttribute("numReadWritePorts",
+                      IntegerAttr::get(i32Type, numReadWritePorts));
+  result.addAttribute("dataType", TypeAttr::get(dataType));
+  result.addAttribute("maskBits", IntegerAttr::get(i32Type, maskBits));
+  result.addAttribute("readLatency", IntegerAttr::get(i32Type, readLatency));
+  result.addAttribute("writeLatency", IntegerAttr::get(i32Type, writeLatency));
+  result.addAttribute("depth", IntegerAttr::get(i64Type, depth));
 }
 
 /// Print a list of module ports in the following form:
@@ -871,6 +901,8 @@ static void printFModuleLikeOp(OpAsmPrinter &p, FModuleLike op) {
 
 void FExtModuleOp::print(OpAsmPrinter &p) { printFModuleLikeOp(p, *this); }
 
+void FMemModuleOp::print(OpAsmPrinter &p) { printFModuleLikeOp(p, *this); }
+
 void FModuleOp::print(OpAsmPrinter &p) {
   printFModuleLikeOp(p, *this);
 
@@ -1024,6 +1056,10 @@ ParseResult FExtModuleOp::parse(OpAsmParser &parser, OperationState &result) {
   return parseFModuleLikeOp(parser, result, /*hasSSAIdentifiers=*/false);
 }
 
+ParseResult FMemModuleOp::parse(OpAsmParser &parser, OperationState &result) {
+  return parseFModuleLikeOp(parser, result, /*hasSSAIdentifiers=*/false);
+}
+
 LogicalResult FExtModuleOp::verify() {
   auto params = parameters();
   if (params.empty())
@@ -1052,6 +1088,11 @@ void FModuleOp::getAsmBlockArgumentNames(mlir::Region &region,
 }
 
 void FExtModuleOp::getAsmBlockArgumentNames(
+    mlir::Region &region, mlir::OpAsmSetValueNameFn setNameFn) {
+  getAsmBlockArgumentNamesImpl(getOperation(), region, setNameFn);
+}
+
+void FMemModuleOp::getAsmBlockArgumentNames(
     mlir::Region &region, mlir::OpAsmSetValueNameFn setNameFn) {
   getAsmBlockArgumentNamesImpl(getOperation(), region, setNameFn);
 }
@@ -1846,22 +1887,7 @@ FirMemory MemOp::getSummary() {
   uint32_t groupID = 0;
   if (auto gID = op.groupIDAttr())
     groupID = gID.getUInt();
-  StringAttr modName;
-  if (op->hasAttr("modName"))
-    modName = op->getAttrOfType<StringAttr>("modName");
-  else {
-    SmallString<8> clocks;
-    for (auto a : writeClockIDs)
-      clocks.append(Twine((char)(a + 'a')).str());
-    modName = StringAttr::get(
-        op->getContext(),
-        llvm::formatv("FIRRTLMem_{0}_{1}_{2}_{3}_{4}_{5}_{6}_{7}_{8}_{9}{10}",
-                      numReadPorts, numWritePorts, numReadWritePorts,
-                      (size_t)width, op.depth(), op.readLatency(),
-                      op.writeLatency(), op.getMaskBits(), (size_t)op.ruw(),
-                      (unsigned)hw::WUW::PortOrder,
-                      clocks.empty() ? "" : "_" + clocks));
-  }
+  StringAttr modName = StringAttr::get(op->getContext(), name() + "_ext");
   return {numReadPorts,         numWritePorts,    numReadWritePorts,
           (size_t)width,        op.depth(),       op.readLatency(),
           op.writeLatency(),    op.getMaskBits(), (size_t)op.ruw(),
