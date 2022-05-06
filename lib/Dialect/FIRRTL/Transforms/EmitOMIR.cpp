@@ -881,10 +881,8 @@ void EmitOMIRPass::emitTrackedTarget(DictionaryAttr node,
           return;
         }
         if (auto memOp = dyn_cast<MemOp>(tracker.op)) {
-          target.push_back('/');
-          target.append(addSymbol(componentName));
-          target.push_back(':');
-          target.append(memOp.getSummary().getFirMemoryName());
+          memOp->emitError("memories should have been lowered");
+          anyFailures = true;
           return;
         }
       }

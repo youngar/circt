@@ -2,6 +2,14 @@
 
 firrtl.circuit "MyModule" {
 
+firrtl.module @mod() { }
+firrtl.extmodule @extmod()
+firrtl.memmodule @memmod () attributes {
+  depth = 16 : ui64, dataType = !firrtl.uint<1>, extraPorts = [], 
+  maskBits = 0 : ui32, numReadPorts = 0 : ui32, numWritePorts = 0 : ui32,
+  numReadWritePorts = 0 : ui32, readLatency = 0 : ui32,
+  writeLatency = 1 : ui32}
+
 // Constant op supports different return types.
 firrtl.module @Constants() {
   // CHECK: %c0_ui0 = firrtl.constant 0 : !firrtl.uint<0>
@@ -174,4 +182,6 @@ firrtl.module @ProbeTest(in %in1 : !firrtl.uint<2>, in %in2 : !firrtl.uint<3>, o
   firrtl.probe @foobar, %in1, %in2, %out3, %w1, %w2, %someNode : !firrtl.uint<2>, !firrtl.uint<3>, !firrtl.uint<3>, !firrtl.uint<4>, !firrtl.uint<4>, !firrtl.uint<2>
 }
 
+
 }
+

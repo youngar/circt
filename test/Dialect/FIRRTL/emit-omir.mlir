@@ -280,20 +280,18 @@ firrtl.circuit "SRAMPaths" attributes {annotations = [{
   firrtl.extmodule @MySRAM()
   firrtl.module @Submodule() {
     firrtl.instance mem1 {annotations = [{class = "freechips.rocketchip.objectmodel.OMIRTracker", id = 0}]} @MySRAM()
-    %mem2_port = firrtl.mem Undefined {annotations = [{class = "freechips.rocketchip.objectmodel.OMIRTracker", id = 1}], depth = 8, name = "mem2", portNames = ["port"], readLatency = 0 : i32, writeLatency = 1 : i32 } : !firrtl.bundle<addr: uint<3>, en: uint<1>, clk: clock, data flip: uint<42>>
+    %0:4 = firrtl.instance mem2_ext {annotations = [{class = "freechips.rocketchip.objectmodel.OMIRTracker", id = 1 : i64}]} @mem2_ext(in W0_addr: !firrtl.uint<3>, in W0_en: !firrtl.uint<1>, in W0_clk: !firrtl.clock, in W0_data: !firrtl.uint<42>)
   }
   firrtl.module @SRAMPaths() {
     firrtl.instance sub @Submodule()
   }
+  firrtl.memmodule @mem2_ext(in W0_addr: !firrtl.uint<3>, in W0_en: !firrtl.uint<1>, in W0_clk: !firrtl.clock, in W0_data: !firrtl.uint<42>) attributes {dataType = !firrtl.uint<42>, depth = 8 : ui64, extraPorts = [], maskBits = 1 : ui32, numReadPorts = 0 : ui32, numReadWritePorts = 0 : ui32, numWritePorts = 1 : ui32, readLatency = 1 : ui32, writeLatency = 1 : ui32}
 }
 // CHECK-LABEL: firrtl.circuit "SRAMPaths" {
 // CHECK-NEXT:    firrtl.extmodule @MySRAM()
 // CHECK-NEXT:    firrtl.module @Submodule() {
 // CHECK-NEXT:      firrtl.instance mem1 sym [[SYMMEM1:@[a-zA-Z0-9_]+]]
-// CHECK-SAME:        @MySRAM()
-// CHECK-NEXT:      firrtl.mem sym [[SYMMEM2:@[a-zA-Z0-9_]+]]
-// CHECK-SAME:        name = "mem2"
-// CHECK-SAME:        : !firrtl.bundle
+// CHECK-NEXT:      firrtl.instance mem2_ext sym [[SYMMEM2:@[a-zA-Z0-9_]+]]
 // CHECK-NEXT:    }
 // CHECK-NEXT:    firrtl.module @SRAMPaths() {
 // CHECK-NEXT:      firrtl.instance sub sym [[SYMSUB:@[a-zA-Z0-9_]+]]
@@ -301,8 +299,8 @@ firrtl.circuit "SRAMPaths" attributes {annotations = [{
 // CHECK-SAME:        @Submodule()
 // CHECK-NEXT:    }
 // CHECK-NEXT:  }
-// CHECK-NEXT:  sv.verbatim
 
+// CHECK:  sv.verbatim
 // CHECK-SAME:  \22id\22: \22OMID:0\22
 // CHECK-SAME:    \22name\22: \22omType\22
 // CHECK-SAME:    \22value\22: [
@@ -349,12 +347,13 @@ firrtl.circuit "SRAMPathsWithNLA" attributes {annotations = [{
 }]} {
   firrtl.nla @nla [#hw.innerNameRef<@SRAMPathsWithNLA::@s1>, #hw.innerNameRef<@Submodule::@m1>]
   firrtl.module @Submodule() {
-    %mem2_port = firrtl.mem sym @m1 Undefined {annotations = [{circt.nonlocal = @nla, class = "freechips.rocketchip.objectmodel.OMIRTracker", id = 1}], depth = 8, name = "mem2", portNames = ["port"], readLatency = 0 : i32, writeLatency = 1 : i32 } : !firrtl.bundle<addr: uint<3>, en: uint<1>, clk: clock, data flip: uint<42>>
+    %0:5 = firrtl.instance mem2_ext sym @m1  {annotations = [{circt.nonlocal = @nla, class = "freechips.rocketchip.objectmodel.OMIRTracker", id = 1 : i64}]} @mem2_ext(in W0_addr: !firrtl.uint<3>, in W0_en: !firrtl.uint<1>, in W0_clk: !firrtl.clock, in W0_data: !firrtl.uint<42>, in W0_mask: !firrtl.uint<42>)
   }
   firrtl.module @SRAMPathsWithNLA() {
     firrtl.instance sub  sym @s1 {annotations = [{circt.nonlocal = @nla, class = "circt.nonlocal"}, {circt.nonlocal = @nla1, class = "circt.nonlocal"}]} @Submodule()
     firrtl.instance sub1 sym @s2  @Submodule()
   }
+  firrtl.memmodule @mem2_ext(in W0_addr: !firrtl.uint<3>, in W0_en: !firrtl.uint<1>, in W0_clk: !firrtl.clock, in W0_data: !firrtl.uint<42>, in W0_mask: !firrtl.uint<42>) attributes {dataType = !firrtl.uint<42>, depth = 8 : ui64, extraPorts = [], maskBits = 42 : ui32, numReadPorts = 0 : ui32, numReadWritePorts = 0 : ui32, numWritePorts = 1 : ui32, readLatency = 1 : ui32, writeLatency = 1 : ui32}
 }
 // CHECK-LABEL: firrtl.circuit "SRAMPathsWithNLA"
 // CHECK:  sv.verbatim

@@ -54,6 +54,8 @@ createCreateSiFiveMetadataPass(bool replSeqMem = false,
 
 std::unique_ptr<mlir::Pass> createWireDFTPass();
 
+std::unique_ptr<mlir::Pass> createAddSeqMemPortsPass();
+
 std::unique_ptr<mlir::Pass> createDedupPass();
 
 std::unique_ptr<mlir::Pass> createEmitOMIRPass(StringRef outputFilename = "");
@@ -69,6 +71,8 @@ std::unique_ptr<mlir::Pass> createInferResetsPass();
 std::unique_ptr<mlir::Pass>
 createMemToRegOfVecTransformPass(bool replSeqMem = false,
                                  bool ignoreReadEnable = false);
+
+std::unique_ptr<mlir::Pass> createLowerMemoryPass();
 
 std::unique_ptr<mlir::Pass> createPrefixModulesPass();
 
