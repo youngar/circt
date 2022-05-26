@@ -384,20 +384,23 @@ ParseResult circt::firrtl::foldWhenEncodedVerifOp(PrintFOp printOp) {
     if (message.empty())
       std::swap(label, message); // in case of no label
 
-    // AssertNotX has the special format `assertNotX:%d:msg`, where the `%d`
-    // would theoretically interpolate the value being check for X, but in
-    // practice the Scala impl of ExtractTestCode just discards that `%d` label
-    // and replaces it with `notX`. Also prepare the condition to be checked
-    // here.
-    Value notCond = builder.create<NotPrimOp>(whenStmt.condition());
-    Value predicate = notCond;
-    if (flavor == VerifFlavor::AssertNotX) {
+    Value predicate = whenStmt.condition();
+    if (flavor == VerifFlavor::Assert || flavor == VerifFlavor::Assume) {
+      // Construct a `!whenCond` predicate.
+      predicate = builder.create<NotPrimOp>(predicate);
+    } else if (flavor == VerifFlavor::AssertNotX) {
+      // AssertNotX has the special format `assertNotX:%d:msg`, where the `%d`
+      // would theoretically interpolate the value being check for X, but in
+      // practice the Scala impl of ExtractTestCode just discards that `%d`
+      // label and replaces it with `notX`. Also prepare the condition to be
+      // checked here.
       label = "notX";
       if (printOp.operands().size() != 1) {
         printOp.emitError("printf-encoded assertNotX requires one operand");
         return failure();
       }
       // Construct a `!whenCond | (value !== 1'bx)` predicate.
+      Value notCond = builder.create<NotPrimOp>(predicate);
       predicate = builder.create<XorRPrimOp>(printOp.operands()[0]);
       predicate = builder.create<VerbatimExprOp>(UIntType::get(context, 1),
                                                  "{{0}} !== 1'bx", predicate);
