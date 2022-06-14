@@ -320,6 +320,11 @@ static cl::opt<std::string> blackBoxRootPath(
     cl::desc("Optional path to use as the root of black box annotations"),
     cl::value_desc("path"), cl::init(""), cl::cat(mainCategory));
 
+static cl::opt<std::string>
+    portStatFilename("port-stats", cl::desc("output stats to this file"),
+                     cl::value_desc("filename"), cl::init(""),
+                     cl::cat(mainCategory));
+
 static cl::opt<bool>
     verbosePassExecutions("verbose-pass-executions",
                           cl::desc("Log executions of toplevel module passes"),
@@ -672,6 +677,42 @@ processBuffer(MLIRContext &context, TimingScope &ts, llvm::SourceMgr &sourceMgr,
 
     if (failed(exportPm.run(module.get())))
       return failure();
+  }
+
+  if (!portStatFilename.empty()) {
+    std::string mlirOutError;
+    auto file = openOutputFile(portStatFilename, &mlirOutError);
+    if (!file) {
+      llvm::errs() << mlirOutError;
+      return failure();
+    }
+    auto &os = file->os();
+
+    struct Stat {
+      StringRef moduleName = "";
+      size_t inputPortCount = 0;
+      size_t outputPortCount = 0;
+    };
+    size_t totalPorts = 0;
+    SmallVector<Stat> stats;
+    module->walk([&](hw::HWModuleOp m) {
+      auto &stat = stats.emplace_back();
+      stat.moduleName = m.getName();
+      auto info = m.getPorts();
+      stat.inputPortCount = info.inputs.size();
+      stat.outputPortCount = info.outputs.size();
+      totalPorts += stat.inputPortCount;
+      totalPorts += stat.outputPortCount;
+    });
+    llvm::sort(stats, [&](const Stat &lhs, const Stat &rhs) {
+      return lhs.moduleName < rhs.moduleName;
+    });
+    os << "totalPorts=" << totalPorts << "\n";
+    for (const auto &stat : stats) {
+      os << stat.moduleName
+         << " portCount=" << stat.inputPortCount + stat.outputPortCount << "\n";
+    }
+    file->keep();
   }
 
   if (outputFormat == OutputIRFir || outputFormat == OutputIRHW ||
