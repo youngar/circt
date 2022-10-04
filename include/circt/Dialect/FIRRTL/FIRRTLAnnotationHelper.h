@@ -13,11 +13,14 @@
 #ifndef CIRCT_DIALECT_FIRRTL_FIRRTLANNOTATIONHELPER_H
 #define CIRCT_DIALECT_FIRRTL_FIRRTLANNOTATIONHELPER_H
 
+#include "FIRParser.h"
 #include "circt/Dialect/FIRRTL/CHIRRTLDialect.h"
 #include "circt/Dialect/FIRRTL/FIRRTLInstanceGraph.h"
 #include "circt/Dialect/FIRRTL/FIRRTLOps.h"
 #include "circt/Dialect/FIRRTL/Namespace.h"
+#include "mlir/IR/Diagnostics.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include <mlir/IR/BuiltinAttributes.h>
 
 namespace circt {
 namespace firrtl {
@@ -188,24 +191,20 @@ Optional<AnnoPathValue> resolvePath(StringRef rawPath, CircuitOp circuit,
                                     SymbolTable &symTbl,
                                     CircuitTargetCache &cache);
 
-/// Return true if an Annotation's class name is handled by the LowerAnnotations
-/// pass.
-bool isAnnoClassLowered(StringRef className);
+class AnnotationParser;
 
 /// State threaded through functions for resolving and applying annotations.
-struct ApplyState {
-  using AddToWorklistFn = llvm::function_ref<void(DictionaryAttr)>;
-  ApplyState(CircuitOp circuit, SymbolTable &symTbl,
-             AddToWorklistFn addToWorklistFn,
-             InstancePathCache &instancePathCache)
-      : circuit(circuit), symTbl(symTbl), addToWorklistFn(addToWorklistFn),
-        instancePathCache(instancePathCache) {}
+class ApplyState {
+public:
+  ApplyState(const FIRParserOptions &options, CircuitOp circuit,
+             AnnotationParser *parser);
 
+  MLIRContext *context;
   CircuitOp circuit;
-  SymbolTable &symTbl;
+  SymbolTable symTbl;
   CircuitTargetCache targetCaches;
-  AddToWorklistFn addToWorklistFn;
-  InstancePathCache &instancePathCache;
+  InstanceGraph instanceGraph;
+  InstancePathCache instancePathCache;
   DenseMap<Attribute, FlatSymbolRefAttr> instPathToNLAMap;
   size_t numReusedHierPaths = 0;
 
@@ -216,15 +215,92 @@ struct ApplyState {
     return *ptr;
   }
 
+  /// Get the next unique id and advance to the next ID.  Unique IDs can be used
+  /// to tie different annotations together.
   IntegerAttr newID() {
     return IntegerAttr::get(IntegerType::get(circuit.getContext(), 64),
                             annotationID++);
   };
 
+  /// Takes an annotation an applies it's registered handler to attach it to
+  /// the IR.
+  void addToWorklist(DictionaryAttr anno);
+
 private:
+  /// A pointer to the parser which owns this.  Used to add more annotations
+  /// to the worklist.
+  AnnotationParser *parser;
+
+  /// Maps a module to its namespace.
   DenseMap<Operation *, std::unique_ptr<ModuleNamespace>> namespaces;
+
+  /// The next available unique identifier for use by annotations.
   unsigned annotationID = 0;
 };
+
+///
+struct AnnoRecord {
+  ///
+  llvm::function_ref<Optional<AnnoPathValue>(DictionaryAttr, ApplyState &)>
+      resolver;
+  ///
+  llvm::function_ref<LogicalResult(const AnnoPathValue &, DictionaryAttr,
+                                   ApplyState &)>
+      applier;
+};
+
+/// A parser which can import annotations and attach them to the circuit.
+class AnnotationParser {
+public:
+  AnnotationParser(const FIRParserOptions &options, CircuitOp circuit);
+
+  /// Parse a JSON encoded array of annotations.
+  LogicalResult parseAnnotations(Location loc, StringRef annotationsStr);
+
+  /// Parse a JSON encoded array of OMIR.
+  LogicalResult parseOMIR(Location loc, StringRef omirStr);
+
+private:
+  // ApplyState needs to be able to queue more annotations on to the worklist.
+  friend class ApplyState;
+
+  /// Takes an annotation an applies it's registered handler to attach it to
+  /// the IR.
+  void addToWorklist(DictionaryAttr anno) { worklist.push_back(anno); }
+
+  /// Get the annotation handler associated with an annotation's class.
+  const AnnoRecord *getAnnotationHandler(StringRef annoStr) const;
+
+  /// This will call the annotation handler associated with the annotation.
+  /// Typically this will attach the annotation to the target.
+  LogicalResult applyAnnotation(DictionaryAttr anno);
+
+  MLIRContext *context;
+
+  /// The circuit which we are parsing annotations for. All annotations targets
+  /// should reference this circuit.
+  CircuitOp circuit;
+
+  /// The parsing options.
+  const FIRParserOptions &options;
+
+  /// A target representing the current circuit we are parsing.
+  std::string circuitTarget;
+
+  /// This is the apply state used for each annotation parser.
+  ApplyState applyState;
+
+  /// A list ok annotations which still need to be handled.  Annotations are
+  /// allowed to add new annotations to the worklist as they are handled.
+  SmallVector<DictionaryAttr> worklist;
+
+  /// A mapping from annotation class strings to their handlers.
+  llvm::StringMap<AnnoRecord> annotationRecords;
+};
+
+inline void ApplyState::addToWorklist(DictionaryAttr anno) {
+  parser->addToWorklist(anno);
+}
 
 LogicalResult applyGCTView(const AnnoPathValue &target, DictionaryAttr anno,
                            ApplyState &state);

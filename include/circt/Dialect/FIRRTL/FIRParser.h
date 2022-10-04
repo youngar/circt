@@ -29,6 +29,10 @@ namespace circt {
 namespace firrtl {
 
 struct FIRParserOptions {
+  /// Ignore annotations which are not known to the compiler.
+  bool ignoreUnhandledAnnotations = false;
+  /// Ignore annotations which do not have a class.
+  bool ignoreClasslessAnnotations = false;
   /// If this is set to true, the @info locators are ignored, and the locations
   /// are set to the location in the .fir file.
   bool ignoreInfoLocators = false;

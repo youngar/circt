@@ -176,7 +176,7 @@ LogicalResult circt::firrtl::applyGCTSignalMappings(const AnnoPathValue &target,
     NamedAttrList anno;
     anno.append("class", StringAttr::get(context, dontTouchAnnoClass));
     anno.append("target", StringAttr::get(context, targetStr));
-    state.addToWorklistFn(DictionaryAttr::get(context, anno));
+    state.addToWorklist(DictionaryAttr::get(context, anno));
   };
 
   StringSet<> modules;
@@ -226,13 +226,13 @@ LogicalResult circt::firrtl::applyGCTSignalMappings(const AnnoPathValue &target,
     auto sourceAnno = buildSourceOrSinkAnno(attr, true);
     if (!sourceAnno)
       return failure();
-    state.addToWorklistFn(sourceAnno);
+    state.addToWorklist(sourceAnno);
   }
   for (auto attr : sinksAttr) {
     auto sinkAnno = buildSourceOrSinkAnno(attr, false);
     if (!sinkAnno)
       return failure();
-    state.addToWorklistFn(sinkAnno);
+    state.addToWorklist(sinkAnno);
   }
 
   AnnotationSet annotations(state.circuit);
@@ -245,7 +245,7 @@ LogicalResult circt::firrtl::applyGCTSignalMappings(const AnnoPathValue &target,
                   StringAttr::get(context, signalDriverModuleAnnoClass));
     fields.append("id", id);
     fields.append("target", StringAttr::get(context, module.getKey()));
-    state.addToWorklistFn(DictionaryAttr::get(context, fields));
+    state.addToWorklist(DictionaryAttr::get(context, fields));
   }
 
   return success();

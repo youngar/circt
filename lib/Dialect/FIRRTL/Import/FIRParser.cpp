@@ -15,6 +15,7 @@
 #include "FIRLexer.h"
 #include "circt/Dialect/FIRRTL/AnnotationDetails.h"
 #include "circt/Dialect/FIRRTL/CHIRRTLDialect.h"
+#include "circt/Dialect/FIRRTL/FIRRTLAnnotationHelper.h"
 #include "circt/Dialect/FIRRTL/FIRRTLAttributes.h"
 #include "circt/Dialect/FIRRTL/FIRRTLOps.h"
 #include "circt/Dialect/FIRRTL/FIRRTLUtils.h"
@@ -782,12 +783,8 @@ namespace {
 /// This struct provides context information that is global to the module we're
 /// currently parsing into.
 struct FIRModuleContext : public FIRParser {
-  explicit FIRModuleContext(SharedParserConstants &constants, FIRLexer &lexer,
-                            std::string moduleTarget)
-      : FIRParser(constants, lexer), moduleTarget(std::move(moduleTarget)) {}
-
-  /// This is the module target used by annotations referring to this module.
-  std::string moduleTarget;
+  explicit FIRModuleContext(SharedParserConstants &constants, FIRLexer &lexer)
+      : FIRParser(constants, lexer) {}
 
   // The expression-oriented nature of firrtl syntax produces tons of constant
   // nodes which are obviously redundant.  Instead of literally producing them
@@ -1105,9 +1102,6 @@ struct FIRStmtParser : public FIRParser {
   ParseResult parseSimpleStmtBlock(unsigned indent);
 
 private:
-  /// Return the current modulet target, e.g., "~Foo|Bar".
-  StringRef getModuleTarget() { return moduleContext.moduleTarget; }
-
   ParseResult parseSimpleStmtImpl(unsigned stmtIndent);
 
   /// Attach invalid values to every element of the value.
@@ -2778,19 +2772,7 @@ struct FIRCircuitParser : public FIRParser {
                mlir::TimingScope &ts);
 
 private:
-  /// Extract Annotations from a JSON-encoded Annotation array string and add
-  /// them to a vector of attributes.
-  ParseResult importAnnotationsRaw(SMLoc loc, StringRef circuitTarget,
-                                   StringRef annotationsStr,
-                                   SmallVectorImpl<Attribute> &attrs);
-  /// Generate OMIR-derived annotations.  Report errors if the OMIR is malformed
-  /// in any way.  This also performs scattering of the OMIR to introduce
-  /// tracking annotations in the circuit.
-  ParseResult importOMIR(CircuitOp circuit, SMLoc loc, StringRef circuitTarget,
-                         StringRef omirStr, SmallVectorImpl<Attribute> &attrs);
-
-  ParseResult parseModule(CircuitOp circuit, StringRef circuitTarget,
-                          unsigned indent);
+  ParseResult parseModule(CircuitOp circuit, unsigned indent);
 
   ParseResult parsePortList(SmallVectorImpl<PortInfo> &resultPorts,
                             SmallVectorImpl<SMLoc> &resultPortLocs,
@@ -2800,7 +2782,6 @@ private:
     FModuleOp moduleOp;
     SmallVector<SMLoc> portLocs;
     FIRLexerCursor lexerCursor;
-    std::string moduleTarget;
     unsigned indent;
   };
 
@@ -2811,64 +2792,6 @@ private:
 };
 
 } // end anonymous namespace
-ParseResult
-FIRCircuitParser::importAnnotationsRaw(SMLoc loc, StringRef circuitTarget,
-                                       StringRef annotationsStr,
-                                       SmallVectorImpl<Attribute> &attrs) {
-
-  auto annotations = json::parse(annotationsStr);
-  if (auto err = annotations.takeError()) {
-    handleAllErrors(std::move(err), [&](const json::ParseError &a) {
-      auto diag = emitError(loc, "Failed to parse JSON Annotations");
-      diag.attachNote() << a.message();
-    });
-    return failure();
-  }
-
-  json::Path::Root root;
-  llvm::StringMap<ArrayAttr> thisAnnotationMap;
-  if (!fromJSONRaw(annotations.get(), circuitTarget, attrs, root,
-                   getContext())) {
-    auto diag = emitError(loc, "Invalid/unsupported annotation format");
-    std::string jsonErrorMessage =
-        "See inline comments for problem area in JSON:\n";
-    llvm::raw_string_ostream s(jsonErrorMessage);
-    root.printErrorContext(annotations.get(), s);
-    diag.attachNote() << jsonErrorMessage;
-    return failure();
-  }
-
-  return success();
-}
-
-ParseResult FIRCircuitParser::importOMIR(CircuitOp circuit, SMLoc loc,
-                                         StringRef circuitTarget,
-                                         StringRef annotationsStr,
-                                         SmallVectorImpl<Attribute> &annos) {
-
-  auto annotations = json::parse(annotationsStr);
-  if (auto err = annotations.takeError()) {
-    handleAllErrors(std::move(err), [&](const json::ParseError &a) {
-      auto diag = emitError(loc, "Failed to parse OMIR file");
-      diag.attachNote() << a.message();
-    });
-    return failure();
-  }
-
-  json::Path::Root root;
-  if (!fromOMIRJSON(annotations.get(), circuitTarget, annos, root,
-                    circuit.getContext())) {
-    auto diag = emitError(loc, "Invalid/unsupported OMIR format");
-    std::string jsonErrorMessage =
-        "See inline comments for problem area in JSON:\n";
-    llvm::raw_string_ostream s(jsonErrorMessage);
-    root.printErrorContext(annotations.get(), s);
-    diag.attachNote() << jsonErrorMessage;
-    return failure();
-  }
-
-  return success();
-}
 
 /// pohwist ::= port*
 /// port     ::= dir id ':' type info? NEWLINE
@@ -2937,9 +2860,7 @@ FIRCircuitParser::parsePortList(SmallVectorImpl<PortInfo> &resultPorts,
 /// parameter ::= 'parameter' id '=' StringLit NEWLINE
 /// parameter ::= 'parameter' id '=' floatingpoint NEWLINE
 /// parameter ::= 'parameter' id '=' RawString NEWLINE
-ParseResult FIRCircuitParser::parseModule(CircuitOp circuit,
-                                          StringRef circuitTarget,
-                                          unsigned indent) {
+ParseResult FIRCircuitParser::parseModule(CircuitOp circuit, unsigned indent) {
   bool isExtModule = getToken().is(FIRToken::kw_extmodule);
   consumeToken();
   StringAttr name;
@@ -2950,7 +2871,6 @@ ParseResult FIRCircuitParser::parseModule(CircuitOp circuit,
   if (parseId(name, "expected module name"))
     return failure();
 
-  auto moduleTarget = (circuitTarget + "|" + name.getValue()).str();
   ArrayAttr annotations = getConstants().emptyArrayAttr;
 
   if (parseToken(FIRToken::colon, "expected ':' in module definition") ||
@@ -2984,9 +2904,8 @@ ParseResult FIRCircuitParser::parseModule(CircuitOp circuit,
 
     // Parse the body of this module after all prototypes have been parsed. This
     // allows us to handle forward references correctly.
-    deferredModules.emplace_back(
-        DeferredModuleToParse{moduleOp, portLocs, getLexer().getCursor(),
-                              std::move(moduleTarget), indent});
+    deferredModules.emplace_back(DeferredModuleToParse{
+        moduleOp, portLocs, getLexer().getCursor(), indent});
 
     // We're going to defer parsing this module, so just skip tokens until we
     // get to the next module or the end of the file.
@@ -3096,7 +3015,6 @@ ParseResult
 FIRCircuitParser::parseModuleBody(DeferredModuleToParse &deferredModule) {
   FModuleOp moduleOp = deferredModule.moduleOp;
   auto &portLocs = deferredModule.portLocs;
-  auto &moduleTarget = deferredModule.moduleTarget;
 
   // We parse the body of this module with its own lexer, enabling parallel
   // parsing with the rest of the other module bodies.
@@ -3105,8 +3023,7 @@ FIRCircuitParser::parseModuleBody(DeferredModuleToParse &deferredModule) {
   // Reset the parser/lexer state back to right after the port list.
   deferredModule.lexerCursor.restore(moduleBodyLexer);
 
-  FIRModuleContext moduleContext(getConstants(), moduleBodyLexer,
-                                 std::move(moduleTarget));
+  FIRModuleContext moduleContext(getConstants(), moduleBodyLexer);
 
   // Install all of the ports into the symbol table, associated with their
   // block arguments.
@@ -3198,44 +3115,6 @@ ParseResult FIRCircuitParser::parseCircuit(
   OpBuilder b(mlirModule.getBodyRegion());
   auto circuit = b.create<CircuitOp>(info.getLoc(), name);
 
-  std::string circuitTarget = ("~" + name.getValue()).str();
-
-  // A timer to get execution time of annotation parsing.
-  auto parseAnnotationTimer = ts.nest("Parse annotations");
-
-  // Deal with any inline annotations, if they exist.  These are processed
-  // first to place any annotations from an annotation file *after* the inline
-  // annotations.  While arbitrary, this makes the annotation file have
-  // "append" semantics.
-  SmallVector<Attribute> annos;
-  if (!inlineAnnotations.empty())
-    if (importAnnotationsRaw(inlineAnnotationsLoc, circuitTarget,
-                             inlineAnnotations, annos))
-      return failure();
-
-  // Deal with the annotation file if one was specified
-  for (auto *annotationsBuf : annotationsBufs)
-    if (importAnnotationsRaw(inlineAnnotationsLoc, circuitTarget,
-                             annotationsBuf->getBuffer(), annos))
-      return failure();
-
-  parseAnnotationTimer.stop();
-  auto parseOMIRTimer = ts.nest("Parse OMIR");
-
-  // Process OMIR files as annotations with a class of
-  // "freechips.rocketchip.objectmodel.OMNode"
-  for (auto *omirBuf : omirBufs)
-    if (importOMIR(circuit, info.getFIRLoc(), circuitTarget,
-                   omirBuf->getBuffer(), annos))
-      return failure();
-
-  parseOMIRTimer.stop();
-
-  // Get annotations that are supposed to be specially handled by the
-  // LowerAnnotations pass.
-  if (!annos.empty())
-    circuit->setAttr(rawAnnotations, b.getArrayAttr(annos));
-
   // A timer to get execution time of module parsing.
   auto parseTimer = ts.nest("Parse modules");
   deferredModules.reserve(16);
@@ -3267,7 +3146,7 @@ ParseResult FIRCircuitParser::parseCircuit(
       if (moduleIndent <= circuitIndent)
         return emitError("module should be indented more"), failure();
 
-      if (parseModule(circuit, circuitTarget, moduleIndent))
+      if (parseModule(circuit, moduleIndent))
         return failure();
       break;
     }
@@ -3313,6 +3192,42 @@ DoneParsing:
         SymbolTable::setSymbolVisibility(mod, SymbolTable::Visibility::Private);
     }
   }
+
+  // A timer to get execution time of annotation parsing.
+  auto parseAnnotationTimer = ts.nest("Parse annotations");
+  AnnotationParser parser(getConstants().options, circuit);
+
+  // Deal with any inline annotations, if they exist.  These are processed
+  // first to place any annotations from an annotation file *after* the inline
+  // annotations.  While arbitrary, this makes the annotation file have
+  // "append" semantics.
+  if (!inlineAnnotations.empty())
+    if (failed(parser.parseAnnotations(translateLocation(inlineAnnotationsLoc),
+                                       inlineAnnotations)))
+      return failure();
+
+  // Deal with the annotation file if one was specified.
+  for (auto *annosBuf : annotationsBufs) {
+    auto file = StringAttr::get(getContext(), annosBuf->getBufferIdentifier());
+    auto loc = FileLineColLoc::get(file, 0, 0);
+    if (failed(parser.parseAnnotations(loc, annosBuf->getBuffer())))
+      return failure();
+  }
+
+  parseAnnotationTimer.stop();
+  auto parseOMIRTimer = ts.nest("Parse OMIR");
+
+  // Process OMIR files as annotations with a class of
+  // "freechips.rocketchip.objectmodel.OMNode"
+  for (auto *omirBuf : omirBufs) {
+    auto file = StringAttr::get(getContext(), omirBuf->getBufferIdentifier());
+    auto loc = FileLineColLoc::get(file, 0, 0);
+    if (failed(parser.parseOMIR(loc, omirBuf->getBuffer())))
+      return failure();
+  }
+
+  parseOMIRTimer.stop();
+
   return success();
 }
 

@@ -19,7 +19,7 @@ circuit Foo: %[[
     skip
 
     ; CHECK-LABEL: module {
-    ; CHECK: firrtl.circuit "Foo" attributes {rawAnnotations =
+    ; CHECK: firrtl.circuit "Foo" attributes {annotations =
     ; CHECK-SAME: array = [1, 2, 3]
     ; CHECK-SAME: boolean = true
     ; CHECK-SAME: float = 3.140
@@ -35,7 +35,7 @@ circuit Foo: %[[{"class": "circt.testNT", "\"":"}]]"}]]
     skip
 
     ; CHECK-LABEL: module {
-    ; CHECK: firrtl.circuit "Foo" attributes {rawAnnotations =
+    ; CHECK: firrtl.circuit "Foo" attributes {annotations =
 
 ; // -----
 ; JSON with a JSON-quoted string should be expanded.
@@ -44,7 +44,7 @@ circuit Foo: %[[{"class":"circt.testNT","a":"{\"b\":null}"}]]
     skip
 
     ; CHECK-LABEL: module {
-    ; CHECK: firrtl.circuit "Foo" attributes {rawAnnotations = [{a = {b}, class = "circt.testNT"}]}
+    ; CHECK: firrtl.circuit "Foo" attributes {annotations = [{a = {b}, class = "circt.testNT"}]}
 
 ; // -----
 ; JSON with a JSON-quoted number should stay as a number.
@@ -64,7 +64,7 @@ circuit Foo: %[[{"class":"circt.testNT","a":"0","b":0,"c":"\"0\""}]]
 
 circuit Top : %[[
   {
-    "class":"0",
+    "class":"circt.test",
     "target":"~Top|Top>a"
   }
 ]]
@@ -73,28 +73,3 @@ circuit Top : %[[
     a is invalid
 
 ; CHECK-LABEL: firrtl.circuit "Top"
-
-
-; // -----
-; Test that a circuit with annotations that are supposed to be bypassed by
-; parsing/scattering are properly moved onto the circuit under a
-; "rawAnnotations" attribute.
-circuit RawAnnotations: %[[
-  {
-    "class":"circt.test"
-  },
-  {
-    "class":"circt.testNT"
-  },
-  {
-    "class":"circt.missing"
-  }
-]]
-  module RawAnnotations:
-    wire x: UInt<1>
-
-    ; CHECK-LABEL: firrtl.circuit "RawAnnotations"
-    ; CHECK-SAME:    rawAnnotations = [
-    ; CHECK-SAME:      "circt.test"
-    ; Check-SAME:      "circt.testNT"
-    ; Check-SAME:      "circt.missing"

@@ -537,6 +537,13 @@ processBuffer(MLIRContext &context, TimingScope &ts, llvm::SourceMgr &sourceMgr,
     llvm::errs() << "[firtool] -- Done in " << llvm::format("%.3f", elapsed)
                  << " sec\n";
   }
+  
+   // If the user asked for just a parse, stop here.
+  if (outputFormat == OutputParseOnly) {
+    auto outputTimer = ts.nest("Print .mlir output");
+    printOp(module.release(), outputFile.value()->os());
+    return success();
+  }
 
   // Apply any pass manager command line options.
   PassManager pm(&context);
@@ -545,18 +552,6 @@ processBuffer(MLIRContext &context, TimingScope &ts, llvm::SourceMgr &sourceMgr,
   if (verbosePassExecutions)
     pm.addInstrumentation(std::make_unique<FirtoolPassInstrumentation>());
   applyPassManagerCLOptions(pm);
-
-  pm.nest<firrtl::CircuitOp>().addPass(firrtl::createLowerFIRRTLAnnotationsPass(
-      disableAnnotationsUnknown, disableAnnotationsClassless));
-
-  // If the user asked for --parse-only, stop after running LowerAnnotations.
-  if (outputFormat == OutputParseOnly) {
-    if (failed(pm.run(module.get())))
-      return failure();
-    auto outputTimer = ts.nest("Print .mlir output");
-    printOp(*module, outputFile.value()->os());
-    return success();
-  }
 
   // TODO: Move this to the O1 pipeline.
   pm.nest<firrtl::CircuitOp>().nest<firrtl::FModuleOp>().addPass(

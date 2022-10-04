@@ -3,7 +3,6 @@
 ; RUN: firtool %s -mlir-print-ir-before=cse 2>&1 | FileCheck %s -Dpass=CSE
 ; RUN: firtool %s -mlir-print-ir-before=strip-debuginfo -strip-debug-info 2>&1 | FileCheck %s -Dpass=StripDebugInfo
 ; RUN: firtool %s -mlir-print-ir-before=firrtl-inliner 2>&1 | FileCheck %s -Dpass=Inliner
-; RUN: firtool %s -mlir-print-ir-before=firrtl-lower-annotations 2>&1 | FileCheck %s -Dpass=LowerFIRRTLAnnotations
 ; RUN: firtool %s -mlir-print-ir-before=firrtl-grand-central 2>&1 | FileCheck %s -Dpass=GrandCentral
 ; RUN: firtool %s -mlir-print-ir-before=export-verilog 2>&1 | FileCheck %s -Dpass=ExportVerilog
 ; RUN: firtool %s -mlir-print-ir-before=export-split-verilog -split-verilog -o %t 2>&1 | FileCheck %s -Dpass=ExportSplitVerilog

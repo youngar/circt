@@ -28,11 +28,15 @@
 
 namespace json = llvm::json;
 
+#define DEBUG_TYPE "lower-annos"
+
 using namespace circt;
 using namespace firrtl;
+using namespace chirrtl;
 using mlir::UnitAttr;
 
 /// Convert arbitrary JSON to an MLIR Attribute.
+/// NOLINTNEXTLINE(misc-no-recursion)
 static Attribute convertJSONToAttribute(MLIRContext *context,
                                         json::Value &value, json::Path p) {
   // String or quoted JSON
@@ -93,28 +97,26 @@ static Attribute convertJSONToAttribute(MLIRContext *context,
 }
 
 /// Convert a JSON value containing OMIR JSON (an array of OMNodes), convert
-/// this to an OMIRAnnotation, and add it to a mutable `annotationMap` argument.
-bool circt::firrtl::fromOMIRJSON(json::Value &value, StringRef circuitTarget,
-                                 SmallVectorImpl<Attribute> &annotations,
-                                 json::Path path, MLIRContext *context) {
+/// this to an OMIRAnnotation.
+static Attribute convertJSONToOMIR(MLIRContext *context, json::Value &value,
+                                   json::Path path) {
   // The JSON value must be an array of objects.  Anything else is reported as
   // invalid.
   auto *array = value.getAsArray();
   if (!array) {
     path.report(
         "Expected OMIR to be an array of nodes, but found something else.");
-    return false;
+    return {};
   }
 
   // Build a mutable map of Target to Annotation.
-  SmallVector<Attribute> omnodes;
   for (size_t i = 0, e = (*array).size(); i != e; ++i) {
     auto *object = (*array)[i].getAsObject();
     auto p = path.index(i);
     if (!object) {
       p.report("Expected OMIR to be an array of objects, but found an array of "
                "something else.");
-      return false;
+      return {};
     }
 
     // Manually built up OMNode.
@@ -133,19 +135,19 @@ bool circt::firrtl::fromOMIRJSON(json::Value &value, StringRef circuitTarget,
     auto maybeInfo = object->getString("info");
     if (!maybeInfo) {
       p.report("OMNode missing mandatory member \"info\" with type \"string\"");
-      return false;
+      return {};
     }
     auto maybeID = object->getString("id");
     if (!maybeID || !maybeID->startswith("OMID:")) {
       p.report("OMNode missing mandatory member \"id\" with type \"string\" "
                "that starts with \"OMID:\"");
-      return false;
+      return {};
     }
     auto *maybeFields = object->get("fields");
     if (maybeFields && !maybeFields->getAsArray()) {
       p.report("OMNode has \"fields\" member with incorrect type (expected "
                "\"array\")");
-      return false;
+      return {};
     }
     Attribute fields;
     if (!maybeFields)
@@ -158,24 +160,24 @@ bool circt::firrtl::fromOMIRJSON(json::Value &value, StringRef circuitTarget,
         auto pI = p.field("fields").index(i);
         if (!field) {
           pI.report("OMNode has field that is not an \"object\"");
-          return false;
+          return {};
         }
         auto maybeInfo = field->getString("info");
         if (!maybeInfo) {
           pI.report(
               "OMField missing mandatory member \"info\" with type \"string\"");
-          return false;
+          return {};
         }
         auto maybeName = field->getString("name");
         if (!maybeName) {
           pI.report(
               "OMField missing mandatory member \"name\" with type \"string\"");
-          return false;
+          return {};
         }
         auto *maybeValue = field->get("value");
         if (!maybeValue) {
           pI.report("OMField missing mandatory member \"value\"");
-          return false;
+          return {};
         }
         NamedAttrList values;
         values.append("info", StringAttr::get(context, *maybeInfo));
@@ -190,59 +192,534 @@ bool circt::firrtl::fromOMIRJSON(json::Value &value, StringRef circuitTarget,
     omnode.append("id", convertJSONToAttribute(context, *object->get("id"),
                                                p.field("id")));
     omnode.append("fields", fields);
-    omnodes.push_back(DictionaryAttr::get(context, omnode));
   }
 
   NamedAttrList omirAnnoFields;
   omirAnnoFields.append("class", StringAttr::get(context, omirAnnoClass));
   omirAnnoFields.append("nodes", convertJSONToAttribute(context, value, path));
 
-  DictionaryAttr omirAnno = DictionaryAttr::get(context, omirAnnoFields);
-  annotations.push_back(omirAnno);
-
-  return true;
+  return DictionaryAttr::get(context, omirAnnoFields);
 }
 
-/// Deserialize a JSON value into FIRRTL Annotations.  Annotations are
-/// represented as a Target-keyed arrays of attributes.  The input JSON value is
-/// checked, at runtime, to be an array of objects.  Returns true if successful,
-/// false if unsuccessful.
-bool circt::firrtl::fromJSONRaw(json::Value &value, StringRef circuitTarget,
-                                SmallVectorImpl<Attribute> &annotations,
-                                json::Path path, MLIRContext *context) {
+/// Get annotations or an empty set of annotations.
+static ArrayAttr getAnnotationsFrom(Operation *op) {
+  if (auto annotations = op->getAttrOfType<ArrayAttr>(getAnnotationAttrName()))
+    return annotations;
+  return ArrayAttr::get(op->getContext(), {});
+}
+
+/// Construct the annotation array with a new thing appended.
+static ArrayAttr appendArrayAttr(ArrayAttr array, Attribute a) {
+  if (!array)
+    return ArrayAttr::get(a.getContext(), ArrayRef<Attribute>{a});
+  SmallVector<Attribute> old(array.begin(), array.end());
+  old.push_back(a);
+  return ArrayAttr::get(a.getContext(), old);
+}
+
+/// Update an ArrayAttribute by replacing one entry.
+static ArrayAttr replaceArrayAttrElement(ArrayAttr array, size_t elem,
+                                         Attribute newVal) {
+  SmallVector<Attribute> old(array.begin(), array.end());
+  old[elem] = newVal;
+  return ArrayAttr::get(array.getContext(), old);
+}
+
+/// Apply a new annotation to a resolved target.  This handles ports,
+/// aggregates, modules, wires, etc.
+static void addAnnotation(AnnoTarget ref, unsigned fieldIdx,
+                          ArrayRef<NamedAttribute> anno) {
+  auto *context = ref.getOp()->getContext();
+  DictionaryAttr annotation;
+  if (fieldIdx) {
+    SmallVector<NamedAttribute> annoField(anno.begin(), anno.end());
+    annoField.emplace_back(
+        StringAttr::get(context, "circt.fieldID"),
+        IntegerAttr::get(IntegerType::get(context, 32, IntegerType::Signless),
+                         fieldIdx));
+    annotation = DictionaryAttr::get(context, annoField);
+  } else {
+    annotation = DictionaryAttr::get(context, anno);
+  }
+
+  if (ref.isa<OpAnnoTarget>()) {
+    auto newAnno = appendArrayAttr(getAnnotationsFrom(ref.getOp()), annotation);
+    ref.getOp()->setAttr(getAnnotationAttrName(), newAnno);
+    return;
+  }
+
+  auto portRef = ref.cast<PortAnnoTarget>();
+  auto portAnnoRaw = ref.getOp()->getAttr(getPortAnnotationAttrName());
+  ArrayAttr portAnno = portAnnoRaw.dyn_cast_or_null<ArrayAttr>();
+  if (!portAnno || portAnno.size() != getNumPorts(ref.getOp())) {
+    SmallVector<Attribute> emptyPortAttr(
+        getNumPorts(ref.getOp()),
+        ArrayAttr::get(ref.getOp()->getContext(), {}));
+    portAnno = ArrayAttr::get(ref.getOp()->getContext(), emptyPortAttr);
+  }
+  portAnno = replaceArrayAttrElement(
+      portAnno, portRef.getPortNo(),
+      appendArrayAttr(portAnno[portRef.getPortNo()].dyn_cast<ArrayAttr>(),
+                      annotation));
+  ref.getOp()->setAttr("portAnnotations", portAnno);
+}
+
+/// Make an anchor for a non-local annotation.  Use the expanded path to build
+/// the module and name list in the anchor.
+static FlatSymbolRefAttr buildNLA(const AnnoPathValue &target,
+                                  ApplyState &state) {
+  OpBuilder b(state.circuit.getBodyRegion());
+  SmallVector<Attribute> insts;
+  for (auto inst : target.instances) {
+    insts.push_back(OpAnnoTarget(inst).getNLAReference(
+        state.getNamespace(inst->getParentOfType<FModuleLike>())));
+  }
+
+  insts.push_back(
+      FlatSymbolRefAttr::get(target.ref.getModule().moduleNameAttr()));
+  auto instAttr = ArrayAttr::get(state.circuit.getContext(), insts);
+  auto nla = b.create<HierPathOp>(state.circuit.getLoc(), "nla", instAttr);
+  state.symTbl.insert(nla);
+  return FlatSymbolRefAttr::get(nla);
+}
+
+/// Scatter breadcrumb annotations corresponding to non-local annotations
+/// along the instance path.  Returns symbol name used to anchor annotations to
+/// path.
+// FIXME: uniq annotation chain links
+static FlatSymbolRefAttr scatterNonLocalPath(const AnnoPathValue &target,
+                                             ApplyState &state) {
+
+  FlatSymbolRefAttr sym = buildNLA(target, state);
+  return sym;
+}
+
+//===----------------------------------------------------------------------===//
+// Standard Utility Resolvers
+//===----------------------------------------------------------------------===//
+
+/// Always resolve to the circuit, ignoring the annotation.
+static Optional<AnnoPathValue> noResolve(DictionaryAttr anno,
+                                         ApplyState &state) {
+  return AnnoPathValue(state.circuit);
+}
+
+/// Implementation of standard resolution.  First parses the target path, then
+/// resolves it.
+static Optional<AnnoPathValue> stdResolveImpl(StringRef rawPath,
+                                              ApplyState &state) {
+  auto pathStr = canonicalizeTarget(rawPath);
+  StringRef path{pathStr};
+
+  auto tokens = tokenizePath(path);
+  if (!tokens) {
+    mlir::emitError(state.circuit.getLoc())
+        << "Cannot tokenize annotation path " << rawPath;
+    return {};
+  }
+
+  return resolveEntities(*tokens, state.circuit, state.symTbl,
+                         state.targetCaches);
+}
+
+/// (SFC) FIRRTL SingleTargetAnnotation resolver.  Uses the 'target' field of
+/// the annotation with standard parsing to resolve the path.  This requires
+/// 'target' to exist and be normalized (per docs/FIRRTLAnnotations.md).
+static Optional<AnnoPathValue> stdResolve(DictionaryAttr anno,
+                                          ApplyState &state) {
+  auto target = anno.getNamed("target");
+  if (!target) {
+    mlir::emitError(state.circuit.getLoc())
+        << "No target field in annotation " << anno;
+    return {};
+  }
+  if (!target->getValue().isa<StringAttr>()) {
+    mlir::emitError(state.circuit.getLoc())
+        << "Target field in annotation doesn't contain string " << anno;
+    return {};
+  }
+  return stdResolveImpl(target->getValue().cast<StringAttr>().getValue(),
+                        state);
+}
+
+/// Resolves with target, if it exists.  If not, resolves to the circuit.
+static Optional<AnnoPathValue> tryResolve(DictionaryAttr anno,
+                                          ApplyState &state) {
+  auto target = anno.getNamed("target");
+  if (target)
+    return stdResolveImpl(target->getValue().cast<StringAttr>().getValue(),
+                          state);
+  return AnnoPathValue(state.circuit);
+}
+
+//===----------------------------------------------------------------------===//
+// Standard Utility Appliers
+//===----------------------------------------------------------------------===//
+
+/// An applier which puts the annotation on the target and drops the 'target'
+/// field from the annotation.  Optionally handles non-local annotations.
+static LogicalResult applyWithoutTargetImpl(const AnnoPathValue &target,
+                                            DictionaryAttr anno,
+                                            ApplyState &state,
+                                            bool allowNonLocal) {
+  if (!allowNonLocal && !target.isLocal()) {
+    Annotation annotation(anno);
+    auto diag = mlir::emitError(target.ref.getOp()->getLoc())
+                << "is targeted by a non-local annotation \""
+                << annotation.getClass() << "\" with target "
+                << annotation.getMember("target")
+                << ", but this annotation cannot be non-local";
+    diag.attachNote() << "see current annotation: " << anno << "\n";
+    return failure();
+  }
+  SmallVector<NamedAttribute> newAnnoAttrs;
+  for (auto &na : anno) {
+    if (na.getName().getValue() != "target") {
+      newAnnoAttrs.push_back(na);
+    } else if (!target.isLocal()) {
+      auto sym = scatterNonLocalPath(target, state);
+      newAnnoAttrs.push_back(
+          {StringAttr::get(anno.getContext(), "circt.nonlocal"), sym});
+    }
+  }
+  addAnnotation(target.ref, target.fieldIdx, newAnnoAttrs);
+  return success();
+}
+
+/// An applier which puts the annotation on the target and drops the 'target'
+/// field from the annotation.  Optionally handles non-local annotations.
+/// Ensures the target resolves to an expected type of operation.
+template <bool allowNonLocal, bool allowPortAnnoTarget, typename T,
+          typename... Tr>
+static LogicalResult applyWithoutTarget(const AnnoPathValue &target,
+                                        DictionaryAttr anno,
+                                        ApplyState &state) {
+  if (target.ref.isa<PortAnnoTarget>()) {
+    if (!allowPortAnnoTarget)
+      return failure();
+  } else if (!target.isOpOfType<T, Tr...>())
+    return failure();
+
+  return applyWithoutTargetImpl(target, anno, state, allowNonLocal);
+}
+
+template <bool allowNonLocal, typename T, typename... Tr>
+static LogicalResult applyWithoutTarget(const AnnoPathValue &target,
+                                        DictionaryAttr anno,
+                                        ApplyState &state) {
+  return applyWithoutTarget<allowNonLocal, false, T, Tr...>(target, anno,
+                                                            state);
+}
+
+/// An applier which puts the annotation on the target and drops the 'target'
+/// field from the annotaiton.  Optionally handles non-local annotations.
+template <bool allowNonLocal = false>
+static LogicalResult applyWithoutTarget(const AnnoPathValue &target,
+                                        DictionaryAttr anno,
+                                        ApplyState &state) {
+  return applyWithoutTargetImpl(target, anno, state, allowNonLocal);
+}
+
+/// Just drop the annotation.  This is intended for Annotations which are known,
+/// but can be safely ignored.
+static LogicalResult drop(const AnnoPathValue &target, DictionaryAttr anno,
+                          ApplyState &state) {
+  return success();
+}
+
+/// Resolution and application of a "firrtl.annotations.NoTargetAnnotation".
+/// This should be used for any Annotation which does not apply to anything in
+/// the FIRRTL Circuit, i.e., an Annotation which has no target.  Historically,
+/// NoTargetAnnotations were used to control the Scala FIRRTL Compiler (SFC) or
+/// its passes, e.g., to set the output directory or to turn on a pass.
+/// Examples of these in the SFC are "firrtl.options.TargetDirAnnotation" to set
+/// the output directory or "firrtl.stage.RunFIRRTLTransformAnnotation" to
+/// casuse the SFC to schedule a specified pass.  Instead of leaving these
+/// floating or attaching them to the top-level MLIR module (which is a purer
+/// interpretation of "no target"), we choose to attach them to the Circuit even
+/// they do not "apply" to the Circuit.  This gives later passes a common place,
+/// the Circuit, to search for these control Annotations.
+static AnnoRecord NoTargetAnnotation = {noResolve,
+                                        applyWithoutTarget<false, CircuitOp>};
+
+//===----------------------------------------------------------------------===//
+// Driving table
+//===----------------------------------------------------------------------===//
+
+static llvm::StringMap<AnnoRecord> createDrivingTable() {
+  return {
+      // Testing Annotation
+      {"circt.test", {stdResolve, applyWithoutTarget<true>}},
+      {"circt.testLocalOnly", {stdResolve, applyWithoutTarget<>}},
+      {"circt.testNT", {noResolve, applyWithoutTarget<>}},
+      {"circt.missing", {tryResolve, applyWithoutTarget<true>}},
+      // Grand Central Views/Interfaces Annotations
+      {extractGrandCentralClass, NoTargetAnnotation},
+      {grandCentralHierarchyFileAnnoClass, NoTargetAnnotation},
+      {serializedViewAnnoClass, {noResolve, applyGCTView}},
+      {viewAnnoClass, {noResolve, applyGCTView}},
+      {companionAnnoClass, {stdResolve, applyWithoutTarget<>}},
+      {parentAnnoClass, {stdResolve, applyWithoutTarget<>}},
+      {augmentedGroundTypeClass, {stdResolve, applyWithoutTarget<true>}},
+      // Grand Central Data Tap Annotations
+      {dataTapsClass, {noResolve, applyGCTDataTaps}},
+      {dataTapsBlackboxClass, {stdResolve, applyWithoutTarget<true>}},
+      {referenceKeySourceClass, {stdResolve, applyWithoutTarget<true>}},
+      {referenceKeyPortClass, {stdResolve, applyWithoutTarget<true>}},
+      {internalKeySourceClass, {stdResolve, applyWithoutTarget<true>}},
+      {internalKeyPortClass, {stdResolve, applyWithoutTarget<true>}},
+      {deletedKeyClass, {stdResolve, applyWithoutTarget<true>}},
+      {literalKeyClass, {stdResolve, applyWithoutTarget<true>}},
+      // Grand Central Mem Tap Annotations
+      {memTapClass, {noResolve, applyGCTMemTaps}},
+      {memTapSourceClass, {stdResolve, applyWithoutTarget<true>}},
+      {memTapPortClass, {stdResolve, applyWithoutTarget<true>}},
+      {memTapBlackboxClass, {stdResolve, applyWithoutTarget<true>}},
+      // Grand Central Signal Mapping Annotations
+      {signalDriverAnnoClass, {noResolve, applyGCTSignalMappings}},
+      {signalDriverTargetAnnoClass, {stdResolve, applyWithoutTarget<true>}},
+      {signalDriverModuleAnnoClass, {stdResolve, applyWithoutTarget<true>}},
+      // OMIR Annotations
+      {omirAnnoClass, {noResolve, applyOMIR}},
+      {omirTrackerAnnoClass, {stdResolve, applyWithoutTarget<true>}},
+      {omirFileAnnoClass, NoTargetAnnotation},
+      // Miscellaneous Annotations
+      {dontTouchAnnoClass,
+       {stdResolve, applyWithoutTarget<true, true, WireOp, NodeOp, RegOp,
+                                       RegResetOp, InstanceOp, MemOp, CombMemOp,
+                                       MemoryPortOp, SeqMemOp>}},
+      {prefixModulesAnnoClass,
+       {stdResolve,
+        applyWithoutTarget<true, FModuleOp, FExtModuleOp, InstanceOp>}},
+      {dutAnnoClass, {stdResolve, applyWithoutTarget<false, FModuleOp>}},
+      {extractSeqMemsAnnoClass, NoTargetAnnotation},
+      {injectDUTHierarchyAnnoClass, NoTargetAnnotation},
+      {convertMemToRegOfVecAnnoClass, NoTargetAnnotation},
+      {excludeMemToRegAnnoClass,
+       {stdResolve, applyWithoutTarget<true, MemOp, CombMemOp>}},
+      {sitestBlackBoxAnnoClass, NoTargetAnnotation},
+      {enumComponentAnnoClass, {noResolve, drop}},
+      {enumDefAnnoClass, {noResolve, drop}},
+      {enumVecAnnoClass, {noResolve, drop}},
+      {forceNameAnnoClass,
+       {stdResolve, applyWithoutTarget<true, FModuleOp, FExtModuleOp>}},
+      {flattenAnnoClass, {stdResolve, applyWithoutTarget<false, FModuleOp>}},
+      {inlineAnnoClass, {stdResolve, applyWithoutTarget<false, FModuleOp>}},
+      {noDedupAnnoClass,
+       {stdResolve, applyWithoutTarget<false, FModuleOp, FExtModuleOp>}},
+      {blackBoxInlineAnnoClass,
+       {stdResolve, applyWithoutTarget<false, FExtModuleOp>}},
+      {dontObfuscateModuleAnnoClass,
+       {stdResolve, applyWithoutTarget<false, FModuleOp>}},
+      {verifBlackBoxAnnoClass,
+       {stdResolve, applyWithoutTarget<false, FExtModuleOp>}},
+      {elaborationArtefactsDirectoryAnnoClass, NoTargetAnnotation},
+      {subCircuitsTargetDirectoryAnnoClass, NoTargetAnnotation},
+      {retimeModulesFileAnnoClass, NoTargetAnnotation},
+      {retimeModuleAnnoClass,
+       {stdResolve, applyWithoutTarget<false, FModuleOp, FExtModuleOp>}},
+      {metadataDirectoryAttrName, NoTargetAnnotation},
+      {moduleHierAnnoClass, NoTargetAnnotation},
+      {sitestTestHarnessBlackBoxAnnoClass, NoTargetAnnotation},
+      {testBenchDirAnnoClass, NoTargetAnnotation},
+      {testHarnessHierAnnoClass, NoTargetAnnotation},
+      {testHarnessPathAnnoClass, NoTargetAnnotation},
+      {prefixInterfacesAnnoClass, NoTargetAnnotation},
+      {subCircuitDirAnnotation, NoTargetAnnotation},
+      {extractAssertAnnoClass, NoTargetAnnotation},
+      {extractAssumeAnnoClass, NoTargetAnnotation},
+      {extractCoverageAnnoClass, NoTargetAnnotation},
+      {dftTestModeEnableAnnoClass, {stdResolve, applyWithoutTarget<true>}},
+      {runFIRRTLTransformAnnoClass, {noResolve, drop}},
+      {mustDedupAnnoClass, NoTargetAnnotation},
+      {addSeqMemPortAnnoClass, NoTargetAnnotation},
+      {addSeqMemPortsFileAnnoClass, NoTargetAnnotation},
+      {extractClockGatesAnnoClass, NoTargetAnnotation},
+      {fullAsyncResetAnnoClass, {stdResolve, applyWithoutTarget<true>}},
+      {ignoreFullAsyncResetAnnoClass,
+       {stdResolve, applyWithoutTarget<true, FModuleOp>}},
+      {decodeTableAnnotation, {noResolve, drop}},
+      {blackBoxTargetDirAnnoClass, NoTargetAnnotation}};
+}
+
+//===----------------------------------------------------------------------===//
+// ApplyState
+//===----------------------------------------------------------------------===//
+
+ApplyState::ApplyState(const FIRParserOptions &options, CircuitOp circuit,
+                       AnnotationParser *parser)
+    : context(circuit.getContext()), circuit(circuit), symTbl(circuit),
+      instanceGraph(circuit), instancePathCache(instanceGraph), parser(parser) {
+}
+
+//===----------------------------------------------------------------------===//
+// AnnotationParser
+//===----------------------------------------------------------------------===//
+
+AnnotationParser::AnnotationParser(const FIRParserOptions &options,
+                                   CircuitOp circuit)
+    : context(circuit.getContext()), circuit(circuit), options(options),
+      circuitTarget(("~" + circuit.getName()).str()),
+      applyState(options, circuit, this),
+      annotationRecords(createDrivingTable()) {}
+
+/// Lookup a record for a given annotation class.  Optionally, returns the
+/// record for "circuit.missing" if the record doesn't exist.
+const AnnoRecord *
+AnnotationParser::getAnnotationHandler(StringRef annoStr) const {
+  auto ii = annotationRecords.find(annoStr);
+  if (ii != annotationRecords.end())
+    return &ii->second;
+  return nullptr;
+}
+
+LogicalResult AnnotationParser::applyAnnotation(DictionaryAttr anno) {
+  // Lookup the class
+  StringRef annoClassVal;
+  if (auto annoClass = anno.getNamed("class"))
+    annoClassVal = annoClass->getValue().cast<StringAttr>().getValue();
+  else if (options.ignoreClasslessAnnotations)
+    annoClassVal = "circt.missing";
+  else
+    return mlir::emitError(circuit.getLoc())
+           << "Annotation without a class: " << anno;
+
+  // See if we handle the class.
+  auto *record = getAnnotationHandler(annoClassVal);
+  if (!record && !options.ignoreUnhandledAnnotations) {
+    return mlir::emitError(circuit.getLoc())
+           << "Unhandled annotation: " << anno;
+
+    // Try again, requesting the fallback handler.
+    record = getAnnotationHandler("circt.missing");
+    assert(record);
+  }
+
+  // Try to apply the annotation.
+  auto target = record->resolver(anno, applyState);
+  if (!target)
+    return mlir::emitError(circuit.getLoc())
+           << "Unable to resolve target of annotation: " << anno;
+  if (record->applier(*target, anno, applyState).failed())
+    return mlir::emitError(circuit.getLoc())
+           << "Unable to apply annotation: " << anno;
+  return success();
+}
+
+LogicalResult AnnotationParser::parseAnnotations(Location loc,
+                                                 StringRef annotationsStr) {
+  // Parse the annotations into JSON.
+  auto json = json::parse(annotationsStr);
+  if (auto err = json.takeError()) {
+    handleAllErrors(std::move(err), [&](const json::ParseError &a) {
+      auto diag = emitError(loc, "Failed to parse JSON Annotations");
+      diag.attachNote() << a.message();
+    });
+    return failure();
+  }
+
+  json::Path::Root root;
+  json::Path path = root;
+
+  auto *annotations = json->getAsArray();
 
   // The JSON value must be an array of objects.  Anything else is reported as
   // invalid.
-  auto array = value.getAsArray();
-  if (!array) {
+  if (!annotations) {
     path.report(
         "Expected annotations to be an array, but found something else.");
-    return false;
+    auto diag = emitError(loc, "Invalid/unsupported annotation format");
+    std::string jsonErrorMessage =
+        "See inline comments for problem area in JSON:\n";
+    llvm::raw_string_ostream s(jsonErrorMessage);
+    root.printErrorContext(json.get(), s);
+    diag.attachNote() << jsonErrorMessage;
+    return failure();
   }
 
-  // Build an array of annotations.
-  for (size_t i = 0, e = (*array).size(); i != e; ++i) {
-    auto object = (*array)[i].getAsObject();
+  // Process each annotation.
+  for (size_t i = 0, e = annotations->size(); i != e; ++i) {
     auto p = path.index(i);
-    if (!object) {
+    auto attr = convertJSONToAttribute(context, (*annotations)[i], path);
+    llvm::errs() << "processing: " << attr << "\n";
+
+    // Make sure that this was a JSON object.
+    auto anno = attr.dyn_cast<DictionaryAttr>();
+    if (!anno) {
       p.report("Expected annotations to be an array of objects, but found an "
                "array of something else.");
-      return false;
+      auto diag = emitError(loc, "Invalid/unsupported annotation format");
+      std::string jsonErrorMessage =
+          "See inline comments for problem area in JSON:\n";
+      llvm::raw_string_ostream s(jsonErrorMessage);
+      root.printErrorContext(json.get(), s);
+      diag.attachNote() << jsonErrorMessage;
+      return failure();
     }
 
-    // Build up the Attribute to represent the Annotation
-    NamedAttrList metadata;
+    // Process the annotation.
+    if (failed(applyAnnotation(anno)))
+      return failure();
 
-    for (auto field : *object) {
-      if (auto value = convertJSONToAttribute(context, field.second, p)) {
-        metadata.append(field.first, value);
-        continue;
-      }
-      return false;
+    // Attach any additional annotation targets to the circuit.
+    while (!worklist.empty()) {
+      if (failed(applyAnnotation(worklist.pop_back_val())))
+        return failure();
     }
+  }
+  return success();
+}
 
-    annotations.push_back(DictionaryAttr::get(context, metadata));
+LogicalResult AnnotationParser::parseOMIR(Location loc, StringRef omirStr) {
+  // Parse the annotations into JSON.
+  auto json = json::parse(omirStr);
+  if (auto err = json.takeError()) {
+    handleAllErrors(std::move(err), [&](const json::ParseError &a) {
+      auto diag = emitError(loc, "Failed to parse JSON Annotations");
+      diag.attachNote() << a.message();
+    });
+    return failure();
   }
 
-  return true;
+  json::Path::Root root;
+  json::Path path = root;
+
+  auto attr = convertJSONToOMIR(context, json.get(), path);
+
+  // Check if the OMIR JSON failed to deserialize.
+  if (!attr) {
+    auto diag = emitError(loc, "Invalid/unsupported annotation format");
+    std::string jsonErrorMessage =
+        "See inline comments for problem area in JSON:\n";
+    llvm::raw_string_ostream s(jsonErrorMessage);
+    root.printErrorContext(json.get(), s);
+    diag.attachNote() << jsonErrorMessage;
+    return failure();
+  }
+  llvm::errs() << "omir: " << attr << "\n";
+
+  // Make sure that this was a JSON object.
+  auto anno = attr.dyn_cast<DictionaryAttr>();
+  if (!anno) {
+    path.report("Expected annotations to be an array of objects, but found an "
+             "array of something else.");
+    auto diag = emitError(loc, "Invalid/unsupported annotation format");
+    std::string jsonErrorMessage =
+        "See inline comments for problem area in JSON:\n";
+    llvm::raw_string_ostream s(jsonErrorMessage);
+    root.printErrorContext(json.get(), s);
+    diag.attachNote() << jsonErrorMessage;
+    return failure();
+  }
+
+  // Process the annotation.
+  if (failed(applyAnnotation(anno)))
+    return failure();
+
+  // Attach any additional annotation targets to the circuit.
+  while (!worklist.empty()) {
+    if (failed(applyAnnotation(worklist.pop_back_val())))
+      return failure();
+  }
+  return success();
 }

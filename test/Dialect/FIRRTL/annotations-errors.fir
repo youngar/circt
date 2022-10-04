@@ -14,7 +14,7 @@ circuit Foo: %[{"a":"a"}]
 
 ; expected-error @+2 {{Invalid/unsupported annotation format}}
 ; expected-note @+1 {{/* error: Expected annotations to be an array of objects, but found an array of something else. */}}
-circuit Foo: %[[{"a":"a"},[{"b":"b"}]]]
+circuit Foo: %[[[{"class":"b"}]]]
   module Foo:
     skip
 
@@ -23,7 +23,7 @@ circuit Foo: %[[{"a":"a"},[{"b":"b"}]]]
 ; Annotations JSON is invalid. (There's a trailing comma.)
 
 ; expected-error @+2 {{Failed to parse JSON Annotations}}
-; expected-note @+1 {{}}
-circuit Foo: %[[{"a":"a"},]]]
+; expected-note @+1 {{Invalid JSON value}}
+circuit Foo: %[[{"a":"a"},]]
   module Foo:
     skip

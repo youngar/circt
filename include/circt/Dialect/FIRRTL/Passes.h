@@ -24,10 +24,6 @@ class Pass;
 namespace circt {
 namespace firrtl {
 
-std::unique_ptr<mlir::Pass>
-createLowerFIRRTLAnnotationsPass(bool ignoreUnhandledAnnotations = false,
-                                 bool ignoreClasslessAnnotations = false);
-
 /// Configure which aggregate values will be preserved by the LowerTypes pass.
 namespace PreserveAggregate {
 enum PreserveMode {

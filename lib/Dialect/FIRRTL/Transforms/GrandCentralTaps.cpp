@@ -553,7 +553,7 @@ LogicalResult circt::firrtl::applyGCTDataTaps(const AnnoPathValue &target,
   if (!tokenizePath(canonicalTarget))
     return failure();
   attrs.append("target", StringAttr::get(context, canonicalTarget));
-  state.addToWorklistFn(DictionaryAttr::getWithSorted(context, attrs));
+  state.addToWorklist(DictionaryAttr::getWithSorted(context, attrs));
 
   // Process all the taps.
   auto keyAttr = tryGetAs<ArrayAttr>(anno, anno, "keys", loc, dataTapsClass);
@@ -594,14 +594,14 @@ LogicalResult circt::firrtl::applyGCTDataTaps(const AnnoPathValue &target,
 
       source.append("target", StringAttr::get(context, sourceTarget));
 
-      state.addToWorklistFn(DictionaryAttr::get(context, source));
+      state.addToWorklist(DictionaryAttr::get(context, source));
 
       // Annotate the data tap module port.
       port.append("class", StringAttr::get(context, referenceKeyPortClass));
       port.append("id", id);
       port.append("portID", portID);
       port.append("target", StringAttr::get(context, portTarget));
-      state.addToWorklistFn(DictionaryAttr::getWithSorted(context, port));
+      state.addToWorklist(DictionaryAttr::getWithSorted(context, port));
       continue;
     }
 
@@ -623,14 +623,14 @@ LogicalResult circt::firrtl::applyGCTDataTaps(const AnnoPathValue &target,
         return failure();
 
       module.append("target", StringAttr::get(context, moduleTarget));
-      state.addToWorklistFn(DictionaryAttr::getWithSorted(context, module));
+      state.addToWorklist(DictionaryAttr::getWithSorted(context, module));
 
       // Annotate the data tap module port.
       port.append("class", StringAttr::get(context, internalKeyPortClass));
       port.append("id", id);
       port.append("portID", portID);
       port.append("target", StringAttr::get(context, portTarget));
-      state.addToWorklistFn(DictionaryAttr::get(context, port));
+      state.addToWorklist(DictionaryAttr::get(context, port));
       continue;
     }
 
@@ -639,7 +639,7 @@ LogicalResult circt::firrtl::applyGCTDataTaps(const AnnoPathValue &target,
       port.append("class", classAttr);
       port.append("id", id);
       port.append("target", StringAttr::get(context, portTarget));
-      state.addToWorklistFn(DictionaryAttr::get(context, port));
+      state.addToWorklist(DictionaryAttr::get(context, port));
       continue;
     }
 
@@ -654,7 +654,7 @@ LogicalResult circt::firrtl::applyGCTDataTaps(const AnnoPathValue &target,
       port.append("id", id);
       port.append("literal", literalAttr);
       port.append("target", StringAttr::get(context, portTarget));
-      state.addToWorklistFn(DictionaryAttr::get(context, port));
+      state.addToWorklist(DictionaryAttr::get(context, port));
       continue;
     }
 
@@ -797,7 +797,7 @@ LogicalResult circt::firrtl::applyGCTMemTaps(const AnnoPathValue &target,
   if (!anno.contains("taps"))
     return applyGCTMemTapsWithWires(target, anno, sourceTarget, state);
   auto tapsAttr = tryGetAs<ArrayAttr>(anno, anno, "taps", loc, memTapClass);
-  state.addToWorklistFn(DictionaryAttr::get(context, attrs));
+  state.addToWorklist(DictionaryAttr::get(context, attrs));
   StringSet<> memTapBlackboxes;
   for (size_t i = 0, e = tapsAttr.size(); i != e; ++i) {
     auto tap = tapsAttr[i].dyn_cast_or_null<StringAttr>();
@@ -818,7 +818,7 @@ LogicalResult circt::firrtl::applyGCTMemTaps(const AnnoPathValue &target,
     if (!tokenizePath(canonTarget))
       return failure();
     port.append("target", StringAttr::get(context, canonTarget));
-    state.addToWorklistFn(DictionaryAttr::get(context, port));
+    state.addToWorklist(DictionaryAttr::get(context, port));
 
     auto blackboxTarget = tokenizePath(canonTarget).value();
     blackboxTarget.name = {};
@@ -830,7 +830,7 @@ LogicalResult circt::firrtl::applyGCTMemTaps(const AnnoPathValue &target,
     NamedAttrList blackbox;
     blackbox.append("class", StringAttr::get(context, memTapBlackboxClass));
     blackbox.append("target", StringAttr::get(context, blackboxTargetStr));
-    state.addToWorklistFn(DictionaryAttr::getWithSorted(context, blackbox));
+    state.addToWorklist(DictionaryAttr::getWithSorted(context, blackbox));
   }
 
   return success();

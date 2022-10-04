@@ -1110,7 +1110,7 @@ static Optional<DictionaryAttr> parseAugmentedType(
     } else
       elementScattered.append("target", targetAttr);
 
-    state.addToWorklistFn(
+    state.addToWorklist(
         DictionaryAttr::getWithSorted(context, elementScattered));
 
     return DictionaryAttr::getWithSorted(context, elementIface);
@@ -1188,7 +1188,7 @@ LogicalResult circt::firrtl::applyGCTView(const AnnoPathValue &target,
   if (!companionAttr)
     return failure();
   companionAttrs.append("target", companionAttr);
-  state.addToWorklistFn(DictionaryAttr::get(context, companionAttrs));
+  state.addToWorklist(DictionaryAttr::get(context, companionAttrs));
 
   auto parentAttr =
       tryGetAs<StringAttr>(anno, anno, "parent", loc, viewAnnoClass);
@@ -1201,7 +1201,7 @@ LogicalResult circt::firrtl::applyGCTView(const AnnoPathValue &target,
   parentAttrs.append("name", name);
   parentAttrs.append("target", parentAttr);
   parentAttrs.append("type", StringAttr::get(context, "parent"));
-  state.addToWorklistFn(DictionaryAttr::get(context, parentAttrs));
+  state.addToWorklist(DictionaryAttr::get(context, parentAttrs));
   auto prunedAttr = parseAugmentedType(
       state, viewAttr, anno, companionAttr.getValue(), name, {}, id, {},
       viewAnnoClass, cast<FModuleOp>(parentTarget->ref.getOp()), companionAttr,
@@ -2024,7 +2024,6 @@ void GrandCentralPass::runOnOperation() {
             ++numAnnosRemoved;
             return true;
           });
-
           // Handle annotations on the module.
           AnnotationSet::removeAnnotations(op, [&](Annotation annotation) {
             // TODO: Change this to remove the "type" field as all these

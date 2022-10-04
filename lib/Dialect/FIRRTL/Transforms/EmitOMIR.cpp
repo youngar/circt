@@ -238,7 +238,7 @@ static Optional<Attribute> scatterOMIR(Attribute original, ApplyState &state) {
           tracker.append("id", idAttr);
           tracker.append("target", StringAttr::get(ctx, value));
 
-          state.addToWorklistFn(DictionaryAttr::get(ctx, tracker));
+          state.addToWorklist(DictionaryAttr::get(ctx, tracker));
 
           return addID(tpe, value, idAttr);
         }

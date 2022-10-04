@@ -15,35 +15,6 @@
 
 include "mlir/Pass/PassBase.td"
 
-def LowerFIRRTLAnnotations : Pass<"firrtl-lower-annotations", "firrtl::CircuitOp"> {
-  let summary = "Lower FIRRTL annotations to usable entities";
-  let description = [{
-    Lower FIRRTL annotations to usable forms.  FIRRTL annotations are a big bag
-    of semi-structured, irregular JSON.  This pass normalizes all supported
-    annotations and annotation paths.
-  }];
-  let constructor = "circt::firrtl::createLowerFIRRTLAnnotationsPass()";
-  let options = [
-    Option<"ignoreAnnotationClassless", "disable-annotation-classless", "bool", "false",
-      "Ignore classless annotations.">,
-    Option<"ignoreAnnotationUnknown", "disable-annotation-unknown", "bool", "true",
-      "Ignore unknown annotations.">
-  ];
-  let dependentDialects = ["hw::HWDialect"];
-  let statistics = [
-    Statistic<"numRawAnnotations", "num-raw-annos",
-      "Number of raw annotations on circuit">,
-    Statistic<"numAddedAnnos", "num-added-annos",
-       "Number of additional annotations">,
-    Statistic<"numAnnos", "num-annos",
-       "Total number of annotations processed">,
-    Statistic<"numUnhandled", "num-unhandled-annos",
-      "Number of unhandled annotations">,
-    Statistic<"numReusedHierPathOps", "num-reused-hierpath",
-      "Number of reused HierPathOp's">,
-  ];
-}
-
 def LowerFIRRTLTypes : Pass<"firrtl-lower-types", "firrtl::CircuitOp"> {
   let summary = "Lower FIRRTL types to ground types";
   let description = [{
