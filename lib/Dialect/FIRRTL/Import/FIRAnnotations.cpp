@@ -654,7 +654,6 @@ LogicalResult AnnotationParser::parseAnnotations(Location loc,
   for (size_t i = 0, e = annotations->size(); i != e; ++i) {
     auto p = path.index(i);
     auto attr = convertJSONToAttribute(context, (*annotations)[i], path);
-    llvm::errs() << "processing: " << attr << "\n";
 
     // Make sure that this was a JSON object.
     auto anno = attr.dyn_cast<DictionaryAttr>();
@@ -709,7 +708,6 @@ LogicalResult AnnotationParser::parseOMIR(Location loc, StringRef omirStr) {
     diag.attachNote() << jsonErrorMessage;
     return failure();
   }
-  llvm::errs() << "omir: " << attr << "\n";
 
   // Make sure that this was a JSON object.
   auto anno = attr.dyn_cast<DictionaryAttr>();
