@@ -277,10 +277,23 @@ static FlatSymbolRefAttr buildNLA(const AnnoPathValue &target,
 
   insts.push_back(
       FlatSymbolRefAttr::get(target.ref.getModule().moduleNameAttr()));
+
   auto instAttr = ArrayAttr::get(state.circuit.getContext(), insts);
+
+  // Re-use NLA for this path if already created.
+  auto it = state.instPathToNLAMap.find(instAttr);
+  if (it != state.instPathToNLAMap.end()) {
+    ++state.numReusedHierPaths;
+    return it->second;
+  }
+
+  // Create the NLA
   auto nla = b.create<HierPathOp>(state.circuit.getLoc(), "nla", instAttr);
   state.symTbl.insert(nla);
-  return FlatSymbolRefAttr::get(nla);
+  nla.setVisibility(SymbolTable::Visibility::Private);
+  auto sym = FlatSymbolRefAttr::get(nla);
+  state.instPathToNLAMap.insert({instAttr, sym});
+  return sym;
 }
 
 /// Scatter breadcrumb annotations corresponding to non-local annotations
@@ -702,7 +715,7 @@ LogicalResult AnnotationParser::parseOMIR(Location loc, StringRef omirStr) {
   auto anno = attr.dyn_cast<DictionaryAttr>();
   if (!anno) {
     path.report("Expected annotations to be an array of objects, but found an "
-             "array of something else.");
+                "array of something else.");
     auto diag = emitError(loc, "Invalid/unsupported annotation format");
     std::string jsonErrorMessage =
         "See inline comments for problem area in JSON:\n";
