@@ -24,6 +24,8 @@ class Pass;
 namespace circt {
 namespace firrtl {
 
+std::unique_ptr<mlir::Pass> createUndefRegPass();
+
 std::unique_ptr<mlir::Pass>
 createLowerFIRRTLAnnotationsPass(bool ignoreUnhandledAnnotations = false,
                                  bool ignoreClasslessAnnotations = false);

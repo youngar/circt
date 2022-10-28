@@ -33,6 +33,7 @@ add_circt_dialect_library(CIRCTFIRRTLTransforms
   ResolveTraces.cpp
   RemoveUnusedPorts.cpp
   SFCCompat.cpp
+  UndefRegister.cpp
   WireDFT.cpp
 
   DEPENDS

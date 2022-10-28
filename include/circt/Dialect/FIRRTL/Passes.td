@@ -14,6 +14,9 @@
 #define CIRCT_DIALECT_FIRRTL_PASSES_TD
 
 include "mlir/Pass/PassBase.td"
+def UndefRegPass : Pass<"firrtl-undef-reg", "firrtl::CircuitOp"> {
+  let constructor = "circt::firrtl::createUndefRegPass()";
+}
 
 def LowerFIRRTLAnnotations : Pass<"firrtl-lower-annotations", "firrtl::CircuitOp"> {
   let summary = "Lower FIRRTL annotations to usable entities";
