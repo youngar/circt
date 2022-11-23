@@ -636,4 +636,12 @@ def InnerSymbolDCE : Pass<"firrtl-inner-symbol-dce", "mlir::ModuleOp"> {
   ];
 }
 
+def AOSToSOA : Pass<"firrtl-aos-to-soa", "firrtl::FModuleOp"> {
+  let summary = "Transform arrays of structs to structs of arrays";
+  let description = [{
+    This pass lowers 
+  }];
+  let constructor = "circt::firrtl::createAOSToSOAPass()";
+}
+
 #endif // CIRCT_DIALECT_FIRRTL_PASSES_TD

@@ -14,7 +14,7 @@
 #define CIRCT_TRANSFORMS_PASSES
 
 include "mlir/Pass/PassBase.td"
-include "mlir/Rewrite/PassUtil.td"
+include "mlir/Rewrite/PassUtil.td" 
 
 def FlattenMemRef : Pass<"flatten-memref", "::mlir::ModuleOp"> {
   let summary = "Flatten memrefs";
