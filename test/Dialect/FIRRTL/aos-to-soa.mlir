@@ -30,7 +30,7 @@ firrtl.circuit "Test" {
   // CHECK-LABEL:  @BG
   // CHECK-SAME:   (in %port: !firrtl.bundle<a: uint<8>>)
   firrtl.module @BG(in %port: !firrtl.bundle<a: uint<8>>) {
-    // no change
+  // no change
   }
 
   // vector<bundle> -> bundle<vector>
@@ -40,6 +40,21 @@ firrtl.circuit "Test" {
     // port[i].field => port.field[i]
     // %bundle = firrtl.subindex %port[0] : !firrtl.vector<bundle<a: uint<8>>, 4> -> bundle<a: uint<8>>
     // %field  = firrlt.subfield %bundle(0) : !firrtl.bundle<a: uint<8>> -> uint<8>
+    // %self_port = firrtl.instance self @VB(in port: !firrtl.vector<bundle<a: uint<8>>, 4>)
+    // firrtl.connect %self_port, %port : !firrtl.vector<bundle<a: uint<8>>, 4>, !firrtl.vector<bundle<a: uint<8>>, 4>
+  }
+
+  firrtl.module @VBX(in %port: !firrtl.vector<bundle<a: uint<8>>, 4>) {
+    // port[i].field => port.field[i]
+    // %bundle = firrtl.subindex %port[0] : !firrtl.vector<bundle<a: uint<8>>, 4> -> bundle<a: uint<8>>
+    // %field  = firrlt.subfield %bundle(0) : !firrtl.bundle<a: uint<8>> -> uint<8>
+    %self_port = firrtl.instance self @VB(in port: !firrtl.vector<bundle<a: uint<8>>, 4>)
+    firrtl.connect %self_port, %port : !firrtl.vector<bundle<a: uint<8>>, 4>, !firrtl.vector<bundle<a: uint<8>>, 4>
+
+    // %value   = firrtl.constant 7 : !firrtl.uint<8>
+    // %bundle  = firrtl.subindex %port[3] : !firrtl.vector<bundle<a: uint<8>>, 4>
+    // %field   = firrtl.subfield %bundle(0) : (!firrtl.bundle<a: uint<8>>) -> !firrtl.uint<8>
+    // firrtl.connect %field, %value : !firrtl.uint<8>, !firrtl.uint<8>
   }
 
   // vector<bundle<bundle>> -> bundle<bundle<vector>>
@@ -63,4 +78,19 @@ firrtl.circuit "Test" {
 
   }
   // bundle<vector<bundle>> -> bundle<bundle<vector>>
+
+
+  // firrtl.module @TestSubindex() {
+
+  //   %value   = firrtl.bundleconstant
+  //   %element = firrtl.subindex %port[3] : !firrtl.bundle<a: uint<8>>
+  //   firrtl.connect %element, 
+  // }
+
+  firrtl.module @TestIndexing(in %port: !firrtl.vector<bundle<a flip: uint<8>>, 4>) {
+    %value  = firrtl.constant 7 : !firrtl.uint<8>
+    %bundle = firrtl.subindex %port[3] : !firrtl.vector<bundle<a flip: uint<8>>, 4>
+    %field  = firrtl.subfield %bundle(0) : (!firrtl.bundle<a flip: uint<8>>) -> !firrtl.uint<8>
+    firrtl.connect %field, %value : !firrtl.uint<8>, !firrtl.uint<8>
+  }
 }

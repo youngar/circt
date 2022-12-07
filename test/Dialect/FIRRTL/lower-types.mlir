@@ -506,6 +506,7 @@ firrtl.circuit "TopLevel" {
   firrtl.module private @AnnotationsWithFieldIdWireOp() {
     %foo = firrtl.wire {annotations = [{class = "sifive.enterprise.grandcentral.SignalDriverAnnotation"}]} : !firrtl.uint<1>
     %bar = firrtl.wire {annotations = [{class = "sifive.enterprise.grandcentral.SignalDriverAnnotation"}]} : !firrtl.bundle<a: vector<uint<1>, 2>, b: uint<1>>
+    // HERE
     %baz = firrtl.wire {annotations = [{circt.fieldID = 2 : i32, class = "sifive.enterprise.grandcentral.SignalDriverAnnotation"}]} : !firrtl.bundle<a: uint<1>, b: vector<uint<1>, 2>>
   }
   // CHECK: %foo = firrtl.wire
