@@ -134,70 +134,8 @@ LiftBundlesVisitor::convertType(FIRRTLBaseType type,
 }
 
 //===----------------------------------------------------------------------===//
-// Access-path Rewriting
+// Path Rewriting
 //===----------------------------------------------------------------------===//
-
-std::pair<SmallVector<Value>, bool>
-LiftBundlesVisitor::fixFieldRef(FieldRef fieldRef) {
-  auto oldValue = fieldRef.getValue();
-  auto newValue = valueMap.lookup(oldValue);
-  if (!newValue)
-    return {{oldValue}, false};
-
-  return buildPath(oldValue, newValue, fieldRef.getFieldID());
-}
-
-//===----------------------------------------------------------------------===//
-// Operand Fixup
-//===----------------------------------------------------------------------===//
-
-std::pair<SmallVector<Value>, bool>
-LiftBundlesVisitor::fixOperand(Value value) {
-  return fixFieldRef(getFieldRefFromValue(value));
-}
-
-void LiftBundlesVisitor::explode(OpBuilder builder, Value value,
-                                 SmallVector<Value> &output) {
-  auto type = value.getType();
-  if (auto bundleType = type.dyn_cast<BundleType>()) {
-    for (size_t i = 0, e = bundleType.getNumElements(); i < e; ++i) {
-      auto op = builder.create<SubfieldOp>(value.getLoc(), value, i);
-      explode(builder, op, output);
-    }
-  } else {
-    output.push_back(value);
-  }
-}
-
-SmallVector<Value> LiftBundlesVisitor::explode(Value value) {
-  llvm::errs() << "EXPLODING: ";
-  value.dump();
-  auto builder = OpBuilder(context);
-  builder.setInsertionPointAfterValue(value);
-  auto output = SmallVector<Value>();
-  explode(builder, value, output);
-  return output;
-}
-
-//===----------------------------------------------------------------------===//
-// Declarations
-//===----------------------------------------------------------------------===//
-
-LogicalResult LiftBundlesVisitor::visitDecl(InstanceOp op) {
-  llvm::errs() << "InstanceOp\n";
-
-  // for (unsigned i = 0, e = op.getNumResults(); i < e; ++i) {
-  //   auto result = op.getResult(i);
-  //   auto type = TypeConverterX::convert(context, result.getType());
-  //   result.setType(type);
-  // }
-  return success();
-}
-
-LogicalResult LiftBundlesVisitor::visitDecl(WireOp op) {
-  llvm::errs() << "WireOp\n";
-  return success();
-}
 
 std::pair<SmallVector<Value>, bool>
 LiftBundlesVisitor::buildPath(Value oldValue, Value newValue,
@@ -276,6 +214,67 @@ LiftBundlesVisitor::buildPath(Value oldValue, Value newValue,
   return {values, true};
 }
 
+std::pair<SmallVector<Value>, bool>
+LiftBundlesVisitor::fixFieldRef(FieldRef fieldRef) {
+  auto oldValue = fieldRef.getValue();
+  auto newValue = valueMap.lookup(oldValue);
+  if (!newValue)
+    return {{oldValue}, false};
+
+  return buildPath(oldValue, newValue, fieldRef.getFieldID());
+}
+
+//===----------------------------------------------------------------------===//
+// Operand Fixup
+//===----------------------------------------------------------------------===//
+
+std::pair<SmallVector<Value>, bool>
+LiftBundlesVisitor::fixOperand(Value value) {
+  return fixFieldRef(getFieldRefFromValue(value));
+}
+
+void LiftBundlesVisitor::explode(OpBuilder builder, Value value,
+                                 SmallVector<Value> &output) {
+  auto type = value.getType();
+  if (auto bundleType = type.dyn_cast<BundleType>()) {
+    for (size_t i = 0, e = bundleType.getNumElements(); i < e; ++i) {
+      auto op = builder.create<SubfieldOp>(value.getLoc(), value, i);
+      explode(builder, op, output);
+    }
+  } else {
+    output.push_back(value);
+  }
+}
+
+SmallVector<Value> LiftBundlesVisitor::explode(Value value) {
+  llvm::errs() << "EXPLODING: ";
+  value.dump();
+  auto builder = OpBuilder(context);
+  builder.setInsertionPointAfterValue(value);
+  auto output = SmallVector<Value>();
+  explode(builder, value, output);
+  return output;
+}
+
+//===----------------------------------------------------------------------===//
+// Declarations
+//===----------------------------------------------------------------------===//
+
+LogicalResult LiftBundlesVisitor::visitDecl(InstanceOp op) {
+  llvm::errs() << "InstanceOp\n";
+
+  // for (unsigned i = 0, e = op.getNumResults(); i < e; ++i) {
+  //   auto result = op.getResult(i);
+  //   auto type = TypeConverterX::convert(context, result.getType());
+  //   result.setType(type);
+  // }
+  return success();
+}
+
+LogicalResult LiftBundlesVisitor::visitDecl(WireOp op) {
+  llvm::errs() << "WireOp\n";
+  return success();
+}
 
 
 LogicalResult LiftBundlesVisitor::visitStmt(ConnectOp op) {
