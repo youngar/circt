@@ -102,12 +102,15 @@ public:
   FIRRTLBaseType convertType(FIRRTLBaseType);
   FIRRTLBaseType convertType(FIRRTLBaseType, SmallVector<unsigned>);
 
-  SmallVector<Value> buildPath(Value oldValue, Value newValue,
-                               unsigned fieldID);
+  std::pair<SmallVector<Value>, bool> buildPath(Value oldValue, Value newValue,
+                                                unsigned fieldID);
 
-  SmallVector<Value> fixFieldRef(FieldRef fieldRef);
+  std::pair<SmallVector<Value>, bool> fixFieldRef(FieldRef fieldRef);
 
-  SmallVector<Value> fixOperand(Value value);
+  std::pair<SmallVector<Value>, bool> fixOperand(Value value);
+
+  SmallVector<Value> explode(Value value);
+  void explode(OpBuilder builder, Value value, SmallVector<Value> &output);
 
 private:
   // Type conver tType(Type);
@@ -208,8 +211,9 @@ LogicalResult LiftBundlesVisitor::visitDecl(WireOp op) {
   return success();
 }
 
-SmallVector<Value> LiftBundlesVisitor::buildPath(Value oldValue, Value newValue,
-                                                 unsigned fieldID) {
+std::pair<SmallVector<Value>, bool>
+LiftBundlesVisitor::buildPath(Value oldValue, Value newValue,
+                              unsigned fieldID) {
 
   auto loc = oldValue.getLoc();
   OpBuilder builder(context);
@@ -223,6 +227,8 @@ SmallVector<Value> LiftBundlesVisitor::buildPath(Value oldValue, Value newValue,
   auto oldType = oldValue.getType();
   auto newType = newValue.getType();
 
+  llvm::errs() << getFieldName(FieldRef(oldValue, fieldID)) << "\n";
+
   auto type = oldType;
   while (fieldID != 0) {
     if (auto bundle = type.dyn_cast<BundleType>()) {
@@ -230,20 +236,36 @@ SmallVector<Value> LiftBundlesVisitor::buildPath(Value oldValue, Value newValue,
       fieldID -= bundle.getFieldID(index);
       subfieldIndices.push_back(index);
       inVectorOfBundle = inVector;
+      type = bundle.getElementType(index);
     } else {
       auto vector = type.cast<FVectorType>();
       auto index = vector.getIndexForFieldID(fieldID);
       fieldID -= vector.getFieldID(index);
       subindexIndices.push_back(index);
       inVector = true;
+      type = vector.getElementType();
     }
+  }
+
+  llvm::errs() << "printing subfield operators\n";
+  for (auto index : subfieldIndices) {
+    llvm::errs() << index << "\n";
+  }
+
+  llvm::errs() << "printing subindex operators\n";
+  for (auto index : subindexIndices) {
+    llvm::errs() << index << "\n";
   }
 
   auto value = newValue;
   for (auto index : subfieldIndices) {
     auto op = builder.create<SubfieldOp>(loc, value, index);
+    op->dump();
     value = op.getResult();
   }
+
+  if (subindexIndices.size() == 0)
+    return {{value}, false};
 
   SmallVector<Value> values;
   std::function<void(Value)> explode = [&](Value value) {
@@ -262,52 +284,68 @@ SmallVector<Value> LiftBundlesVisitor::buildPath(Value oldValue, Value newValue,
     }
   };
 
-  if (subindexIndices.size() != 0)
-    explode(value);
-  else
-    values.push_back(value);
-
-  return values;
+  explode(value);
+  return {values, true};
 }
 
-SmallVector<Value> LiftBundlesVisitor::fixFieldRef(FieldRef fieldRef) {
+std::pair<SmallVector<Value>, bool>
+LiftBundlesVisitor::fixFieldRef(FieldRef fieldRef) {
   auto oldValue = fieldRef.getValue();
   auto newValue = valueMap.lookup(oldValue);
   if (!newValue)
-    return {oldValue};
+    return {{oldValue}, false};
 
   return buildPath(oldValue, newValue, fieldRef.getFieldID());
 }
 
-SmallVector<Value> LiftBundlesVisitor::fixOperand(Value value) {
+std::pair<SmallVector<Value>, bool>
+LiftBundlesVisitor::fixOperand(Value value) {
   return fixFieldRef(getFieldRefFromValue(value));
+}
+
+SmallVector<Value> LiftBundlesVisitor::explode(Value value) {
+  llvm::errs() << "EXPLODING: ";
+  value.dump();
+  auto builder = OpBuilder(context);
+  builder.setInsertionPointAfterValue(value);
+  auto output = SmallVector<Value>();
+  explode(builder, value, output);
+  return output;
+}
+
+void LiftBundlesVisitor::explode(OpBuilder builder, Value value,
+                                 SmallVector<Value> &output) {
+  auto type = value.getType();
+  if (auto bundleType = type.dyn_cast<BundleType>()) {
+    for (size_t i = 0, e = bundleType.getNumElements(); i < e; ++i) {
+      auto op = builder.create<SubfieldOp>(value.getLoc(), value, i);
+      explode(builder, op, output);
+    }
+  } else {
+    output.push_back(value);
+  }
 }
 
 LogicalResult LiftBundlesVisitor::visitStmt(ConnectOp op) {
   llvm::errs() << "ConnectOp\n";
-  auto operands = op.getOperands();
-  // auto remapped = false;
-  // for (auto operand : operands) {
-  //   if (map.count(operand)) {
-  //     remapped = true;
-  //     break;
-  //   }
-  // }
+  auto [lhs, lhsExploded] = fixOperand(op.getDest());
+  auto [rhs, rhsExploded] = fixOperand(op.getSrc());
 
-  auto dst = getFieldRefFromValue(op.getDest());
-  auto dstType = dst.getValue().getType();
-  auto src = getFieldRefFromValue(op.getSrc());
-  auto srcType = dst.getValue().getType();
+  if (rhsExploded && !lhsExploded)
+    lhs = explode(lhs[0]);
 
-  auto count = 0;
-  for (auto operand : op.getOperands()) {
-    auto values = fixOperand(operand);
-    if (values.size() != 1)
-      assert(false && "cannot handle exploded operands");
-    
-    auto value = values[0];
-    op.setOperand(count, value);
-    count++;
+  if (lhsExploded && !rhsExploded)
+    rhs = explode(rhs[0]);
+
+  if (lhs.size() != rhs.size())
+    assert(false && "Something went wrong exploding the elements");
+
+  auto builder = OpBuilder(context);
+  auto loc = op.getLoc();
+  builder.setInsertionPoint(op);
+
+  for (size_t i = 0, e = lhs.size(); i < e; ++i) {
+    builder.create<ConnectOp>(loc, lhs[i], rhs[i]);
   }
 
   toDelete.push_back(op);
@@ -333,7 +371,7 @@ LogicalResult LiftBundlesVisitor::visitExpr(SubfieldOp op) {
   auto rootValue = getFieldRefFromValue(op).getValue();
   if (valueMap.count(rootValue))
     toDelete.push_back(op);
-  
+
   return success();
 }
 
@@ -572,6 +610,11 @@ class AOSToSOAPass : public AOSToSOABase<AOSToSOAPass> {
 } // end anonymous namespace
 
 void AOSToSOAPass::runOnOperation() {
+  llvm::errs() <<
+    "===========================\n" <<
+    "START\n" <<
+    "---------------------------\n";
+
   // auto visitor = LiftBundlesVisitor(&getContext());
   LiftBundlesVisitor visitor(&getContext());
   auto result = visitor.visit(getOperation());
