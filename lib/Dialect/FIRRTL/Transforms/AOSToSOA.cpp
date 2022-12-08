@@ -190,28 +190,29 @@ LiftBundlesVisitor::buildPath(Value oldValue, Value newValue,
     value = op.getResult();
   }
 
-  if (subindexIndices.size() == 0)
-    return {{value}, false};
-
   SmallVector<Value> values;
-  std::function<void(Value)> explode = [&](Value value) {
-    if (auto bundleType = value.getType().dyn_cast<BundleType>()) {
-      auto values = SmallVector<Value>();
-      for (size_t i = 0, e = bundleType.getNumElements(); i < e; ++i) {
-        auto fieldValue = builder.create<SubfieldOp>(loc, value, i);
-        explode(fieldValue);
-      }
-    } else {
-      for (auto index : subindexIndices) {
-        auto op = builder.create<SubindexOp>(loc, value, index);
-        value = op.getResult();
-      }
-      values.push_back(value);
-    }
-  };
+  bool exploded = false;
 
-  explode(value);
-  return {values, true};
+  if (value.getType().isa<BundleType>() && 0 < subindexIndices.size()) {
+    assert(0 < subindexIndices.size());
+    assert(value.getType().isa<BundleType>());
+    explode(builder, value, values);
+    exploded = true;
+  } else {
+    values.push_back(value);
+    exploded = false;
+  }
+
+  for (size_t i = 0, e = values.size(); i < e; ++i) {
+    auto value = values[i];
+    for (auto index : subindexIndices) {
+      auto op = builder.create<SubindexOp>(loc, value, index);
+      value = op.getResult();
+    }
+    values[i] = value;
+  }
+
+  return {values, exploded};
 }
 
 std::pair<SmallVector<Value>, bool>
