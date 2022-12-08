@@ -22,51 +22,11 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
-// #include "llvm/ADT/"
+
 #define DEBUG_TYPE "firrtl-aos-to-soa"
 
 using namespace circt;
 using namespace firrtl;
-
-// namespace {
-// class TypeConverterX {
-// public:
-//   static FIRRTLBaseType convert(MLIRContext *context, FIRRTLBaseType type);
-//   static TypeAttr convert(MLIRContext *context, TypeAttr attr);
-//   static Type convert(MLIRContext *context, Type type);
-
-// private:
-//   class State {
-//   public:
-//     std::vector<unsigned> dimensions;
-//   };
-
-//   class Stash {
-//   public:
-//     Stash(State &state)
-//         : state(state), dimensionality(state.dimensions.size()) {}
-
-//     ~Stash() { state.dimensions.resize(dimensionality); }
-
-//   private:
-//     State &state;
-//     unsigned dimensionality;
-//   };
-
-//   static FIRRTLBaseType convert(MLIRContext *context, State &state,
-//                                 FIRRTLBaseType type);
-// };
-// } // namespace
-
-// TypeAttr TypeConverterX::convert(MLIRContext *context, TypeAttr attr) {
-//   return TypeAttr::get(convert(context, attr.getValue()));
-// }
-
-// FIRRTLBaseType TypeConverterX::convert(MLIRContext *context,
-//                                        FIRRTLBaseType type) {
-//   State state;
-//   return convert(context, state, type);
-// }
 
 //===----------------------------------------------------------------------===//
 // Visitor
@@ -98,6 +58,7 @@ public:
   LogicalResult visitOperand(OpResult);
   LogicalResult visitOperand(BlockArgument);
 
+private:
   Type convertType(Type);
   FIRRTLBaseType convertType(FIRRTLBaseType);
   FIRRTLBaseType convertType(FIRRTLBaseType, SmallVector<unsigned>);
@@ -111,10 +72,6 @@ public:
 
   SmallVector<Value> explode(Value value);
   void explode(OpBuilder builder, Value value, SmallVector<Value> &output);
-
-private:
-  // Type conver tType(Type);
-  // Attribute convertTypeAttr(Attribute);
 
   MLIRContext *context;
   SmallVector<Operation *> toDelete;
@@ -132,68 +89,99 @@ private:
 LiftBundlesVisitor::LiftBundlesVisitor(MLIRContext *context)
     : context(context) {}
 
-LogicalResult LiftBundlesVisitor::visit(FModuleOp op) {
-  BitVector portsToErase(op.getNumPorts() * 2);
-  {
-    SmallVector<std::pair<unsigned, PortInfo>> newPorts;
-    auto ports = op.getPorts();
-    auto count = 0;
-    for (auto &[index, port] : llvm::enumerate(ports)) {
-      auto oldType = port.type;
-      auto newType = convertType(oldType);
-      if (newType == oldType)
-        continue;
+//===----------------------------------------------------------------------===//
+// Type Conversion
+//===----------------------------------------------------------------------===//
 
-      auto newPort = port;
-      newPort.type = newType;
-
-      portsToErase[count + index] = true;
-      newPorts.push_back({index + 1, newPort});
-      ++count;
-    }
-    op.insertPorts(newPorts);
+Type LiftBundlesVisitor::convertType(Type type) {
+  if (auto firrtlType = type.dyn_cast<FIRRTLBaseType>()) {
+    return convertType(firrtlType);
   }
-
-  auto body = op.getBodyBlock();
-  for (unsigned i = 0, e = body->getNumArguments(); i < e; ++i) {
-    if (portsToErase[i]) {
-      auto oldArg = body->getArgument(i);
-      auto newArg = body->getArgument(i + 1);
-      valueMap[oldArg] = newArg;
-    }
-  }
-
-  // auto numPorts = op.getNumPorts();
-  // SmallVector<Attribute> newPortTypes;
-  // newPortTypes.resize(numPorts);
-  // for (size_t i = 0; i < numPorts; ++i) {
-  // if (failed(fixPort(op, i)))
-  //   return failure();
-  // }
-
-  // op->setAttr("portTypes", ArrayAttr::get(op.getContext(), newPortTypes));
-
-  // auto body = op.getBodyBlock();
-  // for (unsigned i = 0, e = body->getNumArguments(); i < e; ++i) {
-  //   auto argument = body->getArgument(i);
-  //   argument.setType(newPortTypes[i].dyn_cast<TypeAttr>().getValue());
-  // }
-
-  // for (auto it = body->begin(), e = body->end(); it != e; ++it) {
-  for (auto &op : *body) {
-    auto result = dispatchVisitor(&op);
-    if (result.failed())
-      return result;
-  }
-
-  for (auto op : toDelete) {
-    op->dropAllUses();
-    op->erase();
-  }
-  op.erasePorts(portsToErase);
-
-  return success();
+  return type;
 }
+
+FIRRTLBaseType LiftBundlesVisitor::convertType(FIRRTLBaseType type) {
+  SmallVector<unsigned> dimensions;
+  return convertType(type, dimensions);
+}
+
+FIRRTLBaseType
+LiftBundlesVisitor::convertType(FIRRTLBaseType type,
+                                SmallVector<unsigned> dimensions) {
+  // Vector Types
+  if (auto vectorType = type.dyn_cast<FVectorType>(); vectorType) {
+    dimensions.push_back(vectorType.getNumElements());
+    return convertType(vectorType.getElementType(), dimensions);
+    dimensions.pop_back();
+  }
+
+  // Bundle Types
+  if (auto bundleType = type.dyn_cast<BundleType>(); bundleType) {
+    SmallVector<BundleType::BundleElement> elements;
+    for (auto element : bundleType.getElements()) {
+      elements.push_back(BundleType::BundleElement(
+          element.name, element.isFlip, convertType(element.type, dimensions)));
+    }
+
+    return BundleType::get(elements, context);
+  }
+
+  // Ground Types
+  for (auto size : llvm::reverse(dimensions)) {
+    type = FVectorType::get(type, size);
+  }
+  return type;
+}
+
+//===----------------------------------------------------------------------===//
+// Access-path Rewriting
+//===----------------------------------------------------------------------===//
+
+std::pair<SmallVector<Value>, bool>
+LiftBundlesVisitor::fixFieldRef(FieldRef fieldRef) {
+  auto oldValue = fieldRef.getValue();
+  auto newValue = valueMap.lookup(oldValue);
+  if (!newValue)
+    return {{oldValue}, false};
+
+  return buildPath(oldValue, newValue, fieldRef.getFieldID());
+}
+
+//===----------------------------------------------------------------------===//
+// Operand Fixup
+//===----------------------------------------------------------------------===//
+
+std::pair<SmallVector<Value>, bool>
+LiftBundlesVisitor::fixOperand(Value value) {
+  return fixFieldRef(getFieldRefFromValue(value));
+}
+
+void LiftBundlesVisitor::explode(OpBuilder builder, Value value,
+                                 SmallVector<Value> &output) {
+  auto type = value.getType();
+  if (auto bundleType = type.dyn_cast<BundleType>()) {
+    for (size_t i = 0, e = bundleType.getNumElements(); i < e; ++i) {
+      auto op = builder.create<SubfieldOp>(value.getLoc(), value, i);
+      explode(builder, op, output);
+    }
+  } else {
+    output.push_back(value);
+  }
+}
+
+SmallVector<Value> LiftBundlesVisitor::explode(Value value) {
+  llvm::errs() << "EXPLODING: ";
+  value.dump();
+  auto builder = OpBuilder(context);
+  builder.setInsertionPointAfterValue(value);
+  auto output = SmallVector<Value>();
+  explode(builder, value, output);
+  return output;
+}
+
+//===----------------------------------------------------------------------===//
+// Declarations
+//===----------------------------------------------------------------------===//
 
 LogicalResult LiftBundlesVisitor::visitDecl(InstanceOp op) {
   llvm::errs() << "InstanceOp\n";
@@ -288,43 +276,7 @@ LiftBundlesVisitor::buildPath(Value oldValue, Value newValue,
   return {values, true};
 }
 
-std::pair<SmallVector<Value>, bool>
-LiftBundlesVisitor::fixFieldRef(FieldRef fieldRef) {
-  auto oldValue = fieldRef.getValue();
-  auto newValue = valueMap.lookup(oldValue);
-  if (!newValue)
-    return {{oldValue}, false};
 
-  return buildPath(oldValue, newValue, fieldRef.getFieldID());
-}
-
-std::pair<SmallVector<Value>, bool>
-LiftBundlesVisitor::fixOperand(Value value) {
-  return fixFieldRef(getFieldRefFromValue(value));
-}
-
-SmallVector<Value> LiftBundlesVisitor::explode(Value value) {
-  llvm::errs() << "EXPLODING: ";
-  value.dump();
-  auto builder = OpBuilder(context);
-  builder.setInsertionPointAfterValue(value);
-  auto output = SmallVector<Value>();
-  explode(builder, value, output);
-  return output;
-}
-
-void LiftBundlesVisitor::explode(OpBuilder builder, Value value,
-                                 SmallVector<Value> &output) {
-  auto type = value.getType();
-  if (auto bundleType = type.dyn_cast<BundleType>()) {
-    for (size_t i = 0, e = bundleType.getNumElements(); i < e; ++i) {
-      auto op = builder.create<SubfieldOp>(value.getLoc(), value, i);
-      explode(builder, op, output);
-    }
-  } else {
-    output.push_back(value);
-  }
-}
 
 LogicalResult LiftBundlesVisitor::visitStmt(ConnectOp op) {
   llvm::errs() << "ConnectOp\n";
@@ -376,228 +328,71 @@ LogicalResult LiftBundlesVisitor::visitExpr(SubfieldOp op) {
 }
 
 //===----------------------------------------------------------------------===//
-// Operand Updating
+// Visitor Entrypoint
 //===----------------------------------------------------------------------===//
 
-// LogicalResult LiftBundlesVisitor::visitOperand(Value operand) {
-//   if (auto result = operand.dyn_cast<OpResult>()) {
-//     return visitOperand(result);
-//   }
+LogicalResult LiftBundlesVisitor::visit(FModuleOp op) {
+  BitVector portsToErase(op.getNumPorts() * 2);
+  {
+    SmallVector<std::pair<unsigned, PortInfo>> newPorts;
+    auto ports = op.getPorts();
+    auto count = 0;
+    for (auto &[index, port] : llvm::enumerate(ports)) {
+      auto oldType = port.type;
+      auto newType = convertType(oldType);
+      if (newType == oldType)
+        continue;
 
-//   if (auto argument = operand.dyn_cast<BlockArgument>()) {
-//     return visitOperand(argument);
-//   }
+      auto newPort = port;
+      newPort.type = newType;
 
-//   return failure();
-// }
-
-// namespace {
-// class AccessPathFixup {
-// public:
-//   static SmallVector<Value> fixup(Value);
-
-// private:
-//   struct State {
-//     std::vector<unsigned> indices;
-//     std::vector<unsigned> fields;
-//   };
-
-//   static SmallVector<Value> fixup(Value, State &);
-
-// };
-// }
-
-// // if the root value was mutated, then the path will
-// // have to be updated.
-// SmallVector<Value> AccessPathFixup::fixup(value) {
-//   // we need to know if this specific operation
-//   // indexed into a vector of bundles
-//   // if yes, we need to convert the
-//   auto op = value.getDefiningOp();
-//   //while
-//   if (auto subindexOp = dyn_cast<SubindexOp>(op)) {
-//   }
-// }
-
-// // SmallVector<Value> AccessPathFixup::fixup(Value value, State state) {
-// // }
-
-// LogicalResult fixOperand(OpResult operand) {
-//   auto value = operand.getValue();
-//   auto op = operand.getValue().getDefiningOp();
-//   if (auto indexOp = op.dyn_cast<SubindexOp>()) {
-//     auto result = visitOperand(subindexOp);
-//   }
-// }
-
-// LogicalResult fixOperand(Value value) {
-//   return fixOperand(value.getDefiningOp());
-// }
-
-// struct Index {
-//   static Index asConst(unsigned index)
-//     : kind(Kind::Const), asConstIndex(index) {}
-
-//   enum class Kind { Const, Value, };
-
-//   Kind kind;
-//   union {
-//     Value      asValueIndex;
-//     unsigned   asConstIndex;
-//   };
-// };
-
-// // returns a value to
-// std::pair<Value, bool> fixOperand(Operation *operand) {
-//   // if the given operation was remapped,
-//   // we have to build a path to the new value.
-//   // When
-//   auto inVector = false;
-//   auto inVectorOfBundle = false;
-
-//   SmallVector<Index> vectorAccesses;
-//   SmallVector<unsigned> bundleAccesses;
-
-//   auto it = operand;
-//   while (true) {
-//     if (auto op = dyn_cast<SubindexOp>(it)) {
-//       inVector = true;
-//       vectorAccesses.push_back({ Index::Kind::Subindex, op.getIndex());
-//       it = op.getInput().getDefiningOp();
-//       continue;
-//     }
-
-//     if (auto op = dyn_cast<SubaccessOp>(it)) {
-//       auto inVector = true;
-//       continue;
-//     }
-
-//     if (auto op = dyn_cast<SubfieldOp>(it)) {
-//       inVectorOfBundle = inVector;
-//       it = op.getInput().getDefiningOp();
-//       continue;
-//     }
-
-//     // Identified the root object we are accessing.
-//     if (map.count(it)) {
-//       build_path()
-//     }
-//     break;
-//   }
-
-//   if (!inVectorOfBundle)
-//     return { value, false };
-
-//   // if the original operand accessed a record through a vector, we will
-//   have to correct the operand.
-
-//   auto result = it.getResult();
-
-//   auto value =
-//   return { value, true };
-// }
-
-// LogicalResult visitOperand(BlockArgument operand) { return success(); }
-
-// LogicalResult fixResult(Operation *op) {
-//   if (auto subindexOp = op->dyn_cast<SubindexOp>()) {
-//     return fixPath(subindexOp);
-//   }
-
-//   return failure();
-// }
-
-//===----------------------------------------------------------------------===//
-// Type Conversion
-//===----------------------------------------------------------------------===//
-
-Type LiftBundlesVisitor::convertType(Type type) {
-  if (auto firrtlType = type.dyn_cast<FIRRTLBaseType>()) {
-    return convertType(firrtlType);
-  }
-  return type;
-}
-
-FIRRTLBaseType LiftBundlesVisitor::convertType(FIRRTLBaseType type) {
-  SmallVector<unsigned> dimensions;
-  return convertType(type, dimensions);
-}
-
-FIRRTLBaseType
-LiftBundlesVisitor::convertType(FIRRTLBaseType type,
-                                SmallVector<unsigned> dimensions) {
-  // Vector Types
-  if (auto vectorType = type.dyn_cast<FVectorType>(); vectorType) {
-    dimensions.push_back(vectorType.getNumElements());
-    return convertType(vectorType.getElementType(), dimensions);
-    dimensions.pop_back();
-  }
-
-  // Bundle Types
-  if (auto bundleType = type.dyn_cast<BundleType>(); bundleType) {
-    SmallVector<BundleType::BundleElement> elements;
-    for (auto element : bundleType.getElements()) {
-      elements.push_back(BundleType::BundleElement(
-          element.name, element.isFlip, convertType(element.type, dimensions)));
+      portsToErase[count + index] = true;
+      newPorts.push_back({index + 1, newPort});
+      ++count;
     }
-
-    return BundleType::get(elements, context);
+    op.insertPorts(newPorts);
   }
 
-  // Ground Types
-  for (auto size : llvm::reverse(dimensions)) {
-    type = FVectorType::get(type, size);
+  auto body = op.getBodyBlock();
+  for (unsigned i = 0, e = body->getNumArguments(); i < e; ++i) {
+    if (portsToErase[i]) {
+      auto oldArg = body->getArgument(i);
+      auto newArg = body->getArgument(i + 1);
+      valueMap[oldArg] = newArg;
+    }
   }
-  return type;
+
+  // auto numPorts = op.getNumPorts();
+  // SmallVector<Attribute> newPortTypes;
+  // newPortTypes.resize(numPorts);
+  // for (size_t i = 0; i < numPorts; ++i) {
+  // if (failed(fixPort(op, i)))
+  //   return failure();
+  // }
+
+  // op->setAttr("portTypes", ArrayAttr::get(op.getContext(), newPortTypes));
+
+  // auto body = op.getBodyBlock();
+  // for (unsigned i = 0, e = body->getNumArguments(); i < e; ++i) {
+  //   auto argument = body->getArgument(i);
+  //   argument.setType(newPortTypes[i].dyn_cast<TypeAttr>().getValue());
+  // }
+
+  // for (auto it = body->begin(), e = body->end(); it != e; ++it) {
+  for (auto &op : *body) {
+    auto result = dispatchVisitor(&op);
+    if (result.failed())
+      return result;
+  }
+
+  for (auto op : toDelete) {
+    op->dropAllUses();
+    op->erase();
+  }
+  op.erasePorts(portsToErase);
+
+  return success();
 }
-
-//===----------------------------------------------------------------------===//
-// Access-path Rewriting
-//===----------------------------------------------------------------------===//
-
-// SmallVector<Value, 1> LiftBundlesVisitor::fixPath() {
-//   if ()
-// }
-
-// // Assume the given path is required, rebuild the path, returning 1 or
-// more
-// // values representing the fields
-// SmallVector<Value, 1> LiftBundlesVisitor::fixPath(SubindexOp op) {
-//   // Trace the access path to the end. If the defining value was not
-//   remapped,
-//   // then we don't need to do any work.
-
-//   // if the element type is a vector, we are okay.
-//   auto input = op.getInput();
-//   auto type  = input.getType().cast<FVectorType>();
-// }
-
-//===----------------------------------------------------------------------===//
-// Module Op Conversion
-//===----------------------------------------------------------------------===//
-
-// bool convertPort() { auto type = op.getType(); }
-
-// bool convertPortsofFModuleOp(FModuleOp moduleOp) {
-//   auto changed = false;
-//   auto ports = op.getPorts();
-//   auto i = size_t(0);
-//   auto e = ports.size();
-//   for (; i < e; ++i) {
-//     changed = convertPort(ports, index) || changed;
-//   }
-
-//   return changed;
-// }
-
-// bool convertFModuleOp(FModuleOp op) {
-//   bool changed = false;
-//   changed = convertFModulePorts() || changed;
-//   changed = convertFModuleBody() || changed;
-//   return changed;
-// }
-
-// } // end anonymous namespace
 
 //===----------------------------------------------------------------------===//
 // Pass Infrastructure
