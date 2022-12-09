@@ -51,8 +51,10 @@ public:
   LogicalResult visitDecl(WireOp);
   LogicalResult visitStmt(ConnectOp);
   LogicalResult visitExpr(ConstantOp);
+  LogicalResult visitExpr(AggregateConstantOp);
   LogicalResult visitExpr(SubindexOp);
   LogicalResult visitExpr(SubfieldOp);
+  // LogicalResult visitExpr()
 
   LogicalResult visitOperand(Value);
   LogicalResult visitOperand(OpResult);
@@ -173,20 +175,20 @@ LiftBundlesVisitor::buildPath(Value oldValue, Value newValue,
     }
   }
 
-  llvm::errs() << "printing subfield operators\n";
-  for (auto index : subfieldIndices) {
-    llvm::errs() << index << "\n";
-  }
+  // llvm::errs() << "printing subfield operators\n";
+  // for (auto index : subfieldIndices) {
+  //   llvm::errs() << index << "\n";
+  // }
 
-  llvm::errs() << "printing subindex operators\n";
-  for (auto index : subindexIndices) {
-    llvm::errs() << index << "\n";
-  }
+  // llvm::errs() << "printing subindex operators\n";
+  // for (auto index : subindexIndices) {
+  //   llvm::errs() << index << "\n";
+  // }
 
   auto value = newValue;
   for (auto index : subfieldIndices) {
     auto op = builder.create<SubfieldOp>(loc, value, index);
-    op->dump();
+    // op->dump();
     value = op.getResult();
   }
 
@@ -248,8 +250,6 @@ void LiftBundlesVisitor::explode(OpBuilder builder, Value value,
 }
 
 SmallVector<Value> LiftBundlesVisitor::explode(Value value) {
-  llvm::errs() << "EXPLODING: ";
-  value.dump();
   auto builder = OpBuilder(context);
   builder.setInsertionPointAfterValue(value);
   auto output = SmallVector<Value>();
@@ -276,7 +276,6 @@ LogicalResult LiftBundlesVisitor::visitDecl(WireOp op) {
   llvm::errs() << "WireOp\n";
   return success();
 }
-
 
 LogicalResult LiftBundlesVisitor::visitStmt(ConnectOp op) {
   llvm::errs() << "ConnectOp\n";
@@ -305,9 +304,10 @@ LogicalResult LiftBundlesVisitor::visitStmt(ConnectOp op) {
 }
 
 LogicalResult LiftBundlesVisitor::visitExpr(ConstantOp op) {
-  llvm::errs() << "ConstantOp\n";
   return success();
 }
+
+LogicalResult visitExpr(AggregateConstantOp);
 
 LogicalResult LiftBundlesVisitor::visitExpr(SubindexOp op) {
   llvm::errs() << "SubindexOp\n";
