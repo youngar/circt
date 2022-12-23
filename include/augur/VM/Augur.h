@@ -1,11 +1,14 @@
+#include "mlir/Support/LogicalResult.h"
 #include "llvm/ADT/MapVector.h"
+#include "llvm/ADT/ScopedHashTable.h"
 #include "llvm/Support/Allocator.h"
 #include "llvm/Support/Casting.h"
+
+#include <iostream>
 #include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
-#include "mlir/Support/LogicalResult.h"
 
 ////////////////////////////////
 
@@ -51,7 +54,7 @@ struct Hole : public ObjectImpl<Kind::Hole> {
 };
 
 template <typename Stream>
-Stream &operator<<(Stream &&stream, Hole &hole) {
+Stream &operator<<(Stream &&stream, const Hole &hole) {
   return stream << "Hole";
 }
 
@@ -65,7 +68,7 @@ struct Atom : public ObjectImpl<Kind::Atom> {
 };
 
 template <typename Stream>
-Stream &operator<<(Stream &&stream, Atom &atom) {
+Stream &operator<<(Stream &&stream, const Atom &atom) {
   stream << "" << atom.name;
   // stream << "(" << &atom << ")";
   return stream;
@@ -84,9 +87,8 @@ struct Pi : public ObjectImpl<Kind::Pi> {
 };
 
 template <typename Stream>
-Stream &operator<<(Stream &&stream, Pi &pi) {
-  stream << "∀ " << *pi.variable << " : " << *pi.type
-         << ", " << *pi.body;
+Stream &operator<<(Stream &&stream, const Pi &pi) {
+  stream << "∀ " << *pi.variable << " : " << *pi.type << ", " << *pi.body;
   return stream;
 }
 
@@ -101,7 +103,7 @@ struct Sigma : public ObjectImpl<Kind::Sigma> {
 };
 
 template <typename Stream>
-Stream &operator<<(Stream &&stream, Sigma &sigma) {
+Stream &operator<<(Stream &&stream, const Sigma &sigma) {
   return stream << "Sigma(variable=" << *sigma.lhs << ", body=" << *sigma.rhs
                 << ")";
 }
@@ -117,7 +119,7 @@ struct Apply : public ObjectImpl<Kind::Apply> {
 };
 
 template <typename Stream>
-Stream &operator<<(Stream &&stream, Apply &apply) {
+Stream &operator<<(Stream &&stream, const Apply &apply) {
   return stream << "(" << *apply.fun << " " << *apply.arg << ")";
 }
 
@@ -134,10 +136,9 @@ struct Lambda : public ObjectImpl<Kind::Lambda> {
 };
 
 template <typename Stream>
-Stream &operator<<(Stream &&stream, Lambda &lambda) {
-  return stream << "λ " << *lambda.variable
-                << ": " << *lambda.type << ", " << *lambda.body
-                << "";
+Stream &operator<<(Stream &&stream, const Lambda &lambda) {
+  return stream << "λ " << *lambda.variable << ": " << *lambda.type << ", "
+                << *lambda.body << "";
 }
 
 //===----------------------------------------------------------------------===//
@@ -151,7 +152,7 @@ struct Decl : public ObjectImpl<Kind::Decl> {
 };
 
 template <typename Stream>
-Stream &operator<<(Stream &&stream, Decl &decl) {
+Stream &operator<<(Stream &&stream, const Decl &decl) {
   return stream << "" << *decl.atom << " : " << *decl.type << "";
 }
 
@@ -168,9 +169,9 @@ struct Defn : public ObjectImpl<Kind::Defn> {
 };
 
 template <typename Stream>
-Stream &operator<<(Stream &&stream, Defn &defn) {
-  return stream << "" << *defn.atom << " : " << *defn.type
-                << " = " << *defn.value << "";
+Stream &operator<<(Stream &&stream, const Defn &defn) {
+  return stream << "" << *defn.atom << " : " << *defn.type << " = "
+                << *defn.value << "";
 }
 
 //===----------------------------------------------------------------------===//
@@ -183,7 +184,7 @@ struct Module : public ObjectImpl<Kind::Module> {
 };
 
 template <typename Stream>
-Stream &operator<<(Stream &&stream, Module &module) {
+Stream &operator<<(Stream &&stream, const Module &module) {
   stream << "Module<\n";
   for (auto &decl : module.decls)
     stream << "  " << *decl << "\n";
@@ -195,7 +196,7 @@ Stream &operator<<(Stream &&stream, Module &module) {
 //===----------------------------------------------------------------------===//
 
 template <typename Stream>
-Stream &operator<<(Stream &&stream, Object &object) {
+Stream &operator<<(Stream &&stream, const Object &object) {
   auto *o = &object;
   if (auto *hole = dyn_cast<Hole>(o))
     stream << *hole;
@@ -263,9 +264,195 @@ struct VirtualMachine {
   Decl *type;
 };
 
-
 mlir::LogicalResult typeCheck(VirtualMachine &vm, Module *module);
 
 Object *eval(VirtualMachine &vm, Module *module);
+
+//===----------------------------------------------------------------------===//
+// Unification of Terms
+//===----------------------------------------------------------------------===//
+
+// class LVar {
+//   LVar *value;
+// };
+
+// class SubstitutionTable {
+
+// };
+
+// inline void unify(Object *lhs, Object *rhs) {
+//   if (auto lhs = dyn_cast<
+// }
+
+//===----------------------------------------------------------------------===//
+// Equality
+//===----------------------------------------------------------------------===//
+
+class IndexScope;
+class IndexMap {
+  using Map = llvm::DenseMap<const Atom *, size_t>;
+
+public:
+  IndexMap() : map(), scope(nullptr) {}
+
+  size_t get(const Atom *atom) const;
+
+  size_t set(const Atom *atom);
+
+private:
+  friend class IndexScope;
+
+  Map map;
+  IndexScope *scope;
+};
+
+class IndexScope {
+public:
+  IndexScope(IndexMap &map) : map(map), prev(map.scope), elements() {
+    map.scope = this;
+  }
+
+  IndexScope(IndexScope &&) = delete;
+  IndexScope(const IndexScope &) = delete;
+
+  ~IndexScope() {
+    for (auto &entry : elements)
+      map.map.erase(entry);
+    map.scope = prev;
+  }
+
+  size_t get(const Atom *atom);
+
+  size_t set(const Atom *atom);
+
+private:
+  IndexMap &map;
+  IndexScope *prev;
+  llvm::SmallVector<const Atom *> elements;
+};
+
+inline size_t IndexScope::get(const Atom *atom) {
+  auto id = map.map[atom];
+  // assert(id != 0);
+  return id;
+}
+
+inline size_t IndexScope::set(const Atom *atom) {
+  assert(map.map[atom] == 0);
+
+  auto id = map.map.size() + 1;
+  map.map[atom] = id;
+  elements.push_back(atom);
+  return id;
+}
+
+inline size_t IndexMap::get(const Atom *atom) const { return scope->get(atom); }
+
+inline size_t IndexMap::set(const Atom *atom) { return scope->set(atom); }
+
+struct IndexTable {
+  IndexMap lhs;
+  IndexMap rhs;
+};
+
+bool equal(const Object *lhs, const Object *rhs, IndexTable &table);
+
+inline bool equalAtom(const Atom *lhs, const Object *obj, IndexTable &table) {
+  auto rhs = dyn_cast<Atom>(obj);
+  if (!rhs)
+    return false;
+
+  return lhs == rhs || table.lhs.get(lhs) == table.rhs.get(rhs);
+}
+
+inline bool equalPi(const Pi *lhs, const Object *obj, IndexTable &table) {
+  auto *rhs = dyn_cast<Pi>(obj);
+  if (!rhs)
+    return false;
+
+  IndexScope lhsScope(table.lhs);
+  IndexScope rhsScope(table.rhs);
+  auto lhsId = table.lhs.set(lhs->variable);
+  auto rhsId = table.rhs.set(rhs->variable);
+  if (lhsId != rhsId)
+    return false;
+
+  if (!equal(lhs->type, rhs->type, table))
+    return false;
+
+  if (!equal(lhs->body, rhs->body, table))
+    return false;
+
+  return true;
+}
+
+inline bool equalApply(const Apply *lhs, const Object *obj, IndexTable &table) {
+  auto rhs = dyn_cast<Apply>(obj);
+  if (!rhs)
+    return false;
+
+  return equal(lhs->fun, rhs->fun, table) && equal(lhs->arg, rhs->arg, table);
+}
+
+inline bool equalLambda(const Lambda *lhs, const Object *obj,
+                        IndexTable &table) {
+  std::cerr << "====================\n";
+
+  auto rhs = dyn_cast<Lambda>(obj);
+  if (!rhs)
+    return false;
+
+  std::cerr << "lhs=" << *lhs << "\n";
+  std::cerr << "rhs=" << *rhs << "\n";
+
+  IndexScope lhsScope(table.lhs);
+  IndexScope rhsScope(table.rhs);
+  auto lhsId = table.lhs.set(lhs->variable);
+  auto rhsId = table.rhs.set(rhs->variable);
+
+  // std::cerr << "====lhs====\n";
+  // for (const auto &binding : table.lhs)
+  //   std::cerr << binding.first->name << "=" << binding.second << "\n";
+
+  // std::cerr << "====rhs====\n";
+  // for (const auto &binding : table.rhs)
+  //   std::cerr << binding.first->name << "=" << binding.second << "\n";
+
+  if (lhsId != rhsId)
+    return false;
+
+  return equal(lhs->body, rhs->body, table);
+}
+
+inline bool equal(const Object *lhs, const Object *rhs, IndexTable &table) {
+  std::cerr << "--------\n";
+  std::cerr << "lhs = " << *lhs << "\n";
+  std::cerr << "rhs = " << *rhs << "\n";
+
+  if (auto atom = dyn_cast<Atom>(lhs)) {
+    return equalAtom(atom, rhs, table);
+  }
+
+  if (auto pi = dyn_cast<Pi>(lhs)) {
+    return equalPi(pi, rhs, table);
+  }
+
+  if (auto lambda = dyn_cast<Lambda>(lhs)) {
+    return equalLambda(lambda, rhs, table);
+  }
+
+  if (auto apply = dyn_cast<Apply>(lhs)) {
+    return equalApply(apply, rhs, table);
+  }
+
+  return false;
+}
+
+inline bool equal(const Object *lhs, const Object *rhs) {
+  IndexTable table;
+  IndexScope lhsScope(table.lhs);
+  IndexScope rhsScope(table.rhs);
+  return equal(lhs, rhs, table);
+}
 
 } // namespace aug

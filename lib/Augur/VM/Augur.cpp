@@ -95,7 +95,7 @@ struct TypeChecker {
         std::cout << "atom not found in typing context " << *atom << "\n";
         return nullptr;
       }
-      return synth;
+      return eval(synth);
     }
 
     if (auto *apply = dyn_cast<Apply>(obj)) {
@@ -157,7 +157,7 @@ struct TypeChecker {
     }
 
     if (auto *exprType = typeSynth(expr)) {
-      if (exprType != type) {
+      if (!equal(exprType, type)) {
         std::cout << "expected type " << *type << ", but got " << *exprType
                   << " for expression " << *expr << "\n";
         return failure();
@@ -193,11 +193,17 @@ struct TypeChecker {
           return failure();
         }
         auto *defnType = eval(defn->type);
+        std::cerr << "------defn type eval\n";
+        std::cerr << *defn->type << "\n";
+        std::cerr << *defnType << "\n";
         if (failed(typeCheck(defn->value, defnType))) {
           std::cout << "failed to typecheck " << *defn << "\n";
           return failure();
         }
         context.insert(defn->atom, defnType);
+        // TODO: this is eager evaluation...
+        // auto *value = eval(defn->value);
+        env.insert(defn->atom, defn->value);
       } else {
         std::cout << "unknown element in module: " << *object << "\n";
         return failure();
