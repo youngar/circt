@@ -27,6 +27,8 @@ set(CIRCT_TEST_DEPENDS
   esi-tester
   handshake-runner
   firtool
+  augur
+  augur-format
   hlstool
   )
 

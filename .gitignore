@@ -1,3 +1,4 @@
+/.direnv
 /build*
 /install*
 /docker_build

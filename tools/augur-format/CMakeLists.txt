@@ -1,0 +1,10 @@
+add_llvm_tool(augur-format
+  augur-format.cpp
+  DEPENDS
+  LibAugurFormat
+)
+target_link_libraries(augur-format
+  PRIVATE
+  LibAugurFormat
+)
+llvm_update_compile_flags(augur-format)

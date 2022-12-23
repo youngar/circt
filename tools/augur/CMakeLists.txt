@@ -1,0 +1,9 @@
+add_llvm_tool(augur
+  augur-main.cpp
+  DEPENDS
+  LibAugurParser
+)
+target_link_libraries(augur
+  PRIVATE
+  LibAugurParser
+)

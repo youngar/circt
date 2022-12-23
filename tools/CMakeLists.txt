@@ -1,4 +1,5 @@
-
+add_subdirectory(augur)
+add_subdirectory(augur-format)
 add_subdirectory(circt-as)
 add_subdirectory(circt-dis)
 add_subdirectory(circt-lsp-server)
