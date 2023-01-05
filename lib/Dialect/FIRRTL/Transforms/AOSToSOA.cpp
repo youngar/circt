@@ -273,9 +273,14 @@ LogicalResult LiftBundlesVisitor::visitDecl(InstanceOp op) {
 }
 
 LogicalResult LiftBundlesVisitor::visitDecl(WireOp op) {
+  // TODO: Rewrite the wire's type.
   llvm::errs() << "WireOp\n";
   return success();
 }
+
+//===----------------------------------------------------------------------===//
+// Statements
+//===----------------------------------------------------------------------===//
 
 LogicalResult LiftBundlesVisitor::visitStmt(ConnectOp op) {
   llvm::errs() << "ConnectOp\n";
@@ -303,11 +308,18 @@ LogicalResult LiftBundlesVisitor::visitStmt(ConnectOp op) {
   return success();
 }
 
+//===----------------------------------------------------------------------===//
+// Expressions
+//===----------------------------------------------------------------------===//
+
 LogicalResult LiftBundlesVisitor::visitExpr(ConstantOp op) {
   return success();
 }
 
-LogicalResult visitExpr(AggregateConstantOp);
+LogicalResult LiftBundlesVisitor::visitExpr(AggregateConstantOp op) {
+  auto type = op.getType();
+  return success();
+}
 
 LogicalResult LiftBundlesVisitor::visitExpr(SubindexOp op) {
   llvm::errs() << "SubindexOp\n";
@@ -326,6 +338,7 @@ LogicalResult LiftBundlesVisitor::visitExpr(SubfieldOp op) {
 
   return success();
 }
+
 
 //===----------------------------------------------------------------------===//
 // Visitor Entrypoint

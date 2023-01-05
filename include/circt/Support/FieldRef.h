@@ -19,6 +19,10 @@
 
 namespace circt {
 
+//===----------------------------------------------------------------------===//
+// FieldRef
+//===----------------------------------------------------------------------===//
+
 /// This class represents a reference to a specific field or element of an
 /// aggregate value.  Typically, the user will assign a unique field ID to each
 /// field in an aggregate type by visiting them in a depth-first pre-order.
@@ -114,5 +118,10 @@ struct DenseMapInfo<circt::FieldRef> {
   }
 };
 } // namespace llvm
+
+
+//===----------------------------------------------------------------------===//
+// FieldRef Iteration
+//===----------------------------------------------------------------------===//
 
 #endif // CIRCT_SUPPORT_FIELDREF_H

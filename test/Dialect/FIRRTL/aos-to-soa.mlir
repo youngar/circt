@@ -93,4 +93,11 @@ firrtl.circuit "Test" {
     %field  = firrtl.subfield %bundle(0) : (!firrtl.bundle<a flip: uint<8>>) -> !firrtl.uint<8>
     firrtl.connect %field, %value : !firrtl.uint<8>, !firrtl.uint<8>
   }
+
+  // CHECK-LABEL:    @TestAggregateConstants
+  firrtl.module @TestAggregateConstants() {
+    firrtl.aggregateconstant [1, 2, 3] : !firrtl.bundle<a: uint<8>, b: uint<5>, c: uint<4>>
+    firrtl.aggregateconstant [1, 2, 3] : !firrtl.vector<uint<8>, 3>
+    firrtl.aggregateconstant [[1, 2], [3, 4]] : !firrtl.vector<bundle<a: uint<8>, b: uint<5>>, 2>
+  }
 }
