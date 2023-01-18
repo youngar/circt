@@ -50,6 +50,7 @@ public:
   LogicalResult visitDecl(InstanceOp);
   LogicalResult visitDecl(WireOp);
   LogicalResult visitStmt(ConnectOp);
+  LogicalResult visitStmt(StrictConnectOp);
   LogicalResult visitExpr(ConstantOp);
   LogicalResult visitExpr(AggregateConstantOp);
   LogicalResult visitExpr(SubindexOp);
@@ -155,7 +156,7 @@ LiftBundlesVisitor::buildPath(Value oldValue, Value newValue,
   auto oldType = oldValue.getType();
   auto newType = newValue.getType();
 
-  llvm::errs() << getFieldName(FieldRef(oldValue, fieldID)) << "\n";
+  // llvm::errs() << getFieldName(FieldRef(oldValue, fieldID)) << "\n";
 
   auto type = oldType;
   while (fieldID != 0) {
@@ -308,16 +309,70 @@ LogicalResult LiftBundlesVisitor::visitStmt(ConnectOp op) {
   return success();
 }
 
+LogicalResult LiftBundlesVisitor::visitStmt(StrictConnectOp op) {
+  llvm::errs() << "StrictConnectOp\n";
+  auto [lhs, lhsExploded] = fixOperand(op.getDest());
+  auto [rhs, rhsExploded] = fixOperand(op.getSrc());
+
+  if (rhsExploded && !lhsExploded)
+    lhs = explode(lhs[0]);
+
+  if (lhsExploded && !rhsExploded)
+    rhs = explode(rhs[0]);
+
+  if (lhs.size() != rhs.size())
+    assert(false && "Something went wrong exploding the elements");
+
+  auto builder = OpBuilder(context);
+  auto loc = op.getLoc();
+  builder.setInsertionPoint(op);
+
+  for (size_t i = 0, e = lhs.size(); i < e; ++i) {
+    builder.create<StrictConnectOp>(loc, lhs[i], rhs[i]);
+  }
+
+  toDelete.push_back(op);
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // Expressions
 //===----------------------------------------------------------------------===//
 
-LogicalResult LiftBundlesVisitor::visitExpr(ConstantOp op) {
-  return success();
-}
+LogicalResult LiftBundlesVisitor::visitExpr(ConstantOp op) { return success(); }
 
 LogicalResult LiftBundlesVisitor::visitExpr(AggregateConstantOp op) {
   auto type = op.getType();
+
+  if (auto vectorType = type.dyn_cast<FVectorType>()) {
+    auto elementType = vectorType.getElementType();
+    if (auto bundleType = elementType.dyn_cast<BundleType>()) {
+      auto numBundleFields = bundleType.getNumElements();
+      SmallVector<SmallVector<Attribute>> newBundleFields;
+      newBundleFields.resize(numBundleFields);
+      for (auto oldVectorField : op.getFields()) {
+        auto oldBundleFields = oldVectorField.cast<ArrayAttr>();
+        for (auto i = size_t(0); i < numBundleFields; ++i) {
+          newBundleFields[i].push_back(oldBundleFields[i]);
+        }
+      }
+
+      SmallVector<Attribute> newBundleFieldAttrs;
+      for (auto &newVectorFields : newBundleFields) {
+        newBundleFieldAttrs.push_back(ArrayAttr::get(context, newVectorFields));
+      }
+
+      ArrayAttr newBundleFieldsAttr =
+          ArrayAttr::get(context, newBundleFieldAttrs);
+
+      op.setFieldsAttr(newBundleFieldsAttr);
+
+      auto result = op.getResult();
+      auto oldType = result.getType();
+      auto newType = convertType(oldType);
+      result.setType(newType);
+    }
+  }
   return success();
 }
 
@@ -338,7 +393,6 @@ LogicalResult LiftBundlesVisitor::visitExpr(SubfieldOp op) {
 
   return success();
 }
-
 
 //===----------------------------------------------------------------------===//
 // Visitor Entrypoint
@@ -418,10 +472,9 @@ class AOSToSOAPass : public AOSToSOABase<AOSToSOAPass> {
 } // end anonymous namespace
 
 void AOSToSOAPass::runOnOperation() {
-  llvm::errs() <<
-    "===========================\n" <<
-    "START\n" <<
-    "---------------------------\n";
+  llvm::errs() << "===========================\n"
+               << "START\n"
+               << "---------------------------\n";
 
   // auto visitor = LiftBundlesVisitor(&getContext());
   LiftBundlesVisitor visitor(&getContext());
