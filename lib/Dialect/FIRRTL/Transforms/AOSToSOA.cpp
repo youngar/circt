@@ -22,6 +22,7 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/ErrorHandling.h"
 
 #define DEBUG_TYPE "firrtl-aos-to-soa"
 
@@ -65,6 +66,12 @@ private:
   Type convertType(Type);
   FIRRTLBaseType convertType(FIRRTLBaseType);
   FIRRTLBaseType convertType(FIRRTLBaseType, SmallVector<unsigned>);
+
+  Attribute convertConstant(Type type, Attribute fields);
+  Attribute convertVectorConstant(FVectorType type, ArrayAttr fields);
+  Attribute convertBundleConstant(BundleType type, ArrayAttr fields);
+  Attribute convertBundleInVectorConstant(BundleType elementType,
+                                          ArrayRef<Attribute> elements);
 
   std::pair<SmallVector<Value>, bool> buildPath(Value oldValue, Value newValue,
                                                 unsigned fieldID);
@@ -339,40 +346,95 @@ LogicalResult LiftBundlesVisitor::visitStmt(StrictConnectOp op) {
 // Expressions
 //===----------------------------------------------------------------------===//
 
-LogicalResult LiftBundlesVisitor::visitExpr(ConstantOp op) { return success(); }
+Attribute LiftBundlesVisitor::convertBundleInVectorConstant(
+    BundleType type, ArrayRef<Attribute> fields) {
+  
+  // llvm::errs() << "convertBundleInVectorConstant\n";
+  // llvm::errs() << "type=";
+  // type.dump();
+  // llvm::errs() << "\n";
+  // llvm::errs() << "fields={";
+  // for (auto f : fields) {
+  //   llvm::errs() << " ";
+  //   f.dump();
+  // }
+  // llvm::errs() << " ]\n";
 
-LogicalResult LiftBundlesVisitor::visitExpr(AggregateConstantOp op) {
-  auto type = op.getType();
-
-  if (auto vectorType = type.dyn_cast<FVectorType>()) {
-    auto elementType = vectorType.getElementType();
-    if (auto bundleType = elementType.dyn_cast<BundleType>()) {
-      auto numBundleFields = bundleType.getNumElements();
-      SmallVector<SmallVector<Attribute>> newBundleFields;
-      newBundleFields.resize(numBundleFields);
-      for (auto oldVectorField : op.getFields()) {
-        auto oldBundleFields = oldVectorField.cast<ArrayAttr>();
-        for (auto i = size_t(0); i < numBundleFields; ++i) {
-          newBundleFields[i].push_back(oldBundleFields[i]);
-        }
-      }
-
-      SmallVector<Attribute> newBundleFieldAttrs;
-      for (auto &newVectorFields : newBundleFields) {
-        newBundleFieldAttrs.push_back(ArrayAttr::get(context, newVectorFields));
-      }
-
-      ArrayAttr newBundleFieldsAttr =
-          ArrayAttr::get(context, newBundleFieldAttrs);
-
-      op.setFieldsAttr(newBundleFieldsAttr);
-
-      auto result = op.getResult();
-      auto oldType = result.getType();
-      auto newType = convertType(oldType);
-      result.setType(newType);
+  auto numBundleFields = type.getNumElements();
+  SmallVector<SmallVector<Attribute>> newBundleFields;
+  newBundleFields.resize(numBundleFields);
+  for (auto bundle : fields) {
+    auto subfields = bundle.cast<ArrayAttr>();
+    for (size_t i = 0; i < numBundleFields; ++i) {
+      newBundleFields[i].push_back(subfields[i]);
     }
   }
+
+  SmallVector<Attribute> newFieldAttrs;
+  for (auto &newBundleField : newBundleFields) {
+    newFieldAttrs.push_back(ArrayAttr::get(context, newBundleField));
+  }
+  return ArrayAttr::get(context, newFieldAttrs);
+}
+
+Attribute LiftBundlesVisitor::convertVectorConstant(FVectorType oldType,
+                                                    ArrayAttr oldElements) {
+  auto oldElementType = oldType.getElementType();
+  auto newElementType = convertType(oldElementType);
+
+  if (oldElementType == newElementType)
+    if (auto bundleElementType = oldElementType.dyn_cast<BundleType>())
+      return convertBundleInVectorConstant(bundleElementType, oldElements.getValue());
+
+  SmallVector<Attribute> newElements;
+  for (auto oldElement : oldElements) {
+    newElements.push_back(convertConstant(oldElementType, oldElement));
+  }
+
+  auto bundleType = newElementType.cast<BundleType>();
+  return convertBundleInVectorConstant(bundleType, newElements);
+}
+
+Attribute LiftBundlesVisitor::convertBundleConstant(BundleType type,
+                                                    ArrayAttr fields) {
+  SmallVector<Attribute> converted;
+  auto elements = type.getElements();
+  for (size_t i = 0, e = elements.size(); i < e; ++i) {
+    converted.push_back(convertConstant(elements[i].type, fields[i]));
+  }
+  return ArrayAttr::get(context, converted);
+}
+
+Attribute LiftBundlesVisitor::convertConstant(Type type, Attribute value) {
+  if (auto bundleType = type.dyn_cast<BundleType>())
+    return convertBundleConstant(bundleType, value.cast<ArrayAttr>());
+
+  if (auto vectorType = type.dyn_cast<FVectorType>())
+    return convertVectorConstant(vectorType, value.cast<ArrayAttr>());
+
+  return value;
+}
+
+LogicalResult LiftBundlesVisitor::visitExpr(ConstantOp op) {
+  return success();
+}
+
+LogicalResult LiftBundlesVisitor::visitExpr(AggregateConstantOp op) {
+  auto oldType = op.getType();
+  auto newType = convertType(oldType);
+
+  if (oldType == newType)
+    return success();
+
+  auto fields = convertConstant(oldType, op.getFields()).cast<ArrayAttr>();
+  // op.getResult().setType(newType);
+  // op.setFieldsAttr(fields);
+
+  OpBuilder builder(context);
+  builder.setInsertionPointAfterValue(op);
+  auto newOp = builder.create<AggregateConstantOp>(op.getLoc(), newType, fields);
+  valueMap[op.getResult()] = newOp.getResult();
+  toDelete.push_back(op);
   return success();
 }
 
