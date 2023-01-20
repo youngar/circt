@@ -54,9 +54,10 @@ public:
   LogicalResult visitStmt(StrictConnectOp);
   LogicalResult visitExpr(ConstantOp);
   LogicalResult visitExpr(AggregateConstantOp);
+  LogicalResult visitExpr(BundleCreateOp);
+  LogicalResult visitExpr(VectorCreateOp);
   LogicalResult visitExpr(SubindexOp);
   LogicalResult visitExpr(SubfieldOp);
-  // LogicalResult visitExpr()
 
   LogicalResult visitOperand(Value);
   LogicalResult visitOperand(OpResult);
@@ -66,6 +67,9 @@ private:
   Type convertType(Type);
   FIRRTLBaseType convertType(FIRRTLBaseType);
   FIRRTLBaseType convertType(FIRRTLBaseType, SmallVector<unsigned>);
+
+  Attribute convertAggregate(Type type, ArrayRef<Value> values);
+  Attribute convertVectorOfBundle();
 
   Attribute convertConstant(Type type, Attribute fields);
   Attribute convertVectorConstant(FVectorType type, ArrayAttr fields);
@@ -343,7 +347,7 @@ LogicalResult LiftBundlesVisitor::visitStmt(StrictConnectOp op) {
 }
 
 //===----------------------------------------------------------------------===//
-// Expressions
+// Constant Conversion
 //===----------------------------------------------------------------------===//
 
 Attribute LiftBundlesVisitor::convertBundleInVectorConstant(
@@ -427,8 +431,6 @@ LogicalResult LiftBundlesVisitor::visitExpr(AggregateConstantOp op) {
     return success();
 
   auto fields = convertConstant(oldType, op.getFields()).cast<ArrayAttr>();
-  // op.getResult().setType(newType);
-  // op.setFieldsAttr(fields);
 
   OpBuilder builder(context);
   builder.setInsertionPointAfterValue(op);
@@ -437,6 +439,45 @@ LogicalResult LiftBundlesVisitor::visitExpr(AggregateConstantOp op) {
   toDelete.push_back(op);
   return success();
 }
+
+//===----------------------------------------------------------------------===//
+// Aggregate Create Ops
+//===----------------------------------------------------------------------===//
+
+LogicalResult LiftBundlesVisitor::visitExpr(BundleCreateOp op) {
+  auto result = op.getResult();
+  auto oldType = result.getType();
+  auto newType = convertType(oldType);
+  if (oldType != newType)
+    result.setType(newType);
+  
+  return success();
+}
+
+LogicalResult LiftBundlesVisitor::visitExpr(VectorCreateOp op) {
+  auto oldResult = op.getResult();
+  auto oldType = oldResult.getType();
+  auto newType = convertType(oldType);
+
+  if (oldType == newType) {
+    if (auto bundleElementType = oldType.getElementType().dyn_cast<BundleType>()) {
+      convertVectorOfBundle()
+    }
+  }
+    return success();
+
+  auto bundleType = oldType.getElementType().cast<BundleType>();
+
+  OpBuilder builder(context);
+  builder.setInsertionPointAfter(op);
+  builder.create<BundleCreateOp>(
+  auto valueMap[oldResult] = newOp.getResult();
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// Pathing Ops
+//===----------------------------------------------------------------------===//
 
 LogicalResult LiftBundlesVisitor::visitExpr(SubindexOp op) {
   llvm::errs() << "SubindexOp\n";

@@ -147,7 +147,6 @@ def AggregateConstantOp : FIRRTLOp<"aggregateconstant", [Pure, ConstantLike]> {
 
   let arguments = (ins ArrayAttr:$fields);
   let results = (outs AggregateType:$result);
-
   let assemblyFormat = "$fields attr-dict `:` type($result)";
   let hasFolder = 1;
   let hasVerifier = 1;
