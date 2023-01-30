@@ -445,33 +445,34 @@ LogicalResult LiftBundlesVisitor::visitExpr(AggregateConstantOp op) {
 //===----------------------------------------------------------------------===//
 
 LogicalResult LiftBundlesVisitor::visitExpr(BundleCreateOp op) {
-  auto result = op.getResult();
-  auto oldType = result.getType();
-  auto newType = convertType(oldType);
-  if (oldType != newType)
-    result.setType(newType);
-  
+  // auto result = op.getResult();
+  // auto oldType = result.getType();
+  // auto newType = convertType(oldType);
+  // if (oldType != newType)
+  //   result.setType(newType);
+  toDelete.push_back(op);
   return success();
 }
 
 LogicalResult LiftBundlesVisitor::visitExpr(VectorCreateOp op) {
-  auto oldResult = op.getResult();
-  auto oldType = oldResult.getType();
-  auto newType = convertType(oldType);
+  // auto oldResult = op.getResult();
+  // auto oldType = oldResult.getType();
+  // auto newType = convertType(oldType);
 
-  if (oldType == newType) {
-    if (auto bundleElementType = oldType.getElementType().dyn_cast<BundleType>()) {
-      convertVectorOfBundle()
-    }
-  }
-    return success();
+  // if (oldType == newType) {
+  //   if (auto bundleElementType = oldType.getElementType().dyn_cast<BundleType>()) {
+  //     convertVectorOfBundle()
+  //   }
+  // }
+  //   return success();
 
-  auto bundleType = oldType.getElementType().cast<BundleType>();
+  // auto bundleType = oldType.getElementType().cast<BundleType>();
 
-  OpBuilder builder(context);
-  builder.setInsertionPointAfter(op);
-  builder.create<BundleCreateOp>(
-  auto valueMap[oldResult] = newOp.getResult();
+  // OpBuilder builder(context);
+  // builder.setInsertionPointAfter(op);
+  // builder.create<BundleCreateOp>(
+  // auto valueMap[oldResult] = newOp.getResult();
+  toDelete.push_back(op);
   return success();
 }
 
