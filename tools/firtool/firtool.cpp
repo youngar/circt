@@ -697,12 +697,11 @@ static LogicalResult processBuffer(
     pm.nest<firrtl::CircuitOp>().nest<firrtl::FModuleOp>().addPass(
         firrtl::createFlattenMemoryPass());
 
-  // pm.nest<firrtl::CircuitOp>().addNestedPass<firrtl::FModuleOp>(
-  //     firrtl::createAOSToSOAPass());
-
   // The input mlir file could be firrtl dialect so we might need to clean
   // things up.
   if (!disableLowerTypes) {
+    pm.nest<firrtl::CircuitOp>().addNestedPass<firrtl::FModuleOp>(
+        firrtl::createAOSToSOAPass());
     pm.addNestedPass<firrtl::CircuitOp>(firrtl::createLowerFIRRTLTypesPass(
         preserveAggregate, preservePublicTypes));
     // Only enable expand whens if lower types is also enabled.
