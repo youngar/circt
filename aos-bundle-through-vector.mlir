@@ -55,6 +55,12 @@ firrtl.circuit "Trying to sink a vector into a bundle port" {
       (!firrtl.bundle<a: uint<8>, b: uint<16>>, !firrtl.bundle<a: uint<8>, b: uint<16>>) ->
         !firrtl.vector<bundle<a: uint<8>, b: uint<16>>, 2>
 
+    // in_a    = firrtl.subfield %in[a]
+    // in_b    = firrtl.subfield %in[b]
+    // %as     = firrtl.vectorcreate %in_a, %in_a
+    // %bs     = firrtl.vectorcreate %in_b, %in_b
+    // %bundle = firrtl.bundlecreate %as, %bs
+    // 
     firrtl.strictconnect %out, %vector : !firrtl.vector<bundle<a: uint<8>, b: uint<16>>, 2>
   }
 }
