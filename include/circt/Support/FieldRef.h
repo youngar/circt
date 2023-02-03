@@ -35,7 +35,7 @@ public:
   FieldRef() {}
 
   /// Get a FieldRef location for the specified value.
-  FieldRef(Value value, unsigned id) : value(value), id(id) {}
+  FieldRef(Value value, uint64_t id) : value(value), id(id) {}
 
   /// Get the Value which created this location.
   Value getValue() const { return value; }
@@ -60,10 +60,10 @@ public:
 
   /// Get the field ID of this FieldRef, which is a unique identifier mapped to
   /// a specific field in a bundle.
-  unsigned getFieldID() const { return id; }
+  uint64_t getFieldID() const { return id; }
 
   /// Get a reference to a subfield.
-  FieldRef getSubField(unsigned subFieldID) const {
+  FieldRef getSubField(uint64_t subFieldID) const {
     return FieldRef(value, id + subFieldID);
   }
 
@@ -89,7 +89,7 @@ private:
   Value value;
 
   /// A unique field ID.
-  unsigned id = 0;
+  uint64_t id = 0;
 };
 
 /// Get a hash code for a FieldRef.

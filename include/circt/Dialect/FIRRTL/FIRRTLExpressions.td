@@ -147,6 +147,7 @@ def AggregateConstantOp : FIRRTLOp<"aggregateconstant", [Pure, ConstantLike]> {
 
   let arguments = (ins ArrayAttr:$fields);
   let results = (outs AggregateType:$result);
+
   let assemblyFormat = "$fields attr-dict `:` type($result)";
   let hasFolder = 1;
   let hasVerifier = 1;
@@ -168,6 +169,13 @@ def BundleCreateOp : FIRRTLOp<"bundlecreate"> {
   let assemblyFormat = "$fields attr-dict `:` functional-type($fields, $result)";
   let hasVerifier = 1;
   let hasFolder = 1;
+
+  let extraClassDeclaration = [{
+    FieldRef getSubfieldRef(uint64_t fieldID) {
+      auto [index, subfieldID] = getType().getIndexAndSubfieldID(fieldID);
+      return {getOperand(index), subfieldID};
+    }
+  }];
 }
 
 def VectorCreateOp : FIRRTLOp<"vectorcreate"> {
@@ -188,6 +196,13 @@ def VectorCreateOp : FIRRTLOp<"vectorcreate"> {
   let assemblyFormat = "$fields attr-dict `:` functional-type($fields, $result)";
   let hasVerifier = 1;
   let hasFolder = 1;
+  
+  let extraClassDeclaration = [{
+    FieldRef getSubfieldRef(uint64_t fieldID) {
+      auto [index, subfieldID] = getType().getIndexAndSubfieldID(fieldID);
+      return {getOperand(index), subfieldID};
+    }
+  }];
 }
 
 
