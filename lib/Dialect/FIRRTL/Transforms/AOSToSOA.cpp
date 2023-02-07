@@ -52,6 +52,7 @@ public:
   LogicalResult visitDecl(WireOp);
   LogicalResult visitStmt(ConnectOp);
   LogicalResult visitStmt(StrictConnectOp);
+  LogicalResult visitStmt(PrintFOp);
   LogicalResult visitExpr(ConstantOp);
   LogicalResult visitExpr(AggregateConstantOp);
   LogicalResult visitExpr(BundleCreateOp);
@@ -93,6 +94,7 @@ private:
   std::pair<SmallVector<Value>, bool> fixOperand(Value);
   SmallVector<Value> explode(Value);
   void explode(OpBuilder, Value, SmallVector<Value> &);
+  Value fixAtomicOperand(Value value);
 
   /// Utility
   bool remapped(Value value) { return valueMap.lookup(value) != value; }
@@ -288,7 +290,6 @@ Operation *LiftBundlesVisitor::convertOp(AggregateConstantOp op) {
 // static SmallVector<Value> doThing(Value value, size_t index,
 //                      SmallVector<size_t> &dimensions) {
 
-  
 //   if (aut)
 //     auto type = value.getType();
 //   if (auto bundleType = type.dyn_cast<BundleType>()) {
@@ -368,8 +369,6 @@ Operation *LiftBundlesVisitor::convertOp(VectorCreateOp op) {
 
   OpBuilder builder(context);
   builder.setInsertionPointAfter(op);
-
-  auto loc = op.getLoc();
 
   SmallVector<unsigned> dimensions;
 
@@ -592,6 +591,13 @@ SmallVector<Value> LiftBundlesVisitor::explode(Value value) {
   return output;
 }
 
+Value LiftBundlesVisitor::fixAtomicOperand(Value value) {
+  auto [values, exploded] = fixOperand(value);
+  assert(!exploded);
+  assert(values.size() == 1);
+  return values[0];
+}
+
 //===----------------------------------------------------------------------===//
 // Declarations
 //===----------------------------------------------------------------------===//
@@ -664,6 +670,37 @@ LogicalResult LiftBundlesVisitor::visitStmt(StrictConnectOp op) {
   for (size_t i = 0, e = lhs.size(); i < e; ++i) {
     builder.create<StrictConnectOp>(loc, lhs[i], rhs[i]);
   }
+
+  toDelete.insert(op);
+  return success();
+}
+
+LogicalResult LiftBundlesVisitor::visitStmt(PrintFOp op) {
+  bool changed = false;
+
+  auto newClock = fixAtomicOperand(op.getClock());
+  if (newClock != op.getClock())
+    changed = true;
+
+  auto newCond = fixAtomicOperand(op.getCond());
+  if (newCond != op.getCond())
+    changed = true;
+
+  SmallVector<Value, 4> newSubstitutions;
+  for (auto oldSubstitution : op.getSubstitutions()) {
+    auto newSubstitution = fixAtomicOperand(oldSubstitution);
+    if (newSubstitution != oldSubstitution)
+      changed = true;
+    newSubstitutions.push_back(newSubstitution);
+  }
+
+  if (!changed)
+    return success();
+
+  OpBuilder builder(context);
+  builder.setInsertionPointAfter(op);
+  builder.create<PrintFOp>(op.getLoc(), newClock, newCond, op.getFormatString(),
+                           newSubstitutions, op.getName());
 
   toDelete.insert(op);
   return success();
