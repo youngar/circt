@@ -100,6 +100,10 @@ private:
   void explode(OpBuilder, Value, SmallVector<Value> &);
   Value fixAtomicOperand(Value value);
 
+  /// Read-only / RHS Operand Fixup
+  Value fixROperand(Value);
+  Value fixROperand(FieldRef);
+
   /// Utility
   bool remapped(Value value) { return valueMap.lookup(value) != value; }
 
@@ -254,32 +258,7 @@ LiftBundlesVisitor::convertType(FIRRTLBaseType type,
 // On-Demand Op Conversions
 //===----------------------------------------------------------------------===//
 
-Operation *LiftBundlesVisitor::convertOp(AggregateConstantOp op) {
-  auto oldValue = op.getResult();
-  auto newValue = valueMap.lookup(oldValue);
-  if (newValue)
-    return newValue.getDefiningOp();
-
-  auto oldType = oldValue.getType();
-  auto newType = convertType(oldType);
-  if (oldType == newType) {
-    toDelete.erase(op);
-    valueMap.insert({oldValue, oldValue});
-    return op;
-  }
-
-  auto fields = convertConstant(oldType, op.getFields()).cast<ArrayAttr>();
-
-  OpBuilder builder(context);
-  builder.setInsertionPointAfterValue(op);
-  auto newOp =
-      builder.create<AggregateConstantOp>(op.getLoc(), newType, fields);
-
-  valueMap[op.getResult()] = newOp.getResult();
-  toDelete.insert(op);
-
-  return newOp;
-}
+Operation *LiftBundlesVisitor::convertOp(AggregateConstantOp op) {}
 
 // static SmallVector<Value> collect(Value top, SmallVector<size_t> &path) {
 //   auto type = top.getType();
@@ -510,62 +489,13 @@ LiftBundlesVisitor::buildPath(Value oldValue, Value newValue,
 
 std::pair<SmallVector<Value>, bool>
 LiftBundlesVisitor::fixOperand(FieldRef ref) {
-
   llvm::errs() << "fixOperand ref=" << ref.getFieldID()
                << " val=" << ref.getValue() << "\n";
-
   auto value = ref.getValue();
-
-  if (auto argument = value.dyn_cast<BlockArgument>()) {
-    llvm::errs() << "operand: BlockArgument\n";
-    auto mapped = valueMap.lookup(value);
-    return buildPath(value, mapped, ref.getFieldID());
-  }
-
-  auto *op = value.getDefiningOp();
-
-  if (auto aggregateConstantOp = dyn_cast<AggregateConstantOp>(op)) {
-    llvm::errs() << "operand: AggregateConstantOp\n";
-    auto cached = valueMap.lookup(value);
-    if (cached)
-      return buildPath(value, cached, ref);
-
-    auto converted = convertOp(aggregateConstantOp);
-    return buildPath(value, converted->getResult(0), ref);
-  }
-
-  if (auto bundleCreateOp = dyn_cast<BundleCreateOp>(op)) {
-    llvm::errs() << "operand: BundleCreateOp\n";
-
-    // If we're referring to the root of the bundle create op,
-    // perform a deep conversion. Otherwise, "walk through" the bundle
-    // op and build a direct reference to the underlying field, instead.
-    auto id = ref.getFieldID();
-    if (id == 0) {
-      auto converted = convertOp(bundleCreateOp);
-      return {{converted->getResult(0)}, false};
-    }
-
-    return fixOperand(bundleCreateOp.getSubfieldRef(id));
-  }
-
-  if (auto vectorCreateOp = dyn_cast<VectorCreateOp>(op)) {
-    llvm::errs() << "operand: VectorCreateOp\n";
-
-    auto id = ref.getFieldID();
-    if (id == 0) {
-      auto converted = convertOp(vectorCreateOp);
-      return {{converted->getResult(0)}, false};
-    }
-
-    return fixOperand(vectorCreateOp.getSubfieldRef(id));
-  }
-
   auto converted = valueMap.lookup(value);
   assert(converted);
   if (converted == value)
     return {{value}, false};
-
   return buildPath(value, converted, ref.getFieldID());
 }
 
@@ -603,6 +533,30 @@ Value LiftBundlesVisitor::fixAtomicOperand(Value value) {
 }
 
 //===----------------------------------------------------------------------===//
+// Read-Only / RHS Operand Fixup
+//===----------------------------------------------------------------------===//
+
+Value LiftBundlesVisitor::fixROperand(Value operand) {
+  auto ref = getFieldRefFromValue(operand);
+
+  llvm::errs() << "fixROperand ref=" << ref.getFieldID()
+               << " val=" << ref.getValue() << "\n";
+
+  auto [values, exploded] = fixOperand(ref);
+  if (!exploded) {
+    llvm::errs() << "fixROperand not exploded\n";
+    return values.front();
+  }
+  llvm::errs() << "fixROperand exploded\n";
+
+  auto newType = convertType(operand.getType());
+
+  OpBuilder builder(context);
+  builder.setInsertionPointAfterValue(operand);
+  return builder.create<BundleCreateOp>(operand.getLoc(), newType, values);
+}
+
+//===----------------------------------------------------------------------===//
 // Declarations
 //===----------------------------------------------------------------------===//
 
@@ -630,7 +584,7 @@ LogicalResult LiftBundlesVisitor::visitDecl(InstanceOp op) {
   auto newOp = builder.create<InstanceOp>(
       op.getLoc(), newTypes, op.getModuleNameAttr(), op.getNameAttr(),
       op.getNameKindAttr(), op.getPortDirectionsAttr(), op.getPortNamesAttr(),
-      op.getPortAnnotationsAttr(), op.getPortAnnotationsAttr(),
+      op.getAnnotationsAttr(), op.getPortAnnotationsAttr(),
       op.getLowerToBindAttr(), op.getInnerSymAttr());
 
   for (size_t i = 0, e = op.getNumResults(); i < e; ++i)
@@ -676,11 +630,18 @@ LogicalResult LiftBundlesVisitor::visitDecl(MemOp op) {
 }
 
 LogicalResult LiftBundlesVisitor::visitDecl(NodeOp op) {
+  llvm::errs() << "NodeOp\n";
+
   auto changed = false;
 
   auto oldType = op.getType();
   auto newType = convertType(oldType);
   if (oldType != newType)
+    changed = true;
+
+  auto oldInput = op.getInput();
+  auto newInput = fixROperand(oldInput);
+  if (oldInput != newInput)
     changed = true;
 
   if (!changed) {
@@ -689,8 +650,17 @@ LogicalResult LiftBundlesVisitor::visitDecl(NodeOp op) {
     return success();
   }
 
-  assert(0 && "TODO Fix this once we've fixed bundle / node create!");
-  return failure();
+  OpBuilder builder(op);
+  auto newOp = builder.create<NodeOp>(
+      op.getLoc(), newInput, op.getNameAttr(),
+      op.getNameKindAttr(), op.getAnnotationsAttr(), op.getInnerSymAttr());
+
+  newOp->dump();
+  llvm::errs() << newOp;
+
+  valueMap[op.getResult()] = newOp.getResult();
+  toDelete.insert(op);
+  return success();
 }
 
 LogicalResult LiftBundlesVisitor::visitDecl(RegOp op) {
@@ -785,7 +755,7 @@ LogicalResult LiftBundlesVisitor::visitDecl(WireOp op) {
   auto newOp = builder.create<WireOp>(
       op.getLoc(), newType, op.getNameAttr(), op.getNameKindAttr(),
       op.getAnnotationsAttr(), op.getInnerSymAttr());
-  
+
   valueMap[op.getResult()] = newOp.getResult();
   toDelete.insert(op);
   return success();
@@ -959,9 +929,24 @@ LogicalResult LiftBundlesVisitor::visitExpr(ConstantOp op) {
 }
 
 LogicalResult LiftBundlesVisitor::visitExpr(AggregateConstantOp op) {
-  // tenatively mark for deletion. Aggregate constants are converted or
-  // preserved on demand.
+  auto oldValue = op.getResult();
+
+  auto oldType = oldValue.getType();
+  auto newType = convertType(oldType);
+  if (oldType == newType) {
+    valueMap.insert({oldValue, oldValue});
+    return success();
+  }
+
+  auto fields = convertConstant(oldType, op.getFields()).cast<ArrayAttr>();
+
+  OpBuilder builder(op);
+  auto newOp =
+      builder.create<AggregateConstantOp>(op.getLoc(), newType, fields);
+
+  valueMap[op.getResult()] = newOp.getResult();
   toDelete.insert(op);
+
   return success();
 }
 
