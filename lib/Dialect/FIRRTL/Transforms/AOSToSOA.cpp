@@ -50,8 +50,10 @@ public:
 
   LogicalResult visitDecl(InstanceOp);
   LogicalResult visitDecl(MemOp);
-  LogicalResult visitDecl(WireOp);
+  LogicalResult visitDecl(NodeOp);
   LogicalResult visitDecl(RegOp);
+  LogicalResult visitDecl(RegResetOp);
+  LogicalResult visitDecl(WireOp);
   LogicalResult visitStmt(ConnectOp);
   LogicalResult visitStmt(StrictConnectOp);
   LogicalResult visitStmt(PrintFOp);
@@ -673,10 +675,22 @@ LogicalResult LiftBundlesVisitor::visitDecl(MemOp op) {
   return success();
 }
 
-LogicalResult LiftBundlesVisitor::visitDecl(WireOp op) {
-  // TODO: Rewrite the wire's type.
-  llvm::errs() << "WireOp\n";
-  return success();
+LogicalResult LiftBundlesVisitor::visitDecl(NodeOp op) {
+  auto changed = false;
+
+  auto oldType = op.getType();
+  auto newType = convertType(oldType);
+  if (oldType != newType)
+    changed = true;
+
+  if (!changed) {
+    auto result = op.getResult();
+    valueMap[result] = result;
+    return success();
+  }
+
+  assert(0 && "TODO Fix this once we've fixed bundle / node create!");
+  return failure();
 }
 
 LogicalResult LiftBundlesVisitor::visitDecl(RegOp op) {
@@ -695,6 +709,7 @@ LogicalResult LiftBundlesVisitor::visitDecl(RegOp op) {
   if (!changed) {
     auto result = op.getResult();
     valueMap[result] = result;
+    return success();
   }
 
   OpBuilder builder(context);
@@ -706,6 +721,73 @@ LogicalResult LiftBundlesVisitor::visitDecl(RegOp op) {
 
   toDelete.insert(op);
   valueMap.insert({op.getResult(), newOp.getResult()});
+  return success();
+}
+
+LogicalResult LiftBundlesVisitor::visitDecl(RegResetOp op) {
+  bool changed = false;
+
+  auto oldType = op.getType();
+  auto newType = convertType(oldType);
+  if (oldType != newType)
+    changed = true;
+
+  auto oldClockVal = op.getClockVal();
+  auto newClockVal = fixAtomicOperand(oldClockVal);
+  if (oldClockVal != newClockVal)
+    changed = true;
+
+  auto oldResetSignal = op.getResetSignal();
+  auto newResetSignal = fixAtomicOperand(oldResetSignal);
+  if (oldResetSignal != newResetSignal)
+    changed = true;
+
+  auto oldResetValue = op.getResetValue();
+  auto [newResetValues, newResetValueExploded] = fixOperand(oldResetValue);
+  if (newResetValueExploded)
+    assert(0 && "TODO: materialize an intermediate bundle thing?");
+
+  if (!changed) {
+    auto result = op.getResult();
+    valueMap[result] = result;
+    return success();
+  }
+
+  OpBuilder builder(context);
+  builder.setInsertionPointAfter(op);
+
+  auto newOp = builder.create<RegOp>(
+      op.getLoc(), newType, newClockVal, op.getNameAttr(), op.getNameKindAttr(),
+      op.getAnnotationsAttr(), op.getInnerSymAttr());
+
+  toDelete.insert(op);
+  valueMap.insert({op.getResult(), newOp.getResult()});
+  return success();
+}
+
+LogicalResult LiftBundlesVisitor::visitDecl(WireOp op) {
+  llvm::errs() << "WireOp\n";
+  auto changed = false;
+
+  auto oldType = op.getType();
+  auto newType = convertType(oldType);
+  if (oldType != newType)
+    changed = true;
+
+  if (!changed) {
+    auto result = op.getResult();
+    valueMap[result] = result;
+    return success();
+  }
+
+  OpBuilder builder(context);
+  builder.setInsertionPointAfter(op);
+  auto newOp = builder.create<WireOp>(
+      op.getLoc(), newType, op.getNameAttr(), op.getNameKindAttr(),
+      op.getAnnotationsAttr(), op.getInnerSymAttr());
+  
+  valueMap[op.getResult()] = newOp.getResult();
+  toDelete.insert(op);
   return success();
 }
 
