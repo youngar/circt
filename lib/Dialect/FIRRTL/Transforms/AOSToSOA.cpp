@@ -50,6 +50,7 @@ public:
 
   LogicalResult visitDecl(InstanceOp);
   LogicalResult visitDecl(WireOp);
+  LogicalResult visitDecl(RegOp);
   LogicalResult visitStmt(ConnectOp);
   LogicalResult visitStmt(StrictConnectOp);
   LogicalResult visitStmt(PrintFOp);
@@ -616,6 +617,34 @@ LogicalResult LiftBundlesVisitor::visitDecl(InstanceOp op) {
 LogicalResult LiftBundlesVisitor::visitDecl(WireOp op) {
   // TODO: Rewrite the wire's type.
   llvm::errs() << "WireOp\n";
+  return success();
+}
+
+LogicalResult LiftBundlesVisitor::visitDecl(RegOp op) {
+  bool changed = false;
+
+  auto oldType = op.getType();
+  auto newType = convertType(oldType);
+  if (oldType != newType)
+    changed = true;
+
+  auto oldClockVal = op.getClockVal();
+  auto newClockVal = fixAtomicOperand(oldClockVal);
+  if (oldClockVal != newClockVal)
+    changed = true;
+
+  if (!changed)
+    return success();
+
+  OpBuilder builder(context);
+  builder.setInsertionPointAfter(op);
+
+  auto newOp =
+      builder.create<RegOp>(op.getLoc(), newType, newClockVal, op.getNameAttr(),
+                            op.getNameKindAttr(), op.getAnnotationsAttr(), op.getInnerSymAttr());
+
+  toDelete.insert(op);
+  valueMap.insert({op.getResult(), newOp.getResult()});
   return success();
 }
 
