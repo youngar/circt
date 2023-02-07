@@ -49,6 +49,7 @@ public:
   LogicalResult visitInvalidOp(Operation *) { return failure(); }
 
   LogicalResult visitDecl(InstanceOp);
+  LogicalResult visitDecl(MemOp);
   LogicalResult visitDecl(WireOp);
   LogicalResult visitDecl(RegOp);
   LogicalResult visitStmt(ConnectOp);
@@ -606,11 +607,69 @@ Value LiftBundlesVisitor::fixAtomicOperand(Value value) {
 LogicalResult LiftBundlesVisitor::visitDecl(InstanceOp op) {
   llvm::errs() << "InstanceOp\n";
 
-  // for (unsigned i = 0, e = op.getNumResults(); i < e; ++i) {
-  //   auto result = op.getResult(i);
-  //   auto type = TypeConverterX::convert(context, result.getType());
-  //   result.setType(type);
-  // }
+  auto changed = false;
+  auto oldTypes = op->getResultTypes();
+  SmallVector<Type> newTypes;
+  for (auto oldType : oldTypes) {
+    auto newType = convertType(oldType);
+    if (oldType != newType)
+      changed = true;
+    newTypes.push_back(newType);
+  }
+
+  if (!changed) {
+    for (auto result : op.getResults())
+      valueMap[result] = result;
+    return success();
+  }
+
+  OpBuilder builder(context);
+  builder.setInsertionPointAfter(op);
+  auto newOp = builder.create<InstanceOp>(
+      op.getLoc(), newTypes, op.getModuleNameAttr(), op.getNameAttr(),
+      op.getNameKindAttr(), op.getPortDirectionsAttr(), op.getPortNamesAttr(),
+      op.getPortAnnotationsAttr(), op.getPortAnnotationsAttr(),
+      op.getLowerToBindAttr(), op.getInnerSymAttr());
+
+  for (size_t i = 0, e = op.getNumResults(); i < e; ++i)
+    valueMap[op.getResult(i)] = newOp.getResult(i);
+
+  toDelete.insert(op);
+  return success();
+}
+
+LogicalResult LiftBundlesVisitor::visitDecl(MemOp op) {
+  llvm::errs() << "MemOp\n";
+
+  auto changed = false;
+  auto oldTypes = op->getResultTypes();
+  SmallVector<Type> newTypes;
+  for (auto oldType : oldTypes) {
+    auto newType = convertType(oldType);
+    if (oldType != newType)
+      changed = true;
+    newTypes.push_back(newType);
+  }
+
+  if (!changed) {
+    for (auto result : op.getResults())
+      valueMap[result] = result;
+    return success();
+  }
+
+  OpBuilder builder(context);
+  builder.setInsertionPointAfter(op);
+  auto newOp = builder.create<MemOp>(
+      op.getLoc(), newTypes, op.getReadLatencyAttr(), op.getWriteLatencyAttr(),
+      op.getDepthAttr(), op.getRuwAttr(), op.getPortNamesAttr(),
+      op.getNameAttr(), op.getNameKindAttr(), op.getAnnotationsAttr(),
+      op.getPortAnnotationsAttr(), op.getInnerSymAttr(), op.getGroupIDAttr(),
+      op.getInitAttr());
+
+  for (size_t i = 0, e = op.getNumResults(); i < e; ++i)
+    valueMap[op.getResult(i)] = newOp.getResult(i);
+
+  toDelete.insert(op);
   return success();
 }
 
@@ -633,15 +692,17 @@ LogicalResult LiftBundlesVisitor::visitDecl(RegOp op) {
   if (oldClockVal != newClockVal)
     changed = true;
 
-  if (!changed)
-    return success();
+  if (!changed) {
+    auto result = op.getResult();
+    valueMap[result] = result;
+  }
 
   OpBuilder builder(context);
   builder.setInsertionPointAfter(op);
 
-  auto newOp =
-      builder.create<RegOp>(op.getLoc(), newType, newClockVal, op.getNameAttr(),
-                            op.getNameKindAttr(), op.getAnnotationsAttr(), op.getInnerSymAttr());
+  auto newOp = builder.create<RegOp>(
+      op.getLoc(), newType, newClockVal, op.getNameAttr(), op.getNameKindAttr(),
+      op.getAnnotationsAttr(), op.getInnerSymAttr());
 
   toDelete.insert(op);
   valueMap.insert({op.getResult(), newOp.getResult()});
