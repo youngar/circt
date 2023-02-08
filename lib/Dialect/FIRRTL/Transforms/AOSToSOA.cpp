@@ -48,14 +48,13 @@ public:
 
   LogicalResult visitUnhandledOp(Operation *op) {
     for (auto [index, operand] : llvm::enumerate(op->getOperands())) {
-      auto type = operand.getType();
-      assert(type == convertType(type) && "This is probably a bogus assert");
+      assert(operand.getType() == convertType(operand.getType()) &&
+             "This is probably a bogus assert");
       op->setOperand(index, fixROperand(operand));
     }
 
     for (auto result : op->getResults()) {
-      auto type = result.getType();
-      assert(type == convertType(type) &&
+      assert(result.getType() == convertType(result.getType()) &&
              "The op should be cloned if any result type changes");
       valueMap[result] = result;
     }
@@ -71,8 +70,12 @@ public:
   LogicalResult visitDecl(RegOp);
   LogicalResult visitDecl(RegResetOp);
   LogicalResult visitDecl(WireOp);
+
+  template <typename OpTy>
+  void handleConnect(OpTy op);
   LogicalResult visitStmt(ConnectOp);
   LogicalResult visitStmt(StrictConnectOp);
+
   LogicalResult visitStmt(PrintFOp);
   LogicalResult visitExpr(AggregateConstantOp);
   LogicalResult visitExpr(BundleCreateOp);
@@ -544,70 +547,60 @@ LogicalResult LiftBundlesVisitor::visitDecl(WireOp op) {
 // Statements
 //===----------------------------------------------------------------------===//
 
-using It = SmallVectorImpl<Value>::const_iterator;
-
 template <typename OpTy>
-void emitConnect(ImplicitLocOpBuilder &builder, Type type, It &lhs, It &rhs) {
-  if (auto bundleType = type.dyn_cast<BundleType>()) {
-    for (auto &e : bundleType) {
-      if (e.isFlip)
-        emitConnect<OpTy>(builder, e.type, rhs, lhs);
-      else
-        emitConnect<OpTy>(builder, e.type, lhs, rhs);
-    }
-  } else if (auto vectorType = type.dyn_cast<FVectorType>()) {
-    emitConnect<OpTy>(builder, vectorType.getElementType(), lhs, rhs);
-  } else {
-    builder.create<OpTy>(*lhs++, *rhs++);
+void LiftBundlesVisitor::handleConnect(OpTy op) {
+  llvm::errs() << "handle connect\n";
+  auto [lhs, lhsExploded] = fixOperand(op.getDest());
+
+  // If the LHS did not explode, then we can construct the RHS as a read-only
+  // operand.
+  if (!lhsExploded) {
+    auto rhs = fixROperand(op.getSrc());
+    OpBuilder(op).create<OpTy>(op.getLoc(), lhs[0], rhs);
+    toDelete.insert(op);
+    return;
   }
+
+  // We must force the RHS to explode.
+  auto [rhs, rhsExploded] = fixOperand(op.getSrc());
+  if (!rhsExploded)
+    rhs = explode(rhs[0]);
+
+  assert(lhs.size() == rhs.size() &&
+         "Something went wrong exploding the elements");
+
+  // Emit connections between all leaf elements.
+  ImplicitLocOpBuilder builder(op.getLoc(), op);
+  auto type = convertType(op.getDest().getType());
+  const auto *lit = lhs.begin();
+  const auto *rit = rhs.begin();
+  std::function<void(Type)> explodeConnect = [&](Type type) {
+    if (auto bundleType = type.dyn_cast<BundleType>()) {
+      for (auto &e : bundleType) {
+        if (e.isFlip)
+          std::swap(lit, rit);
+        explodeConnect(e.type);
+      }
+    } else if (auto vectorType = type.dyn_cast<FVectorType>()) {
+      explodeConnect(vectorType.getElementType());
+    } else {
+      builder.create<OpTy>(*lit++, *rit++);
+    }
+  };
+  explodeConnect(type);
+
+  toDelete.insert(op);
 }
 
 LogicalResult LiftBundlesVisitor::visitStmt(ConnectOp op) {
   llvm::errs() << "ConnectOp\n";
-  auto [lhs, lhsExploded] = fixOperand(op.getDest());
-  auto [rhs, rhsExploded] = fixOperand(op.getSrc());
-
-  // TODO: Convert the lhs first. If the rhs wasn't
-  if (rhsExploded && !lhsExploded)
-    lhs = explode(lhs[0]);
-
-  if (lhsExploded && !rhsExploded)
-    rhs = explode(rhs[0]);
-
-  if (lhs.size() != rhs.size())
-    assert(false && "Something went wrong exploding the elements");
-
-  ImplicitLocOpBuilder builder(op.getLoc(), op);
-  auto type = convertType(op.getDest().getType());
-  const auto *lhsBegin = lhs.begin();
-  const auto *rhsBegin = rhs.begin();
-  emitConnect<ConnectOp>(builder, type, lhsBegin, rhsBegin);
-  toDelete.insert(op);
+  handleConnect(op);
   return success();
 }
 
 LogicalResult LiftBundlesVisitor::visitStmt(StrictConnectOp op) {
   llvm::errs() << "StrictConnectOp\n";
-  auto [lhs, lhsExploded] = fixOperand(op.getDest());
-  auto [rhs, rhsExploded] = fixOperand(op.getSrc());
-
-  if (rhsExploded && !lhsExploded)
-    lhs = explode(lhs[0]);
-
-  if (lhsExploded && !rhsExploded)
-    rhs = explode(rhs[0]);
-
-  if (lhs.size() != rhs.size())
-    assert(false && "Something went wrong exploding the elements");
-
-  OpBuilder builder(op);
-  auto loc = op.getLoc();
-
-  for (size_t i = 0, e = lhs.size(); i < e; ++i) {
-    builder.create<StrictConnectOp>(loc, lhs[i], rhs[i]);
-  }
-
-  toDelete.insert(op);
+  handleConnect(op);
   return success();
 }
 
