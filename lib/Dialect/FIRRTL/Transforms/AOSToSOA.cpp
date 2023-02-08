@@ -45,7 +45,16 @@ public:
   using FIRRTLVisitor<LiftBundlesVisitor, LogicalResult>::visitExpr;
   using FIRRTLVisitor<LiftBundlesVisitor, LogicalResult>::visitStmt;
 
-  LogicalResult visitUnhandledOp(Operation *) { return failure(); }
+  LogicalResult visitUnhandledOp(Operation *op) {
+    for (auto [index, operand] : llvm::enumerate(op->getOperands()))
+      op->setOperand(index, valueMap[operand]);
+
+    for (auto result : op->getResults())
+      valueMap[result] = result;
+
+    return success();
+  }
+
   LogicalResult visitInvalidOp(Operation *) { return failure(); }
 
   LogicalResult visitDecl(InstanceOp);
@@ -57,7 +66,6 @@ public:
   LogicalResult visitStmt(ConnectOp);
   LogicalResult visitStmt(StrictConnectOp);
   LogicalResult visitStmt(PrintFOp);
-  LogicalResult visitExpr(ConstantOp);
   LogicalResult visitExpr(AggregateConstantOp);
   LogicalResult visitExpr(BundleCreateOp);
   LogicalResult visitExpr(VectorCreateOp);
@@ -682,11 +690,6 @@ Attribute LiftBundlesVisitor::convertConstant(Type type, Attribute value) {
     return convertVectorConstant(vectorType, value.cast<ArrayAttr>());
 
   return value;
-}
-
-LogicalResult LiftBundlesVisitor::visitExpr(ConstantOp op) {
-  valueMap.insert({op, op});
-  return success();
 }
 
 LogicalResult LiftBundlesVisitor::visitExpr(AggregateConstantOp op) {
