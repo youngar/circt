@@ -544,6 +544,24 @@ LogicalResult LiftBundlesVisitor::visitDecl(WireOp op) {
 // Statements
 //===----------------------------------------------------------------------===//
 
+using It = SmallVectorImpl<Value>::const_iterator;
+
+template <typename OpTy>
+void emitConnect(ImplicitLocOpBuilder &builder, Type type, It &lhs, It &rhs) {
+  if (auto bundleType = type.dyn_cast<BundleType>()) {
+    for (auto &e : bundleType) {
+      if (e.isFlip)
+        emitConnect<OpTy>(builder, e.type, rhs, lhs);
+      else
+        emitConnect<OpTy>(builder, e.type, lhs, rhs);
+    }
+  } else if (auto vectorType = type.dyn_cast<FVectorType>()) {
+    emitConnect<OpTy>(builder, vectorType.getElementType(), lhs, rhs);
+  } else {
+    builder.create<OpTy>(*lhs++, *rhs++);
+  }
+}
+
 LogicalResult LiftBundlesVisitor::visitStmt(ConnectOp op) {
   llvm::errs() << "ConnectOp\n";
   auto [lhs, lhsExploded] = fixOperand(op.getDest());
@@ -559,13 +577,11 @@ LogicalResult LiftBundlesVisitor::visitStmt(ConnectOp op) {
   if (lhs.size() != rhs.size())
     assert(false && "Something went wrong exploding the elements");
 
-  OpBuilder builder(op);
-  auto loc = op.getLoc();
-
-  for (size_t i = 0, e = lhs.size(); i < e; ++i) {
-    builder.create<ConnectOp>(loc, lhs[i], rhs[i]);
-  }
-
+  ImplicitLocOpBuilder builder(op.getLoc(), op);
+  auto type = convertType(op.getDest().getType());
+  const auto *lhsBegin = lhs.begin();
+  const auto *rhsBegin = rhs.begin();
+  emitConnect<ConnectOp>(builder, type, lhsBegin, rhsBegin);
   toDelete.insert(op);
   return success();
 }

@@ -234,4 +234,18 @@ firrtl.circuit "Test" {
     // bundlecreate %vec_of_a, vec_of_b
     %2 = firrtl.vectorcreate %0, %1 : (!firrtl.vector<bundle<a: uint<8>, b: uint<5>>, 2>, !firrtl.vector<bundle<a: uint<8>, b: uint<5>>, 2>) -> !firrtl.vector<vector<bundle<a: uint<8>, b: uint<5>>, 2>, 2>
   }
+
+  firrtl.module @VBF(
+    in  %i : !firrtl.vector<bundle<a: uint<8>, b flip: uint<8>>, 2>,
+    out %o : !firrtl.bundle<a: uint<8>, b flip: uint<8>>) {
+    %0 = firrtl.subindex %i[0] : !firrtl.vector<bundle<a: uint<8>, b flip: uint<8>>, 2>
+    firrtl.strictconnect %o, %0 : !firrtl.bundle<a: uint<8>, b flip: uint<8>>
+  }
+
+  firrtl.module @VBF2(
+    in  %i : !firrtl.bundle<a: uint<8>, b flip: uint<8>>,
+    out %o : !firrtl.vector<bundle<a: uint<8>, b flip: uint<8>>, 2>) {
+    %0 = firrtl.subindex %o[0] : !firrtl.vector<bundle<a: uint<8>, b flip: uint<8>>, 2>
+    firrtl.strictconnect %0, %i : !firrtl.bundle<a: uint<8>, b flip: uint<8>>
+  }
 }
