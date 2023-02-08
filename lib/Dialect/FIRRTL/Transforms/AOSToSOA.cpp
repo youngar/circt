@@ -104,6 +104,9 @@ private:
   Value fixROperand(Value);
   Value fixROperand(FieldRef);
 
+  Value createVectors(OpBuilder &builder, const SmallVectorImpl<Value> &values,
+                      uint64_t vecLength);
+
   /// Utility
   bool remapped(Value value) { return valueMap.lookup(value) != value; }
 
@@ -759,7 +762,7 @@ LogicalResult LiftBundlesVisitor::visitStmt(ConnectOp op) {
   auto [lhs, lhsExploded] = fixOperand(op.getDest());
   auto [rhs, rhsExploded] = fixOperand(op.getSrc());
 
-  // TODO: Convert the lhs first. If the rhs wasn't 
+  // TODO: Convert the lhs first. If the rhs wasn't
   if (rhsExploded && !lhsExploded)
     lhs = explode(lhs[0]);
 
@@ -948,6 +951,68 @@ LogicalResult LiftBundlesVisitor::visitExpr(BundleCreateOp op) {
   return success();
 }
 
+// LogicalResult LiftBundlesVisitor::explodeElement(
+//     Value oldValue, DenseMap<FieldRef, SmallVector<Value>> table) {
+
+//   auto newValue = valueMap[oldValue];
+//   assert(newValue);
+
+//   for (unsigned fieldID = 0) {
+//   }
+// }
+
+/*
+vector_create [values] : vector< ...., vecLength>
+
+values = uint<8>
+vector_create values : vector<uint<8>, ..>
+
+values = vector<...>
+vector_create values : vector<vector<...>>
+
+values = bundle<a: ..., b: ...., c: ....>
+bundle_create< .... >
+
+subValues = values.for_each(_ => subfield("a"))
+
+
+%b1 = bundlecreate %0, %1 : bundle<a, b>
+%b2 = bundlecreate %2, %3 : bundle<a, b>
+vectorcreate %b1, %b2
+*/
+
+Value LiftBundlesVisitor::createVectors(OpBuilder &builder,
+                                        const SmallVectorImpl<Value> &values,
+                                        uint64_t vecLength) {
+  if (values.empty())
+    return {};
+
+  auto type = values.front().getType().cast<FIRRTLBaseType>();
+  auto length = values.size();
+  assert(vecLength == length);
+
+  if (auto bundleType = type.dyn_cast<BundleType>()) {
+    SmallVector<Value> newFields;
+    SmallVector<BundleType::BundleElement> newElements;
+    for (auto &[i, elt] : llvm::enumerate(bundleType)) {
+      SmallVector<Value> subValues;
+      for (auto v : values)
+        subValues.push_back(builder.create<SubfieldOp>(v.getLoc(), v, i));
+      auto newField = createVectors(builder, subValues, vecLength);
+      newFields.push_back(newField);
+      newElements.emplace_back(elt.name, /*isFlip=*/false,
+                               newField.getType().cast<FIRRTLBaseType>());
+    }
+    auto newType = BundleType::get(builder.getContext(), newElements);
+    auto newBundle = builder.create<BundleCreateOp>(builder.getUnknownLoc(),
+                                                    newType, newFields);
+    return newBundle;
+  }
+  auto newType = FVectorType::get(type, vecLength);
+  return builder.create<VectorCreateOp>(builder.getUnknownLoc(), newType,
+                                        values);
+}
+
 LogicalResult LiftBundlesVisitor::visitExpr(VectorCreateOp op) {
   llvm::errs() << "VectorCreateOp\n";
 
@@ -972,16 +1037,26 @@ LogicalResult LiftBundlesVisitor::visitExpr(VectorCreateOp op) {
     }
 
     OpBuilder builder(op);
-    auto newOp = builder.create<VectorCreateOp>(op.getLoc(), newType, newFields);
+    auto newOp =
+        builder.create<VectorCreateOp>(op.getLoc(), newType, newFields);
     valueMap[op.getResult()] = newOp.getResult();
     toDelete.insert(op);
     return success();
   }
 
-
   // OK, We are in for some pain!
+  OpBuilder builder(op);
 
-
+    SmallVector<Value> convertedOldFields;
+    for (auto oldField : op.getFields()) {
+      auto convertedField = fixROperand(oldField);
+      llvm::errs() << "new field : " << convertedField << "\n";
+      convertedOldFields.push_back(convertedField);
+    }
+  
+  auto value = createVectors(builder, convertedOldFields, convertedOldFields.size());
+  valueMap[op.getResult()] = value;
+  toDelete.insert(op);
   return success();
 }
 

@@ -193,9 +193,45 @@ firrtl.circuit "Test" {
   //   %n = firrtl.node %2 : !firrtl.bundle<a: uint<8>, b: uint<8>>
   // }
 
-  // firrtl.module @TestVectorAggregate() {
-  //   %0 = firrtl.aggregateconstant [1, 2] : !firrtl.bundle<a: uint<8>, b: uint<5>>
-  //   %1 = firrtl.aggregateconstant [3, 4] : !firrtl.bundle<a: uint<8>, b: uint<5>>
-  //   %2 = firrtl.vectorcreate %0, %1 : (!firrtl.bundle<a: uint<8>, b: uint<5>>, !firrtl.bundle<a: uint<8>, b: uint<5>>) -> !firrtl.vector<bundle<a: uint<8>, b: uint<5>>, 2>
-  // }
+  firrtl.module @TestVBAggregate() {
+    // CHECK: %0 = firrtl.aggregateconstant [1, 2] : !firrtl.bundle<a: uint<8>, b: uint<5>>
+    // CHECK: %1 = firrtl.aggregateconstant [3, 4] : !firrtl.bundle<a: uint<8>, b: uint<5>>
+    %0 = firrtl.aggregateconstant [1, 2] : !firrtl.bundle<a: uint<8>, b: uint<5>>
+    %1 = firrtl.aggregateconstant [3, 4] : !firrtl.bundle<a: uint<8>, b: uint<5>>
+
+
+    %2 = firrtl.vectorcreate %0, %1 : (!firrtl.bundle<a: uint<8>, b: uint<5>>, !firrtl.bundle<a: uint<8>, b: uint<5>>) -> !firrtl.vector<bundle<a: uint<8>, b: uint<5>>, 2>
+  }
+
+  firrtl.module @TestVBBAggregate() {
+    // %0 = firrtl.aggregateconstant [[1]] : !firrtl.bundle<a: bundle<b: uint<8>>>
+    // %1 = firrtl.aggregateconstant [[2]] : !firrtl.bundle<a: bundle<b: uint<8>>>
+    %0 = firrtl.aggregateconstant [[1]] : !firrtl.bundle<a: bundle<b: uint<8>>>
+    %1 = firrtl.aggregateconstant [[2]] : !firrtl.bundle<a: bundle<b: uint<8>>>
+
+    // %0_a = subfield %0[a]
+    // %0_a_b = subfield %0_a[b]
+    // %bs = vectorcreate %0_a_b, %1_a_b
+    // %a = bundle_create %bs
+    // bundle_create %a : 
+    %2 = firrtl.vectorcreate %0, %1 :
+      (!firrtl.bundle<a: bundle<b: uint<8>>>, !firrtl.bundle<a: bundle<b: uint<8>>>) ->
+        !firrtl.vector<bundle<a: bundle<b: uint<8>>>, 2>
+  }
+
+  firrtl.module @TestVVBAggregate() {
+    // CHECK: %0 = firrtl.aggregateconstant [[1, 3], [2, 4]] : !firrtl.bundle<a: vector<uint<8>, 2>, b: vector<uint<5>, 2>>
+    // CHECK: %1 = firrtl.aggregateconstant [[5, 7], [6, 8]] : !firrtl.bundle<a: vector<uint<8>, 2>, b: vector<uint<5>, 2>>
+    %0 = firrtl.aggregateconstant [[1, 2], [3, 4]] : !firrtl.vector<bundle<a: uint<8>, b: uint<5>>, 2>
+    %1 = firrtl.aggregateconstant [[5, 6], [7, 8]] : !firrtl.vector<bundle<a: uint<8>, b: uint<5>>, 2>
+
+    // 0_a =  
+    // 0_b = bundle
+    // 1_a = 
+    // 1_b = subfield %1[b]
+    // %vec_of_a = vectorcreate ...... : vector<vector<uint>>
+    // %vec_of_b = vectorcreate ....... : vector<vector<uint>>
+    // bundlecreate %vec_of_a, vec_of_b
+    %2 = firrtl.vectorcreate %0, %1 : (!firrtl.vector<bundle<a: uint<8>, b: uint<5>>, 2>, !firrtl.vector<bundle<a: uint<8>, b: uint<5>>, 2>) -> !firrtl.vector<vector<bundle<a: uint<8>, b: uint<5>>, 2>, 2>
+  }
 }
