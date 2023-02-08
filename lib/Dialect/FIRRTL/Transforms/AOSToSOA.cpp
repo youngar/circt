@@ -652,8 +652,8 @@ LogicalResult LiftBundlesVisitor::visitDecl(NodeOp op) {
 
   OpBuilder builder(op);
   auto newOp = builder.create<NodeOp>(
-      op.getLoc(), newInput, op.getNameAttr(),
-      op.getNameKindAttr(), op.getAnnotationsAttr(), op.getInnerSymAttr());
+      op.getLoc(), newInput, op.getNameAttr(), op.getNameKindAttr(),
+      op.getAnnotationsAttr(), op.getInnerSymAttr());
 
   newOp->dump();
   llvm::errs() << newOp;
@@ -713,9 +713,9 @@ LogicalResult LiftBundlesVisitor::visitDecl(RegResetOp op) {
     changed = true;
 
   auto oldResetValue = op.getResetValue();
-  auto [newResetValues, newResetValueExploded] = fixOperand(oldResetValue);
-  if (newResetValueExploded)
-    assert(0 && "TODO: materialize an intermediate bundle thing?");
+  auto newResetValue = fixROperand(oldResetValue);
+  if (oldResetValue != newResetValue)
+    changed = true;
 
   if (!changed) {
     auto result = op.getResult();
@@ -726,9 +726,10 @@ LogicalResult LiftBundlesVisitor::visitDecl(RegResetOp op) {
   OpBuilder builder(context);
   builder.setInsertionPointAfter(op);
 
-  auto newOp = builder.create<RegOp>(
-      op.getLoc(), newType, newClockVal, op.getNameAttr(), op.getNameKindAttr(),
-      op.getAnnotationsAttr(), op.getInnerSymAttr());
+  auto newOp = builder.create<RegResetOp>(
+      op.getLoc(), newType, newClockVal, newResetSignal, newResetValue,
+      op.getNameAttr(), op.getNameKindAttr(), op.getAnnotationsAttr(),
+      op.getInnerSymAttr());
 
   toDelete.insert(op);
   valueMap.insert({op.getResult(), newOp.getResult()});
