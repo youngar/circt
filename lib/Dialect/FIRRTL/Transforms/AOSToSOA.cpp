@@ -18,7 +18,7 @@
 #include "circt/Dialect/FIRRTL/FIRRTLVisitors.h"
 #include "circt/Dialect/FIRRTL/Passes.h"
 #include "circt/Support/FieldRef.h"
-// #include "llvm/ADT/MapVector.h"
+#include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
@@ -104,8 +104,9 @@ private:
   Value fixROperand(Value);
   Value fixROperand(FieldRef);
 
-  Value createVectors(OpBuilder &builder, const SmallVectorImpl<Value> &values,
-                      uint64_t vecLength);
+  Value sinkVecDimIntoOperands(ImplicitLocOpBuilder &builder,
+                               FIRRTLBaseType type,
+                               const SmallVectorImpl<Value> &values);
 
   /// Utility
   bool remapped(Value value) { return valueMap.lookup(value) != value; }
@@ -132,9 +133,8 @@ LiftBundlesVisitor::LiftBundlesVisitor(MLIRContext *context)
 //===----------------------------------------------------------------------===//
 
 Type LiftBundlesVisitor::convertType(Type type) {
-  if (auto firrtlType = type.dyn_cast<FIRRTLBaseType>()) {
+  if (auto firrtlType = type.dyn_cast<FIRRTLBaseType>())
     return convertType(firrtlType);
-  }
   return type;
 }
 
@@ -150,6 +150,7 @@ FIRRTLBaseType LiftBundlesVisitor::convertType(FIRRTLBaseType type) {
   return converted;
 }
 
+// NOLINTNEXTLINE(misc-no-recursion)
 FIRRTLBaseType
 LiftBundlesVisitor::convertType(FIRRTLBaseType type,
                                 SmallVector<unsigned> &dimensions) {
@@ -173,220 +174,9 @@ LiftBundlesVisitor::convertType(FIRRTLBaseType type,
   }
 
   // Ground Types
-  for (auto size : llvm::reverse(dimensions)) {
+  for (auto size : llvm::reverse(dimensions))
     type = FVectorType::get(type, size);
-  }
   return type;
-}
-
-//===----------------------------------------------------------------------===//
-// Aggregate Create Transforms
-//===----------------------------------------------------------------------===//
-
-// myvec : vec<bun<a: uint>> = [{a: 1, b: {c: 1}}, {a: 2, b: {c: 1}}, {a: 3, b:
-// {c: 1}}]
-
-// {
-//   "a": [1, 2, 3],
-//   "b.c": [1, 2, 3],
-// }
-
-// using Path = SmallVector<Attribute>;
-// using Table = DenseMap<Path, SmallVector<Value>>;
-
-// void LiftBundlesVisitor::buildTable(VectorCreateOp op, Path &path, Table
-// &table) {
-//   auto type = op.getType();
-//   auto elementType = type.getElementType();
-
-//   if (elementType.isa<BundleType>()) {
-
-//   }
-// }
-
-// void LiftBundlesVisitor::buildTable(Operation *op, SmallVector<StringAttr>
-// &path, Table &table) {
-//   if (auto vectorCreateOp = dyn_cast<VectorCreateOp>(op)) {
-//     buildTable(vectorCreateOp, path, table);
-//   }
-// }
-
-// Value LiftBundlesVisitor::convertVectorCreate(OpBuilder builder,
-// VectorCreateOp op, SmallVector<unsigned> &dims) {
-//   auto oldType = value.getType();
-//   auto newType = convertType(oldType);
-
-//   auto oldElementType = op.getElementType();
-//   auto newElementType = convertType(oldElementType);
-
-//   if (oldElementType == newElementType) {
-//     /// there is a chance we don't have to convert!
-
-//     if (auto bundleElementType = dyn_cast<BundleType>(oldElementType)) {
-//       // we must rotate this vector!
-//     }
-//   }
-
-//   auto type = op.getType();
-//   auto elementType = type.getElementType();
-//   if (auto bundleElementType = dyn_cast<BundleType>(elementType)) {
-//     auto numBundleFields = bundleElementType.getNumElements();
-//     auto numVectorFields = type.getNumElements();
-
-//   }
-
-//   if (oldType == newType)
-//     return oldOp;
-
-//   DenseMap<SmallVector<StringAttr>, SmallVector<Value>> fields;
-
-//   SmallVector<StringAttr> path;
-
-//   auto type =
-//   for (auto operand : op->getOperands()) {
-
-//   }
-//   for (auto )
-// }
-
-// Value LiftBundlesVisitor::convertBundleCreate()
-
-// Value LiftBundlesVisitor::convertAggregateOp(Operation *op) {
-//   if (auto vectorCreateOp = dyn_cast<VectorCreateOp>(op)) {
-
-//   }
-// }
-
-//===----------------------------------------------------------------------===//
-// On-Demand Op Conversions
-//===----------------------------------------------------------------------===//
-
-Operation *LiftBundlesVisitor::convertOp(AggregateConstantOp op) {}
-
-// static SmallVector<Value> collect(Value top, SmallVector<size_t> &path) {
-//   auto type = top.getType();
-//   if (auto vectorType = top.dyn_cast<FVectorType>()) {
-//     for (auto )
-
-//   } else if (auto bundleType = top.dyn_cast<BundleType>()) {
-
-//   }
-// }
-
-// static SmallVector<Value> doThing(Value value, size_t index,
-//                      SmallVector<size_t> &dimensions) {
-
-//   if (aut)
-//     auto type = value.getType();
-//   if (auto bundleType = type.dyn_cast<BundleType>()) {
-//     for (size_t i = 0, e = bundleType.getNumElements(); i < e; ++i) {
-//       auto elementType = bundleType.getElementType(i);
-//       if (auto ev = elementType.dyn_cast<FVectorType>()) {
-//         // Record the dimension and recurse on the element type.
-
-//       } else if (auto eb = elementType.dyn_cast<BundleType>()) {
-//         // Recurse on the elements.
-
-//       } else {
-//         // Apply the vector dimensions.
-//       }
-//     }
-//   } else if (auto vectorType = type.dyn_cast<FVectorType>()) {
-//     dimensions.push_back(ValueParamT Elt)
-
-//   } else {
-//     return value;
-//   }
-// }
-
-Operation *LiftBundlesVisitor::convertOp(VectorCreateOp op) {
-  llvm::errs() << "Convert Vector Create Op\n";
-  op.dump();
-
-  auto oldValue = op.getResult();
-  auto newValue = valueMap.lookup(oldValue);
-  if (newValue)
-    return newValue.getDefiningOp();
-
-  auto oldType = oldValue.getType();
-  auto newType = convertType(oldType);
-
-  // If this operand has a legal type, we just have to ensure that the operands
-  // have been lowered correctly.
-  if (oldType == newType) {
-    // Make sure that the operands have been legalized.
-    for (auto &operand : op->getOpOperands()) {
-      auto [values, exploded] = fixOperand(operand.get());
-      assert(!exploded && values.size() == 1);
-      operand.set(values.front());
-    }
-    // Mark this operation as demanded.
-    toDelete.erase(op);
-    // Memoize that we have handled this operation.
-    valueMap.insert({oldValue, oldValue});
-    return op;
-  }
-
-  // here comes trouble
-  // [{a, b}, {a, b}]
-  // {a: [a1, a2], b: [b1, b2]}
-
-  // auto bundleType = cast<BundleType>(newType);
-  // SmallVector<string> path;
-  // for (auto element : bundleType.getElements()) {
-  //   path.push_back(element.name);
-  //   conv path.pop_back();
-  // }
-
-  // // Make sure that the operands have been legalized.
-  // for (auto &operand : op->getOpOperands()) {
-  //   auto [values, exploded] = fixOperand(operand.get());
-  //   assert(!exploded && values.size() == 1);
-  //   operand.set(values.front());
-  // }
-  // // Mark this operation as demanded.
-  // toDelete.erase(op);
-  // // Memoize that we have handled this operation.
-  // valueMap.insert({oldValue, oldValue});
-  // op->setResultType(0, newType);
-  // return op;
-
-  // end of trouble
-
-  OpBuilder builder(op);
-
-  SmallVector<unsigned> dimensions;
-
-  return nullptr;
-}
-
-Operation *LiftBundlesVisitor::convertOp(BundleCreateOp op) {
-  auto oldValue = op.getResult();
-  auto newValue = valueMap.lookup(oldValue);
-  if (newValue)
-    return newValue.getDefiningOp();
-
-  auto oldType = oldValue.getType();
-  auto newType = convertType(oldType);
-
-  // If this operand has a legal type, we just have to ensure that the operands
-  // have been lowered correctly.
-  if (oldType == newType) {
-    // Make sure that the operands have been legalized.
-    for (auto &operand : op->getOpOperands()) {
-      auto [values, exploded] = fixOperand(operand.get());
-      assert(!exploded && values.size() == 1);
-      operand.set(values.front());
-    }
-    // Mark this operation as demanded.
-    toDelete.erase(op);
-    // Memoize that we have handled this operation.
-    valueMap.insert({oldValue, oldValue});
-    return op;
-  }
-
-  assert(0);
-  return nullptr;
 }
 
 //===----------------------------------------------------------------------===//
@@ -434,16 +224,6 @@ LiftBundlesVisitor::buildPath(Value oldValue, Value newValue,
     }
   }
 
-  // llvm::errs() << "printing subfield operators\n";
-  // for (auto index : subfieldIndices) {
-  //   llvm::errs() << index << "\n";
-  // }
-
-  // llvm::errs() << "printing subindex operators\n";
-  // for (auto index : subindexIndices) {
-  //   llvm::errs() << index << "\n";
-  // }
-
   auto value = newValue;
   for (auto index : subfieldIndices) {
     auto op = builder.create<SubfieldOp>(loc, value, index);
@@ -479,15 +259,6 @@ LiftBundlesVisitor::buildPath(Value oldValue, Value newValue,
 //===----------------------------------------------------------------------===//
 // Operand Fixup
 //===----------------------------------------------------------------------===//
-
-// std::pair<SmallVector<Value>, bool>
-// LiftBundlesVisitor::fixRefIntoCanonicalStorage(FieldRef fieldRef) {
-//   auto oldValue = fieldRef.getValue();
-//   auto newValue = valueMap.lookup(oldValue);
-//   if (!newValue)
-//     return {{oldValue}, false};
-//   return buildPath(oldValue, newValue, fieldRef.getFieldID());
-// }
 
 std::pair<SmallVector<Value>, bool>
 LiftBundlesVisitor::fixOperand(FieldRef ref) {
@@ -951,66 +722,28 @@ LogicalResult LiftBundlesVisitor::visitExpr(BundleCreateOp op) {
   return success();
 }
 
-// LogicalResult LiftBundlesVisitor::explodeElement(
-//     Value oldValue, DenseMap<FieldRef, SmallVector<Value>> table) {
-
-//   auto newValue = valueMap[oldValue];
-//   assert(newValue);
-
-//   for (unsigned fieldID = 0) {
-//   }
-// }
-
-/*
-vector_create [values] : vector< ...., vecLength>
-
-values = uint<8>
-vector_create values : vector<uint<8>, ..>
-
-values = vector<...>
-vector_create values : vector<vector<...>>
-
-values = bundle<a: ..., b: ...., c: ....>
-bundle_create< .... >
-
-subValues = values.for_each(_ => subfield("a"))
-
-
-%b1 = bundlecreate %0, %1 : bundle<a, b>
-%b2 = bundlecreate %2, %3 : bundle<a, b>
-vectorcreate %b1, %b2
-*/
-
-Value LiftBundlesVisitor::createVectors(OpBuilder &builder,
-                                        const SmallVectorImpl<Value> &values,
-                                        uint64_t vecLength) {
-  if (values.empty())
-    return {};
-
-  auto type = values.front().getType().cast<FIRRTLBaseType>();
+Value LiftBundlesVisitor::sinkVecDimIntoOperands(
+    ImplicitLocOpBuilder &builder, FIRRTLBaseType type,
+    const SmallVectorImpl<Value> &values) {
   auto length = values.size();
-  assert(vecLength == length);
-
   if (auto bundleType = type.dyn_cast<BundleType>()) {
     SmallVector<Value> newFields;
     SmallVector<BundleType::BundleElement> newElements;
     for (auto &[i, elt] : llvm::enumerate(bundleType)) {
       SmallVector<Value> subValues;
       for (auto v : values)
-        subValues.push_back(builder.create<SubfieldOp>(v.getLoc(), v, i));
-      auto newField = createVectors(builder, subValues, vecLength);
+        subValues.push_back(builder.create<SubfieldOp>(v, i));
+      auto newField = sinkVecDimIntoOperands(builder, elt.type, subValues);
       newFields.push_back(newField);
       newElements.emplace_back(elt.name, /*isFlip=*/false,
                                newField.getType().cast<FIRRTLBaseType>());
     }
     auto newType = BundleType::get(builder.getContext(), newElements);
-    auto newBundle = builder.create<BundleCreateOp>(builder.getUnknownLoc(),
-                                                    newType, newFields);
+    auto newBundle = builder.create<BundleCreateOp>(newType, newFields);
     return newBundle;
   }
-  auto newType = FVectorType::get(type, vecLength);
-  return builder.create<VectorCreateOp>(builder.getUnknownLoc(), newType,
-                                        values);
+  auto newType = FVectorType::get(type, length);
+  return builder.create<VectorCreateOp>(newType, values);
 }
 
 LogicalResult LiftBundlesVisitor::visitExpr(VectorCreateOp op) {
@@ -1045,16 +778,17 @@ LogicalResult LiftBundlesVisitor::visitExpr(VectorCreateOp op) {
   }
 
   // OK, We are in for some pain!
-  OpBuilder builder(op);
 
-    SmallVector<Value> convertedOldFields;
-    for (auto oldField : op.getFields()) {
-      auto convertedField = fixROperand(oldField);
-      llvm::errs() << "new field : " << convertedField << "\n";
-      convertedOldFields.push_back(convertedField);
-    }
-  
-  auto value = createVectors(builder, convertedOldFields, convertedOldFields.size());
+  SmallVector<Value> convertedOldFields;
+  for (auto oldField : op.getFields()) {
+    auto convertedField = fixROperand(oldField);
+    llvm::errs() << "new field : " << convertedField << "\n";
+    convertedOldFields.push_back(convertedField);
+  }
+
+  ImplicitLocOpBuilder builder(op.getLoc(), op);
+  auto value = sinkVecDimIntoOperands(
+      builder, convertType(oldType.getElementType()), convertedOldFields);
   valueMap[op.getResult()] = value;
   toDelete.insert(op);
   return success();
@@ -1108,7 +842,7 @@ LogicalResult LiftBundlesVisitor::visit(FModuleOp op) {
     op.insertPorts(newPorts);
   }
 
-  auto body = op.getBodyBlock();
+  auto *body = op.getBodyBlock();
   for (unsigned i = 0, e = body->getNumArguments(); i < e; ++i) {
     if (portsToErase[i]) {
       auto oldArg = body->getArgument(i);
@@ -1143,7 +877,7 @@ LogicalResult LiftBundlesVisitor::visit(FModuleOp op) {
       return result;
   }
 
-  for (auto op : toDelete) {
+  for (auto *op : toDelete) {
     op->dropAllUses();
     op->erase();
   }
