@@ -589,17 +589,6 @@ LogicalResult LiftBundlesVisitor::visitStmt(StrictConnectOp op) {
   return success();
 }
 
-// LogicalResult LiftBundlesVisitor::visitStmt(WhenOp op) {
-//   auto oldCondition = op.getCondition();
-//   auto newCondition = fixROperand(op.)
-
-//     for (auto &op : *body) {
-//     auto result = dispatchVisitor(&op);
-//     if (result.failed())
-//       return result;
-//     }
-// }
-
 //===----------------------------------------------------------------------===//
 // Constant Conversion
 //===----------------------------------------------------------------------===//
