@@ -235,16 +235,32 @@ firrtl.circuit "Test" {
     %2 = firrtl.vectorcreate %0, %1 : (!firrtl.vector<bundle<a: uint<8>, b: uint<5>>, 2>, !firrtl.vector<bundle<a: uint<8>, b: uint<5>>, 2>) -> !firrtl.vector<vector<bundle<a: uint<8>, b: uint<5>>, 2>, 2>
   }
 
+  // connect rhs is a rematerialized bundle with flip, Do we preserve the flip? This seems broken
   firrtl.module @VBF(
     in  %i : !firrtl.vector<bundle<a: uint<8>, b flip: uint<8>>, 2>,
     out %o : !firrtl.bundle<a: uint<8>, b flip: uint<8>>) {
+    // CHECK: %0 = firrtl.subfield %i[a] : !firrtl.bundle<a: vector<uint<8>, 2>, b flip: vector<uint<8>, 2>>
+    // CHECK: %1 = firrtl.subfield %i[b] : !firrtl.bundle<a: vector<uint<8>, 2>, b flip: vector<uint<8>, 2>>
+    // CHECK: %2 = firrtl.subindex %0[0] : !firrtl.vector<uint<8>, 2>
+    // CHECK: %3 = firrtl.subindex %1[0] : !firrtl.vector<uint<8>, 2>
+    // CHECK: %4 = firrtl.bundlecreate %2, %3 : (!firrtl.uint<8>, !firrtl.uint<8>) -> !firrtl.bundle<a: uint<8>, b flip: uint<8>>
+    // CHECK: firrtl.strictconnect %o, %4 : !firrtl.bundle<a: uint<8>, b flip: uint<8>>
     %0 = firrtl.subindex %i[0] : !firrtl.vector<bundle<a: uint<8>, b flip: uint<8>>, 2>
     firrtl.strictconnect %o, %0 : !firrtl.bundle<a: uint<8>, b flip: uint<8>>
   }
 
+  // connect lhs is an exploded bundle with flip, Do we connect in the right direction?
   firrtl.module @VBF2(
     in  %i : !firrtl.bundle<a: uint<8>, b flip: uint<8>>,
     out %o : !firrtl.vector<bundle<a: uint<8>, b flip: uint<8>>, 2>) {
+    // CHECK: %0 = firrtl.subfield %i[a] : !firrtl.bundle<a: uint<8>, b flip: uint<8>>
+    // CHECK: %1 = firrtl.subfield %i[b] : !firrtl.bundle<a: uint<8>, b flip: uint<8>>
+    // CHECK: %2 = firrtl.subfield %o[a] : !firrtl.bundle<a: vector<uint<8>, 2>, b flip: vector<uint<8>, 2>>
+    // CHECK: %3 = firrtl.subfield %o[b] : !firrtl.bundle<a: vector<uint<8>, 2>, b flip: vector<uint<8>, 2>>
+    // CHECK: %4 = firrtl.subindex %2[0] : !firrtl.vector<uint<8>, 2>
+    // CHECK: %5 = firrtl.subindex %3[0] : !firrtl.vector<uint<8>, 2>
+    // CHECK: firrtl.strictconnect %4, %0 : !firrtl.uint<8>
+    // CHECK: firrtl.strictconnect %1, %5 : !firrtl.uint<8>
     %0 = firrtl.subindex %o[0] : !firrtl.vector<bundle<a: uint<8>, b flip: uint<8>>, 2>
     firrtl.strictconnect %0, %i : !firrtl.bundle<a: uint<8>, b flip: uint<8>>
   }

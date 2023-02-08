@@ -94,9 +94,11 @@ private:
   std::pair<SmallVector<Value>, bool> fixOperand(Value);
   SmallVector<Value> explode(Value);
   void explode(OpBuilder, Value, SmallVector<Value> &);
+
+  /// fix a ground type operand.
   Value fixAtomicOperand(Value value);
 
-  /// Read-only / RHS Operand Fixup
+  /// Read-only / RHS Operand Fixup. Value MUST be passive.
   Value fixROperand(Value);
   Value fixROperand(FieldRef);
 
@@ -113,7 +115,6 @@ private:
   /// it must be deleted.
   DenseMap<Value, Value> valueMap;
   DenseMap<FIRRTLBaseType, FIRRTLBaseType> typeMap;
-  
 };
 } // end anonymous namespace
 
@@ -289,6 +290,7 @@ SmallVector<Value> LiftBundlesVisitor::explode(Value value) {
 }
 
 Value LiftBundlesVisitor::fixAtomicOperand(Value value) {
+  assert(value.getType().cast<FIRRTLBaseType>().isGround());
   auto [values, exploded] = fixOperand(value);
   assert(!exploded);
   assert(values.size() == 1);
@@ -300,6 +302,7 @@ Value LiftBundlesVisitor::fixAtomicOperand(Value value) {
 //===----------------------------------------------------------------------===//
 
 Value LiftBundlesVisitor::fixROperand(Value operand) {
+  // assert(operand.getType().cast<FIRRTLBaseType>().isPassive());
   auto ref = getFieldRefFromValue(operand);
 
   llvm::errs() << "fixROperand ref=" << ref.getFieldID()
@@ -324,36 +327,43 @@ Value LiftBundlesVisitor::fixROperand(Value operand) {
 //===----------------------------------------------------------------------===//
 
 LogicalResult LiftBundlesVisitor::visitUnhandledOp(Operation *op) {
-  // Typical operations are 
-    for (auto [index, operand] : llvm::enumerate(op->getOperands())) {
-      assert(operand.getType() == convertType(operand.getType()) &&
-             "If the operand type has changed, we need to ensure the op is okay with that");
-      op->setOperand(index, fixROperand(operand));
-    }
-
-    bool changed = false;
-    SmallVector<Type> newTypes;
-    for (auto oldResult : op->getResults()) {
-      auto oldType = oldResult.getType();
-      auto newType = convertType(oldType);
-      changed |= oldType != newType;
-      newTypes.push_back(newType);
-    }
-
-    if (changed) {
-      auto *newOp = op->clone();
-      for (size_t i = 0, e = op->getNumResults(); i < e; ++i) {
-        auto newResult = newOp->getResult(i);
-        newResult.setType(newTypes[i]);
-        valueMap[op->getResult(i)] = newResult;
-      }
-    } else {
-      for (auto result : op->getResults())
-        valueMap[result] = result;
-    }
-  
-    return success();
+  // Typical operations read from passive operands, only.
+  // We can materialze any passive operand into a single value, potentially with
+  // fresh intermediate bundle create ops in between.
+  for (auto [index, operand] : llvm::enumerate(op->getOperands())) {
+    assert(operand.getType() == convertType(operand.getType()) &&
+           "If the operand type has changed, we need to ensure the op is okay "
+           "with that");
+    op->setOperand(index, fixROperand(operand));
   }
+
+  /// We can rewrite the type of any result, but if any result type changes,
+  /// then the operation will be cloned.
+  bool changed = false;
+  SmallVector<Type> newTypes;
+  for (auto oldResult : op->getResults()) {
+    auto oldType = oldResult.getType();
+    auto newType = convertType(oldType);
+    changed |= oldType != newType;
+    newTypes.push_back(newType);
+  }
+
+  if (changed) {
+    auto *newOp = op->clone();
+    for (size_t i = 0, e = op->getNumResults(); i < e; ++i) {
+      auto newResult = newOp->getResult(i);
+      newResult.setType(newTypes[i]);
+      valueMap[op->getResult(i)] = newResult;
+    }
+  } else {
+    /// As a safety precaution, all "canonical storage location" results must
+    /// be mapped to themselves.
+    for (auto result : op->getResults())
+      valueMap[result] = result;
+  }
+
+  return success();
+}
 
 //===----------------------------------------------------------------------===//
 // Declarations
@@ -559,44 +569,51 @@ LogicalResult LiftBundlesVisitor::visitDecl(WireOp op) {
 template <typename OpTy>
 void LiftBundlesVisitor::handleConnect(OpTy op) {
   llvm::errs() << "handle connect\n";
-  auto [lhs, lhsExploded] = fixOperand(op.getDest());
+  auto oldLhs = op.getDest();
+  auto oldLhsType = cast<FIRRTLBaseType>(oldLhs.getType());
 
-  // If the LHS did not explode, then we can construct the RHS as a read-only
-  // operand.
-  if (!lhsExploded) {
-    auto rhs = fixROperand(op.getSrc());
-    OpBuilder(op).create<OpTy>(op.getLoc(), lhs[0], rhs);
+  auto [newLhs, lhsExploded] = fixOperand(oldLhs);
+
+  // Happy-path: The LHS did not explode, and is passive (so, not writing to the RHS).
+  // We can guarantee that the rhs will resolve to a single unexploded value.
+  if (!lhsExploded && oldLhsType.isPassive()) {
+    auto newRhs = fixROperand(op.getSrc());
+    OpBuilder(op).create<OpTy>(op.getLoc(), newLhs[0], newRhs);
     toDelete.insert(op);
     return;
   }
 
-  // We must force the RHS to explode.
-  auto [rhs, rhsExploded] = fixOperand(op.getSrc());
-  if (!rhsExploded)
-    rhs = explode(rhs[0]);
+  auto [newRhs, rhsExploded] = fixOperand(op.getSrc());
+  if (!rhsExploded && lhsExploded)
+    newRhs = explode(newRhs[0]);
 
-  assert(lhs.size() == rhs.size() &&
+  if (!lhsExploded && rhsExploded)
+    newLhs = explode(newLhs[0]);
+
+  llvm::errs() << "lhsSize = " << newLhs.size() << " rhsSize=" << newRhs.size() << "\n";
+
+  assert(newLhs.size() == newRhs.size() &&
          "Something went wrong exploding the elements");
 
   // Emit connections between all leaf elements.
   ImplicitLocOpBuilder builder(op.getLoc(), op);
-  auto type = convertType(op.getDest().getType());
-  const auto *lit = lhs.begin();
-  const auto *rit = rhs.begin();
+  auto newLhsType = convertType(oldLhsType);
+  const auto *newLhsIt = newLhs.begin();
+  const auto *newRhsIt = newRhs.begin();
   std::function<void(Type)> explodeConnect = [&](Type type) {
-    if (auto bundleType = type.dyn_cast<BundleType>()) {
+    if (auto bundleType = dyn_cast<BundleType>(type)) {
       for (auto &e : bundleType) {
         if (e.isFlip)
-          std::swap(lit, rit);
+          std::swap(newLhsIt, newRhsIt);
         explodeConnect(e.type);
       }
     } else if (auto vectorType = type.dyn_cast<FVectorType>()) {
       explodeConnect(vectorType.getElementType());
     } else {
-      builder.create<OpTy>(*lit++, *rit++);
+      builder.create<OpTy>(*newLhsIt++, *newRhsIt++);
     }
   };
-  explodeConnect(type);
+  explodeConnect(newLhsType);
 
   toDelete.insert(op);
 }
@@ -620,18 +637,6 @@ LogicalResult LiftBundlesVisitor::visitStmt(StrictConnectOp op) {
 Attribute
 LiftBundlesVisitor::convertBundleInVectorConstant(BundleType type,
                                                   ArrayRef<Attribute> fields) {
-
-  // llvm::errs() << "convertBundleInVectorConstant\n";
-  // llvm::errs() << "type=";
-  // type.dump();
-  // llvm::errs() << "\n";
-  // llvm::errs() << "fields={";
-  // for (auto f : fields) {
-  //   llvm::errs() << " ";
-  //   f.dump();
-  // }
-  // llvm::errs() << " ]\n";
-
   auto numBundleFields = type.getNumElements();
   SmallVector<SmallVector<Attribute>> newBundleFields;
   newBundleFields.resize(numBundleFields);
