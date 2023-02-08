@@ -125,8 +125,6 @@ private:
   /// If a value is present in the map, and does not map to itself, then
   /// it must be deleted.
   DenseMap<Value, Value> valueMap;
-  // DenseMap<FieldRef, SmallVector<Value, 1>> fields;
-  // DenseMap<FieldRef, SmallVector<FieldRef>> mappings;
   DenseMap<FIRRTLBaseType, FIRRTLBaseType> typeMap;
 };
 } // end anonymous namespace
