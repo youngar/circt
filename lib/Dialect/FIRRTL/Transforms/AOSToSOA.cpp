@@ -117,9 +117,6 @@ private:
                                FIRRTLBaseType type,
                                const SmallVectorImpl<Value> &values);
 
-  /// Utility
-  bool remapped(Value value) { return valueMap.lookup(value) != value; }
-
   MLIRContext *context;
   DenseSet<Operation *> toDelete;
 
