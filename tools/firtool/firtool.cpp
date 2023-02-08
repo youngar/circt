@@ -703,8 +703,7 @@ static LogicalResult processBuffer(
         firrtl::createFlattenMemoryPass());
 
   if (vobToBov)
-    pm.nest<firrtl::CircuitOp>().addNestedPass<firrtl::FModuleOp>(
-        firrtl::createAOSToSOAPass());
+    pm.addNestedPass<firrtl::CircuitOp>(firrtl::createAOSToSOAPass());
 
   // The input mlir file could be firrtl dialect so we might need to clean
   // things up.
@@ -821,7 +820,6 @@ static LogicalResult processBuffer(
 
   // Lower if we are going to verilog or if lowering was specifically requested.
   if (outputFormat != OutputIRFir) {
-
     // Remove TraceAnnotations and write their updated paths to an output
     // annotation file.
     if (outputAnnotationFilename.empty())
@@ -928,7 +926,8 @@ static LogicalResult processBuffer(
       exportPm.addPass(createExportSplitVerilogPass(outputFilename));
       break;
     case OutputIRVerilog:
-      // Run the ExportVerilog pass to get its lowering, but discard the output.
+      // Run the ExportVerilog pass to get its lowering, but discard the
+      // output.
       exportPm.addPass(createExportVerilogPass(llvm::nulls()));
       break;
     }

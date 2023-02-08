@@ -636,7 +636,7 @@ def InnerSymbolDCE : Pass<"firrtl-inner-symbol-dce", "mlir::ModuleOp"> {
   ];
 }
 
-def AOSToSOA : Pass<"firrtl-aos-to-soa", "firrtl::FModuleOp"> {
+def AOSToSOA : Pass<"firrtl-aos-to-soa", "firrtl::CircuitOp"> {
   let summary = "Transform arrays of structs to structs of arrays";
   let description = [{
     This pass lowers Array-of-Structs to Structs-of-Arrays.

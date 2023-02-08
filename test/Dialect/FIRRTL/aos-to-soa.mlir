@@ -1,4 +1,4 @@
-// RUN: circt-opt --pass-pipeline='builtin.module(firrtl.circuit(firrtl.module(firrtl-aos-to-soa)))' %s | FileCheck %s
+// RUN: circt-opt --pass-pipeline='builtin.module(firrtl.circuit(firrtl-aos-to-soa))' %s | FileCheck %s
 
 // test cases
 // - base type

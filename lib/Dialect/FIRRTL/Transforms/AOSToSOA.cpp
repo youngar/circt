@@ -19,6 +19,7 @@
 #include "circt/Dialect/FIRRTL/Passes.h"
 #include "circt/Support/FieldRef.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
+#include "mlir/IR/Threading.h"
 #include "mlir/IR/Visitors.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
@@ -879,13 +880,16 @@ void AOSToSOAPass::runOnOperation() {
                << "START\n"
                << "---------------------------\n";
 
-  // auto visitor = LiftBundlesVisitor(&getContext());
-  LiftBundlesVisitor visitor(&getContext());
-  auto result = visitor.visit(getOperation());
+  std::vector<FModuleOp> modules;
+  llvm::append_range(modules, getOperation().getBody().getOps<FModuleOp>());
+  auto result =
+      failableParallelForEach(&getContext(), modules, [&](FModuleOp module) {
+        LiftBundlesVisitor visitor(&getContext());
+        return visitor.visit(module);
+      });
 
   if (result.failed())
     signalPassFailure();
-
   // markAllAnalysesPreserved();
   // // auto changed = convertFModuleOp(getOperation());
   // auto changed = false;
