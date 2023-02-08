@@ -19,6 +19,7 @@
 #include "circt/Dialect/FIRRTL/Passes.h"
 #include "circt/Support/FieldRef.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
+#include "mlir/IR/Visitors.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
@@ -46,12 +47,16 @@ public:
   using FIRRTLVisitor<LiftBundlesVisitor, LogicalResult>::visitStmt;
 
   LogicalResult visitUnhandledOp(Operation *op) {
-    for (auto [index, operand] : llvm::enumerate(op->getOperands()))
-      op->setOperand(index, valueMap[operand]);
+    for (auto [index, operand] : llvm::enumerate(op->getOperands())) {
+      auto type = operand.getType();
+      assert(type == convertType(type) && "This is probably a bogus assert");
+      op->setOperand(index, fixROperand(operand));
+    }
 
     for (auto result : op->getResults()) {
       auto type = result.getType();
-      assert(type == convertType(type));
+      assert(type == convertType(type) &&
+             "The op should be cloned if any result type changes");
       valueMap[result] = result;
     }
 
@@ -620,6 +625,17 @@ LogicalResult LiftBundlesVisitor::visitStmt(PrintFOp op) {
   return success();
 }
 
+// LogicalResult LiftBundlesVisitor::visitStmt(WhenOp op) {
+//   auto oldCondition = op.getCondition();
+//   auto newCondition = fixROperand(op.)
+
+//     for (auto &op : *body) {
+//     auto result = dispatchVisitor(&op);
+//     if (result.failed())
+//       return result;
+//     }
+// }
+
 //===----------------------------------------------------------------------===//
 // Constant Conversion
 //===----------------------------------------------------------------------===//
@@ -877,11 +893,12 @@ LogicalResult LiftBundlesVisitor::visit(FModuleOp op) {
   // }
 
   // for (auto it = body->begin(), e = body->end(); it != e; ++it) {
-  for (auto &op : *body) {
-    auto result = dispatchVisitor(&op);
-    if (result.failed())
-      return result;
-  }
+
+  auto result = body->walk([&](Operation *op) {
+    if (failed(dispatchVisitor(op)))
+      return WalkResult::interrupt();
+    return WalkResult::advance();
+  });
 
   for (auto *op : toDelete) {
     op->dropAllUses();
@@ -889,6 +906,8 @@ LogicalResult LiftBundlesVisitor::visit(FModuleOp op) {
   }
   op.erasePorts(portsToErase);
 
+  if (result.wasInterrupted())
+    return failure();
   return success();
 }
 
