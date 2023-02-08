@@ -35,7 +35,7 @@ firrtl.circuit "Test" {
 
   // vector<bundle> -> bundle<vector>
   // CHECK-LABEL:  @VB
-  // CHECK-SAME:   (in %port: !firrtl.bundle<field: vector<uint<1>, 4>>)
+  // CHECK-SAME:   (in %port: !firrtl.bundle<a: vector<uint<8>, 4>>)
   firrtl.module @VB(in %port: !firrtl.vector<bundle<a: uint<8>>, 4>) {
     // port[i].field => port.field[i]
     // %bundle = firrtl.subindex %port[0] : !firrtl.vector<bundle<a: uint<8>>, 4> -> bundle<a: uint<8>>
@@ -96,15 +96,15 @@ firrtl.circuit "Test" {
 
   // CHECK-LABEL: @TestAggregateConstants
   firrtl.module @TestAggregateConstants() {
-    // CHECK: firrtl.aggregateconstant [1, 2, 3] : !firrtl.bundle<a: uint<8>, b: uint<5>, c: uint<4>>
+    // CHECK{LITERAL}: firrtl.aggregateconstant [1, 2, 3] : !firrtl.bundle<a: uint<8>, b: uint<5>, c: uint<4>>
     firrtl.aggregateconstant [1, 2, 3] : !firrtl.bundle<a: uint<8>, b: uint<5>, c: uint<4>>
-    // CHECK: firrtl.aggregateconstant [1, 2, 3] : !firrtl.vector<uint<8>, 3>
+    // CHECK{LITERAL}: firrtl.aggregateconstant [1, 2, 3] : !firrtl.vector<uint<8>, 3>
     firrtl.aggregateconstant [1, 2, 3] : !firrtl.vector<uint<8>, 3>
-    // CHECK: firrtl.aggregateconstant [[1, 3], [2, 4]] : !firrtl.bundle<a: vector<uint<8>, 2>, b: vector<uint<5>, 2>>
+    // CHECK{LITERAL}: firrtl.aggregateconstant [[1, 3], [2, 4]] : !firrtl.bundle<a: vector<uint<8>, 2>, b: vector<uint<5>, 2>>
     firrtl.aggregateconstant [[1, 2], [3, 4]] : !firrtl.vector<bundle<a: uint<8>, b: uint<5>>, 2>
-    // CHECK: firrtl.aggregateconstant [[[1, 3], [2, 4]], [[5, 7], [6, 8]]] : !firrtl.bundle<a: bundle<c: vector<uint<8>, 2>, d: vector<uint<5>, 2>>, b: bundle<e: vector<uint<8>, 2>, f: vector<uint<5>, 2>>>
+    // CHECK{LITERAL}: firrtl.aggregateconstant [[[1, 3], [2, 4]], [[5, 7], [6, 8]]] : !firrtl.bundle<a: bundle<c: vector<uint<8>, 2>, d: vector<uint<5>, 2>>, b: bundle<e: vector<uint<8>, 2>, f: vector<uint<5>, 2>>>
     firrtl.aggregateconstant [[[1, 2], [3, 4]], [[5, 6], [7, 8]]] : !firrtl.bundle<a: vector<bundle<c: uint<8>, d: uint<5>>, 2>, b: vector<bundle<e: uint<8>, f: uint<5>>, 2>>
-    // CHECK: firrtl.aggregateconstant [[[1, 3], [5, 7], [9, 11]], [[2, 4], [6, 8], [10, 12]]] : !firrtl.bundle<a: vector<vector<uint<8>, 2>, 3>, b: vector<vector<uint<8>, 2>, 3>>
+    // CHECK{LITERAL}: firrtl.aggregateconstant [[[1, 3], [5, 7], [9, 11]], [[2, 4], [6, 8], [10, 12]]] : !firrtl.bundle<a: vector<vector<uint<8>, 2>, 3>, b: vector<vector<uint<8>, 2>, 3>>
     firrtl.aggregateconstant [[[1, 2], [3, 4]], [[5, 6], [7, 8]], [[9, 10], [11, 12]]] : !firrtl.vector<vector<bundle<a: uint<8>, b: uint<8>>, 2>, 3>
   }
   
@@ -220,8 +220,8 @@ firrtl.circuit "Test" {
   }
 
   firrtl.module @TestVVBAggregate() {
-    // CHECK: %0 = firrtl.aggregateconstant [[1, 3], [2, 4]] : !firrtl.bundle<a: vector<uint<8>, 2>, b: vector<uint<5>, 2>>
-    // CHECK: %1 = firrtl.aggregateconstant [[5, 7], [6, 8]] : !firrtl.bundle<a: vector<uint<8>, 2>, b: vector<uint<5>, 2>>
+    // CHECK{LITERAL}: %0 = firrtl.aggregateconstant [[1, 3], [2, 4]] : !firrtl.bundle<a: vector<uint<8>, 2>, b: vector<uint<5>, 2>>
+    // CHECK{LITERAL}: %1 = firrtl.aggregateconstant [[5, 7], [6, 8]] : !firrtl.bundle<a: vector<uint<8>, 2>, b: vector<uint<5>, 2>>
     %0 = firrtl.aggregateconstant [[1, 2], [3, 4]] : !firrtl.vector<bundle<a: uint<8>, b: uint<5>>, 2>
     %1 = firrtl.aggregateconstant [[5, 6], [7, 8]] : !firrtl.vector<bundle<a: uint<8>, b: uint<5>>, 2>
 
