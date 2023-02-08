@@ -163,4 +163,39 @@ firrtl.circuit "Test" {
     // CHECK: %n_0_1_b = firrtl.node %6 : !firrtl.vector<uint<7>, 3>
     // CHECK: %n_0_1_b_2 = firrtl.node %3 : !firrtl.uint<7>
   }
+
+  firrtl.module @TestVectorAggregate(in %in : !firrtl.vector<bundle<a: uint<8>>, 2>) {
+    // %in, and all aliases will change, and the inputs of the vector-create must be computed correctly.
+    %in_0 = firrtl.subindex %in[0] : !firrtl.vector<bundle<a: uint<8>>, 2>
+    %in_1 = firrtl.subindex %in[1] : !firrtl.vector<bundle<a: uint<8>>, 2>
+    %in_0_a = firrtl.subfield %in_0[a] : !firrtl.bundle<a: uint<8>>
+    %in_1_a = firrtl.subfield %in_1[a] : !firrtl.bundle<a: uint<8>>
+    
+    // CHECK: %0 = firrtl.subfield %in[a] : !firrtl.bundle<a: vector<uint<8>, 2>>
+    // CHECK: %1 = firrtl.subindex %0[1] : !firrtl.vector<uint<8>, 2>
+    // CHECK: %2 = firrtl.subfield %in[a] : !firrtl.bundle<a: vector<uint<8>, 2>>
+    // CHECK: %3 = firrtl.subindex %2[0] : !firrtl.vector<uint<8>, 2>
+    // CHECK: %4 = firrtl.vectorcreate %3, %1 : (!firrtl.uint<8>, !firrtl.uint<8>) -> !firrtl.vector<uint<8>, 2>
+    %3 = firrtl.vectorcreate %in_0_a, %in_1_a : (!firrtl.uint<8>, !firrtl.uint<8>) -> !firrtl.vector<uint<8>, 2>
+  }
+
+  // firrtl.module @TestVectorAggregate() {
+  //   %0 = firrtl.aggregateconstant [[1, 2], [3, 4]] : !firrtl.vector<bundle<a: uint<8>, b: uint<5>>>
+  //   %1 = firrtl.subindex %0[0] : !firrtl.vector<bundle<a: uint<8>, b: uint<5>>>
+  //   %2 = firrtl.subindex %0[1] : !firrtl.vector<bundle<a: uint<8>, b: uint<5>>>
+  //   %3 = firrtl.vectorcreate %1, %2 : (bundle<a: uint<8>, b: uint<5>>, bundle<a: uint<8>, b: uint<5>>) !firrt.vector<bundle<a: uint<8>, b: uint<5>>, 2>
+  // }
+
+  // firrtl.module @TestVectorAggregate(in %a : !firrt.uint<8>, in %b : !firrtl.uint<8>) {
+  //   %0 = firrtl.bundlecreate %a, %b : (!firrtl.uint<8>, !firrtl.uint<8>) -> !firrtl.bundle<a: uint<8>, b: uint<8>>
+  //   %1 = firrtl.vectorcreate %0, %0 : (!firrtl.bundle<a: uint<8>, b: uint<8>>, !firrtl.bundle<a: uint<8>, b: uint<8>>) -> !firrtl.vector<bundle<a: uint<8>, b: uint<8>>, 2>
+  //   %2 = firrtl.subindex %1[1] : !firrtl.vector<bundle<a: uint<8>, b: uint<8>>, 2>
+  //   %n = firrtl.node %2 : !firrtl.bundle<a: uint<8>, b: uint<8>>
+  // }
+
+  // firrtl.module @TestVectorAggregate() {
+  //   %0 = firrtl.aggregateconstant [1, 2] : !firrtl.bundle<a: uint<8>, b: uint<5>>
+  //   %1 = firrtl.aggregateconstant [3, 4] : !firrtl.bundle<a: uint<8>, b: uint<5>>
+  //   %2 = firrtl.vectorcreate %0, %1 : (!firrtl.bundle<a: uint<8>, b: uint<5>>, !firrtl.bundle<a: uint<8>, b: uint<5>>) -> !firrtl.vector<bundle<a: uint<8>, b: uint<5>>, 2>
+  // }
 }

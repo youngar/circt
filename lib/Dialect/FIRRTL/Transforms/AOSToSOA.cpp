@@ -350,8 +350,7 @@ Operation *LiftBundlesVisitor::convertOp(VectorCreateOp op) {
 
   // end of trouble
 
-  OpBuilder builder(context);
-  builder.setInsertionPointAfter(op);
+  OpBuilder builder(op);
 
   SmallVector<unsigned> dimensions;
 
@@ -579,8 +578,7 @@ LogicalResult LiftBundlesVisitor::visitDecl(InstanceOp op) {
     return success();
   }
 
-  OpBuilder builder(context);
-  builder.setInsertionPointAfter(op);
+  OpBuilder builder(op);
   auto newOp = builder.create<InstanceOp>(
       op.getLoc(), newTypes, op.getModuleNameAttr(), op.getNameAttr(),
       op.getNameKindAttr(), op.getPortDirectionsAttr(), op.getPortNamesAttr(),
@@ -613,8 +611,7 @@ LogicalResult LiftBundlesVisitor::visitDecl(MemOp op) {
     return success();
   }
 
-  OpBuilder builder(context);
-  builder.setInsertionPointAfter(op);
+  OpBuilder builder(op);
   auto newOp = builder.create<MemOp>(
       op.getLoc(), newTypes, op.getReadLatencyAttr(), op.getWriteLatencyAttr(),
       op.getDepthAttr(), op.getRuwAttr(), op.getPortNamesAttr(),
@@ -655,9 +652,6 @@ LogicalResult LiftBundlesVisitor::visitDecl(NodeOp op) {
       op.getLoc(), newInput, op.getNameAttr(), op.getNameKindAttr(),
       op.getAnnotationsAttr(), op.getInnerSymAttr());
 
-  newOp->dump();
-  llvm::errs() << newOp;
-
   valueMap[op.getResult()] = newOp.getResult();
   toDelete.insert(op);
   return success();
@@ -682,9 +676,7 @@ LogicalResult LiftBundlesVisitor::visitDecl(RegOp op) {
     return success();
   }
 
-  OpBuilder builder(context);
-  builder.setInsertionPointAfter(op);
-
+  OpBuilder builder(op);
   auto newOp = builder.create<RegOp>(
       op.getLoc(), newType, newClockVal, op.getNameAttr(), op.getNameKindAttr(),
       op.getAnnotationsAttr(), op.getInnerSymAttr());
@@ -723,8 +715,7 @@ LogicalResult LiftBundlesVisitor::visitDecl(RegResetOp op) {
     return success();
   }
 
-  OpBuilder builder(context);
-  builder.setInsertionPointAfter(op);
+  OpBuilder builder(op);
 
   auto newOp = builder.create<RegResetOp>(
       op.getLoc(), newType, newClockVal, newResetSignal, newResetValue,
@@ -751,8 +742,7 @@ LogicalResult LiftBundlesVisitor::visitDecl(WireOp op) {
     return success();
   }
 
-  OpBuilder builder(context);
-  builder.setInsertionPointAfter(op);
+  OpBuilder builder(op);
   auto newOp = builder.create<WireOp>(
       op.getLoc(), newType, op.getNameAttr(), op.getNameKindAttr(),
       op.getAnnotationsAttr(), op.getInnerSymAttr());
@@ -771,6 +761,7 @@ LogicalResult LiftBundlesVisitor::visitStmt(ConnectOp op) {
   auto [lhs, lhsExploded] = fixOperand(op.getDest());
   auto [rhs, rhsExploded] = fixOperand(op.getSrc());
 
+  // TODO: Convert the lhs first. If the rhs wasn't 
   if (rhsExploded && !lhsExploded)
     lhs = explode(lhs[0]);
 
@@ -780,9 +771,8 @@ LogicalResult LiftBundlesVisitor::visitStmt(ConnectOp op) {
   if (lhs.size() != rhs.size())
     assert(false && "Something went wrong exploding the elements");
 
-  auto builder = OpBuilder(context);
+  OpBuilder builder(op);
   auto loc = op.getLoc();
-  builder.setInsertionPoint(op);
 
   for (size_t i = 0, e = lhs.size(); i < e; ++i) {
     builder.create<ConnectOp>(loc, lhs[i], rhs[i]);
@@ -806,9 +796,8 @@ LogicalResult LiftBundlesVisitor::visitStmt(StrictConnectOp op) {
   if (lhs.size() != rhs.size())
     assert(false && "Something went wrong exploding the elements");
 
-  auto builder = OpBuilder(context);
+  OpBuilder builder(op);
   auto loc = op.getLoc();
-  builder.setInsertionPoint(op);
 
   for (size_t i = 0, e = lhs.size(); i < e; ++i) {
     builder.create<StrictConnectOp>(loc, lhs[i], rhs[i]);
@@ -831,7 +820,7 @@ LogicalResult LiftBundlesVisitor::visitStmt(PrintFOp op) {
 
   SmallVector<Value, 4> newSubstitutions;
   for (auto oldSubstitution : op.getSubstitutions()) {
-    auto newSubstitution = fixAtomicOperand(oldSubstitution);
+    auto newSubstitution = fixROperand(oldSubstitution);
     if (newSubstitution != oldSubstitution)
       changed = true;
     newSubstitutions.push_back(newSubstitution);
@@ -840,8 +829,7 @@ LogicalResult LiftBundlesVisitor::visitStmt(PrintFOp op) {
   if (!changed)
     return success();
 
-  OpBuilder builder(context);
-  builder.setInsertionPointAfter(op);
+  OpBuilder builder(op);
   builder.create<PrintFOp>(op.getLoc(), newClock, newCond, op.getFormatString(),
                            newSubstitutions, op.getName());
 
@@ -963,9 +951,39 @@ LogicalResult LiftBundlesVisitor::visitExpr(BundleCreateOp op) {
 }
 
 LogicalResult LiftBundlesVisitor::visitExpr(VectorCreateOp op) {
-  // Tentatively mark as deleted. VectorCreateOps are converted or preserved
-  // on demand.
-  toDelete.insert(op);
+  llvm::errs() << "VectorCreateOp\n";
+
+  auto oldType = op.getType();
+  auto newType = convertType(oldType);
+
+  if (oldType == newType) {
+    auto changed = false;
+    SmallVector<Value> newFields;
+    for (auto oldField : op.getFields()) {
+      auto newField = fixROperand(oldField);
+      llvm::errs() << "new field : " << newField << "\n";
+      if (oldField != newField)
+        changed = true;
+      newFields.push_back(newField);
+    }
+
+    if (!changed) {
+      auto result = op.getResult();
+      valueMap[result] = result;
+      return success();
+    }
+
+    OpBuilder builder(op);
+    auto newOp = builder.create<VectorCreateOp>(op.getLoc(), newType, newFields);
+    valueMap[op.getResult()] = newOp.getResult();
+    toDelete.insert(op);
+    return success();
+  }
+
+
+  // OK, We are in for some pain!
+
+
   return success();
 }
 
