@@ -82,20 +82,11 @@ public:
   LogicalResult visitExpr(SubindexOp);
   LogicalResult visitExpr(SubfieldOp);
 
-  LogicalResult visitOperand(Value);
-  LogicalResult visitOperand(OpResult);
-  LogicalResult visitOperand(BlockArgument);
-
 private:
   /// Type Conversion
   Type convertType(Type);
   FIRRTLBaseType convertType(FIRRTLBaseType);
   FIRRTLBaseType convertType(FIRRTLBaseType, SmallVector<unsigned> &);
-
-  /// On-Demand Op Conversions
-  Operation *convertOp(AggregateConstantOp);
-  Operation *convertOp(VectorCreateOp);
-  Operation *convertOp(BundleCreateOp);
 
   /// Aggregate Constant Conversion Helpers
   Attribute convertAggregate(Type, ArrayRef<Value>);
