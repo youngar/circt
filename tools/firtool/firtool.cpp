@@ -224,6 +224,11 @@ static cl::opt<bool>
                        cl::desc("Disable the LowerMemory pass"),
                        cl::init(false), cl::Hidden, cl::cat(mainCategory));
 
+static cl::opt<bool>
+    vobToBov("vob-to-bov",
+             cl::desc("Transform vectors of bundles to bundles of vectors"),
+             cl::init(false), cl::cat(mainCategory));
+
 static cl::opt<bool> disableLowerTypes("disable-lower-types",
                                        cl::desc("Disable the LowerTypes pass"),
                                        cl::init(false), cl::Hidden,
@@ -697,11 +702,13 @@ static LogicalResult processBuffer(
     pm.nest<firrtl::CircuitOp>().nest<firrtl::FModuleOp>().addPass(
         firrtl::createFlattenMemoryPass());
 
+  if (vobToBov)
+    pm.nest<firrtl::CircuitOp>().addNestedPass<firrtl::FModuleOp>(
+        firrtl::createAOSToSOAPass());
+
   // The input mlir file could be firrtl dialect so we might need to clean
   // things up.
   if (!disableLowerTypes) {
-    pm.nest<firrtl::CircuitOp>().addNestedPass<firrtl::FModuleOp>(
-        firrtl::createAOSToSOAPass());
     pm.addNestedPass<firrtl::CircuitOp>(firrtl::createLowerFIRRTLTypesPass(
         preserveAggregate, preservePublicTypes));
     // Only enable expand whens if lower types is also enabled.
