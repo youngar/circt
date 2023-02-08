@@ -49,8 +49,11 @@ public:
     for (auto [index, operand] : llvm::enumerate(op->getOperands()))
       op->setOperand(index, valueMap[operand]);
 
-    for (auto result : op->getResults())
+    for (auto result : op->getResults()) {
+      auto type = result.getType();
+      assert(type == convertType(type));
       valueMap[result] = result;
+    }
 
     return success();
   }
