@@ -86,25 +86,24 @@ private:
                                           ArrayRef<Attribute> elements);
 
   /// Path Rewriting
-  std::pair<SmallVector<Value>, bool> buildPath(Value oldValue, Value newValue,
+  std::pair<SmallVector<Value>, bool> buildPath(ImplicitLocOpBuilder &builder,
+                                                Value oldValue, Value newValue,
                                                 unsigned fieldID);
 
   /// Operand Fixup
-  std::pair<SmallVector<Value>, bool> fixOperand(FieldRef);
-  std::pair<SmallVector<Value>, bool> fixOperand(Value);
+  std::pair<SmallVector<Value>, bool> fixOperand(ImplicitLocOpBuilder &, Value);
   SmallVector<Value> explode(Value);
-  void explode(OpBuilder, Value, SmallVector<Value> &);
+  void explode(ImplicitLocOpBuilder &, Value, SmallVector<Value> &);
 
   /// fix a ground type operand.
-  Value fixAtomicOperand(Value value);
+  Value fixAtomicOperand(ImplicitLocOpBuilder &, Value);
 
   /// Read-only / RHS Operand Fixup. Value MUST be passive.
-  Value fixROperand(Value);
-  Value fixROperand(FieldRef);
+  Value fixROperand(ImplicitLocOpBuilder &, Value);
+  Value fixROperand(ImplicitLocOpBuilder &, FieldRef);
 
-  Value sinkVecDimIntoOperands(ImplicitLocOpBuilder &builder,
-                               FIRRTLBaseType type,
-                               const SmallVectorImpl<Value> &values);
+  Value sinkVecDimIntoOperands(ImplicitLocOpBuilder &, FIRRTLBaseType,
+                               const SmallVectorImpl<Value> &);
 
   MLIRContext *context;
   DenseSet<Operation *> toDelete;
@@ -114,8 +113,21 @@ private:
   /// If a value is present in the map, and does not map to itself, then
   /// it must be deleted.
   DenseMap<Value, Value> valueMap;
+
+  /// A cache mapping uncoverted types to their soa-converted equivalents.
   DenseMap<FIRRTLBaseType, FIRRTLBaseType> typeMap;
+
+  /// A cache of subfield/index/access operations, which are typically used
+  /// repeatedly.
+  Value getSubfield(Value value, unsigned index);
+  Value getSubindex(Value value, unsigned index);
+  Value getSubaccess(Value value, Value index);
+
+  DenseMap<std::pair<Value, unsigned>, Value> subfieldCache;
+  DenseMap<std::pair<Value, unsigned>, Value> subindexCache;
+  DenseMap<std::pair<Value, Value>, Value> subaccessCache;
 };
+
 } // end anonymous namespace
 
 LiftBundlesVisitor::LiftBundlesVisitor(MLIRContext *context)
@@ -173,63 +185,119 @@ LiftBundlesVisitor::convertType(FIRRTLBaseType type,
 }
 
 //===----------------------------------------------------------------------===//
-// Path Rewriting
+// Operand Fixup
 //===----------------------------------------------------------------------===//
 
+namespace {
+struct VectorAccess {
+  enum Kind { subindex, subaccess };
+
+  VectorAccess(unsigned index) : index(index), kind(Kind::subindex) {}
+
+  VectorAccess(Value value) : value(value), kind(Kind::subaccess) {}
+
+  union {
+    unsigned index;
+    Value value;
+  };
+  Kind kind;
+};
+} // namespace
+
+Value LiftBundlesVisitor::getSubfield(Value value, unsigned index) {
+  Value &result = subfieldCache[{value, index}];
+  if (!result) {
+    OpBuilder builder(context);
+    builder.setInsertionPointAfterValue(value);
+    llvm::errs() << "    getSubfield: cache miss value=" << value
+                 << " index=" << index << "\n";
+    result =
+        builder.create<SubfieldOp>(value.getLoc(), value, index).getResult();
+  }
+  llvm::errs() << "    getSubfield: " << result << "\n";
+  return result;
+}
+
+Value LiftBundlesVisitor::getSubindex(Value value, unsigned index) {
+  auto &result = subindexCache[{value, index}];
+  if (!result) {
+    OpBuilder builder(context);
+    builder.setInsertionPointAfterValue(value);
+    llvm::errs() << "    getSubindex: cache miss value=" << value
+                 << " index=" << index << "\n";
+    result =
+        builder.create<SubindexOp>(value.getLoc(), value, index).getResult();
+  }
+  llvm::errs() << "    getSubindex: " << result << "\n";
+  return result;
+}
+
+Value LiftBundlesVisitor::getSubaccess(Value value, Value index) {
+  auto &result = subaccessCache[{value, index}];
+  if (!result) {
+    OpBuilder builder(context);
+    builder.setInsertionPointAfterValue(value);
+    llvm::errs() << "    getSubaccess: cache miss value=" << value
+                 << " index=" << index << "\n";
+    result =
+        builder.create<SubaccessOp>(value.getLoc(), value, index).getResult();
+  }
+  llvm::errs() << "    getSubaccess: " << result << "\n";
+  return result;
+}
+
 std::pair<SmallVector<Value>, bool>
-LiftBundlesVisitor::buildPath(Value oldValue, Value newValue,
-                              unsigned fieldID) {
+LiftBundlesVisitor::fixOperand(ImplicitLocOpBuilder &builder, Value value) {
+  SmallVector<unsigned> bundleAccesses;
+  SmallVector<VectorAccess> vectorAccesses;
 
-  llvm::errs() << "buildPath\n";
-  llvm::errs() << "  old=" << oldValue << "\n";
-  llvm::errs() << "  new=" << newValue << "\n";
-  llvm::errs() << "  fld=" << fieldID << "\n";
-
-  auto loc = oldValue.getLoc();
-  OpBuilder builder(context);
-  builder.setInsertionPointAfterValue(newValue);
-
-  SmallVector<unsigned> subfieldIndices;
-  SmallVector<unsigned> subindexIndices;
-  // bool inVector = false;
-  // bool inVectorOfBundle = false;
-
-  auto oldType = oldValue.getType();
-  // auto newType = newValue.getType();
-
-  // llvm::errs() << getFieldName(FieldRef(oldValue, fieldID)) << "\n";
-
-  auto type = oldType;
-  while (fieldID != 0) {
-    if (auto bundle = type.dyn_cast<BundleType>()) {
-      auto index = bundle.getIndexForFieldID(fieldID);
-      fieldID -= bundle.getFieldID(index);
-      subfieldIndices.push_back(index);
-      // inVectorOfBundle = inVector;
-      type = bundle.getElementType(index);
-    } else {
-      auto vector = type.cast<FVectorType>();
-      auto index = vector.getIndexForFieldID(fieldID);
-      fieldID -= vector.getFieldID(index);
-      subindexIndices.push_back(index);
-      // inVector = true;
-      type = vector.getElementType();
+  // Walk back through the subaccess ops to the canonical storage location.
+  // Collect the path according to the type of access, splitting bundle accesses
+  // ops from vector accesses ops.
+  while (value) {
+    Operation *op = value.getDefiningOp();
+    if (!op)
+      break;
+    if (auto subfieldOp = dyn_cast<SubfieldOp>(op)) {
+      value = subfieldOp.getInput();
+      bundleAccesses.push_back(subfieldOp.getFieldIndex());
+      continue;
     }
+    if (auto subindexOp = dyn_cast<SubindexOp>(op)) {
+      value = subindexOp.getInput();
+      vectorAccesses.push_back(subindexOp.getIndex());
+      continue;
+    }
+    if (auto subaccessOp = dyn_cast<SubaccessOp>(op)) {
+      value = subaccessOp.getInput();
+      vectorAccesses.push_back(subaccessOp.getIndex());
+      continue;
+    }
+    break;
   }
 
-  auto value = newValue;
-  for (auto index : subfieldIndices) {
-    auto op = builder.create<SubfieldOp>(loc, value, index);
-    // op->dump();
-    value = op.getResult();
-  }
+  // Value now points at the original canonical storage location.
+  // find it's converted equivalent.
+  llvm::errs() << "old value = " << value << "\n";
+
+  value = valueMap[value];
+  assert(value && "canonical storage location must have been converted");
+
+  llvm::errs() << "new value = " << value << "\n";
+
+  // Replay the subaccess operations, in the converted order
+  // (bundle accesses first, then vector accesses).
+  for (auto fieldIndex : llvm::reverse(bundleAccesses))
+    value = getSubfield(value, fieldIndex);
+
+  /// If the current value is a bundle, but we have vector accesses to replay,
+  // we must explode the bundle and apply the vector accesses to each leaf of
+  // the bundle.
 
   SmallVector<Value> values;
   bool exploded = false;
 
-  if (value.getType().isa<BundleType>() && 0 < subindexIndices.size()) {
-    assert(0 < subindexIndices.size());
-    assert(value.getType().isa<BundleType>());
+  if (value.getType().isa<BundleType>() && !vectorAccesses.empty()) {
     explode(builder, value, values);
     exploded = true;
   } else {
@@ -237,44 +305,34 @@ LiftBundlesVisitor::buildPath(Value oldValue, Value newValue,
     exploded = false;
   }
 
-  for (size_t i = 0, e = values.size(); i < e; ++i) {
-    auto value = values[i];
-    for (auto index : subindexIndices) {
-      auto op = builder.create<SubindexOp>(loc, value, index);
-      value = op.getResult();
+  /// Finally, replay the vector access operations.
+  for (auto &value : values) {
+    for (auto access : llvm::reverse(vectorAccesses)) {
+      if (access.kind == VectorAccess::subindex) {
+        value = getSubindex(value, access.index);
+        continue;
+      }
+      if (access.kind == VectorAccess::subaccess) {
+        value = getSubaccess(value, access.value);
+        continue;
+      }
     }
-    values[i] = value;
   }
+
+  llvm::errs() << "fixOperand: values:\n";
+  for (auto value : values)
+    llvm::errs() << "    " << value << "\n";
 
   return {values, exploded};
 }
 
-//===----------------------------------------------------------------------===//
-// Operand Fixup
-//===----------------------------------------------------------------------===//
-
-std::pair<SmallVector<Value>, bool>
-LiftBundlesVisitor::fixOperand(FieldRef ref) {
-  llvm::errs() << "fixOperand ref=" << ref.getFieldID()
-               << " val=" << ref.getValue() << "\n";
-  auto value = ref.getValue();
-  auto converted = valueMap.lookup(value);
-  assert(converted);
-  return buildPath(value, converted, ref.getFieldID());
-}
-
-std::pair<SmallVector<Value>, bool>
-LiftBundlesVisitor::fixOperand(Value value) {
-  return fixOperand(getFieldRefFromValue(value));
-}
-
-void LiftBundlesVisitor::explode(OpBuilder builder, Value value,
+void LiftBundlesVisitor::explode(ImplicitLocOpBuilder &builder, Value value,
                                  SmallVector<Value> &output) {
   auto type = value.getType();
   if (auto bundleType = type.dyn_cast<BundleType>()) {
     for (size_t i = 0, e = bundleType.getNumElements(); i < e; ++i) {
-      auto op = builder.create<SubfieldOp>(value.getLoc(), value, i);
-      explode(builder, op, output);
+      auto field = getSubfield(value, i);
+      explode(builder, field, output);
     }
   } else {
     output.push_back(value);
@@ -282,16 +340,17 @@ void LiftBundlesVisitor::explode(OpBuilder builder, Value value,
 }
 
 SmallVector<Value> LiftBundlesVisitor::explode(Value value) {
-  auto builder = OpBuilder(context);
+  ImplicitLocOpBuilder builder(value.getLoc(), context);
   builder.setInsertionPointAfterValue(value);
   auto output = SmallVector<Value>();
   explode(builder, value, output);
   return output;
 }
 
-Value LiftBundlesVisitor::fixAtomicOperand(Value value) {
+Value LiftBundlesVisitor::fixAtomicOperand(ImplicitLocOpBuilder &builder,
+                                           Value value) {
   assert(value.getType().cast<FIRRTLBaseType>().isGround());
-  auto [values, exploded] = fixOperand(value);
+  auto [values, exploded] = fixOperand(builder, value);
   assert(!exploded);
   assert(values.size() == 1);
   return values[0];
@@ -301,14 +360,11 @@ Value LiftBundlesVisitor::fixAtomicOperand(Value value) {
 // Read-Only / RHS Operand Fixup
 //===----------------------------------------------------------------------===//
 
-Value LiftBundlesVisitor::fixROperand(Value operand) {
-  // assert(operand.getType().cast<FIRRTLBaseType>().isPassive());
-  auto ref = getFieldRefFromValue(operand);
+Value LiftBundlesVisitor::fixROperand(ImplicitLocOpBuilder &builder,
+                                      Value operand) {
+  llvm::errs() << "fixROperand: val=" << operand << "\n";
 
-  llvm::errs() << "fixROperand ref=" << ref.getFieldID()
-               << " val=" << ref.getValue() << "\n";
-
-  auto [values, exploded] = fixOperand(ref);
+  auto [values, exploded] = fixOperand(builder, operand);
   if (!exploded) {
     llvm::errs() << "fixROperand not exploded\n";
     return values.front();
@@ -316,9 +372,6 @@ Value LiftBundlesVisitor::fixROperand(Value operand) {
   llvm::errs() << "fixROperand exploded\n";
 
   auto newType = convertType(operand.getType());
-
-  OpBuilder builder(context);
-  builder.setInsertionPointAfterValue(operand);
   return builder.create<BundleCreateOp>(operand.getLoc(), newType, values);
 }
 
@@ -327,19 +380,21 @@ Value LiftBundlesVisitor::fixROperand(Value operand) {
 //===----------------------------------------------------------------------===//
 
 LogicalResult LiftBundlesVisitor::visitUnhandledOp(Operation *op) {
+  ImplicitLocOpBuilder builder(op->getLoc(), op);
+  bool changed = false;
+
   // Typical operations read from passive operands, only.
   // We can materialze any passive operand into a single value, potentially with
   // fresh intermediate bundle create ops in between.
-  for (auto [index, operand] : llvm::enumerate(op->getOperands())) {
-    assert(operand.getType() == convertType(operand.getType()) &&
-           "If the operand type has changed, we need to ensure the op is okay "
-           "with that");
-    op->setOperand(index, fixROperand(operand));
+  SmallVector<Value> newOperands;
+  for (auto oldOperand : op->getOperands()) {
+    auto newOperand = fixROperand(builder, oldOperand);
+    changed |= (oldOperand != newOperand);
+    newOperands.push_back(newOperand);
   }
 
   /// We can rewrite the type of any result, but if any result type changes,
   /// then the operation will be cloned.
-  bool changed = false;
   SmallVector<Type> newTypes;
   for (auto oldResult : op->getResults()) {
     auto oldType = oldResult.getType();
@@ -350,14 +405,16 @@ LogicalResult LiftBundlesVisitor::visitUnhandledOp(Operation *op) {
 
   if (changed) {
     auto *newOp = op->clone();
+    newOp->setOperands(newOperands);
     for (size_t i = 0, e = op->getNumResults(); i < e; ++i) {
       auto newResult = newOp->getResult(i);
       newResult.setType(newTypes[i]);
       valueMap[op->getResult(i)] = newResult;
+      toDelete.insert(op);
     }
   } else {
-    /// As a safety precaution, all "canonical storage location" results must
-    /// be mapped to themselves.
+    // As a safety precaution, all unchanged "canonical storage locations" must
+    // be mapped to themselves.
     for (auto result : op->getResults())
       valueMap[result] = result;
   }
@@ -440,6 +497,7 @@ LogicalResult LiftBundlesVisitor::visitDecl(NodeOp op) {
   llvm::errs() << "NodeOp\n";
 
   auto changed = false;
+  ImplicitLocOpBuilder builder(op.getLoc(), op);
 
   auto oldType = op.getType();
   auto newType = convertType(oldType);
@@ -447,7 +505,7 @@ LogicalResult LiftBundlesVisitor::visitDecl(NodeOp op) {
     changed = true;
 
   auto oldInput = op.getInput();
-  auto newInput = fixROperand(oldInput);
+  auto newInput = fixROperand(builder, oldInput);
   if (oldInput != newInput)
     changed = true;
 
@@ -457,7 +515,6 @@ LogicalResult LiftBundlesVisitor::visitDecl(NodeOp op) {
     return success();
   }
 
-  OpBuilder builder(op);
   auto newOp = builder.create<NodeOp>(
       op.getLoc(), newInput, op.getNameAttr(), op.getNameKindAttr(),
       op.getAnnotationsAttr(), op.getInnerSymAttr());
@@ -469,6 +526,7 @@ LogicalResult LiftBundlesVisitor::visitDecl(NodeOp op) {
 
 LogicalResult LiftBundlesVisitor::visitDecl(RegOp op) {
   bool changed = false;
+  ImplicitLocOpBuilder builder(op.getLoc(), op);
 
   auto oldType = op.getType();
   auto newType = convertType(oldType);
@@ -476,7 +534,7 @@ LogicalResult LiftBundlesVisitor::visitDecl(RegOp op) {
     changed = true;
 
   auto oldClockVal = op.getClockVal();
-  auto newClockVal = fixAtomicOperand(oldClockVal);
+  auto newClockVal = fixAtomicOperand(builder, oldClockVal);
   if (oldClockVal != newClockVal)
     changed = true;
 
@@ -486,7 +544,6 @@ LogicalResult LiftBundlesVisitor::visitDecl(RegOp op) {
     return success();
   }
 
-  OpBuilder builder(op);
   auto newOp = builder.create<RegOp>(
       op.getLoc(), newType, newClockVal, op.getNameAttr(), op.getNameKindAttr(),
       op.getAnnotationsAttr(), op.getInnerSymAttr());
@@ -498,6 +555,7 @@ LogicalResult LiftBundlesVisitor::visitDecl(RegOp op) {
 
 LogicalResult LiftBundlesVisitor::visitDecl(RegResetOp op) {
   bool changed = false;
+  ImplicitLocOpBuilder builder(op.getLoc(), op);
 
   auto oldType = op.getType();
   auto newType = convertType(oldType);
@@ -505,17 +563,17 @@ LogicalResult LiftBundlesVisitor::visitDecl(RegResetOp op) {
     changed = true;
 
   auto oldClockVal = op.getClockVal();
-  auto newClockVal = fixAtomicOperand(oldClockVal);
+  auto newClockVal = fixAtomicOperand(builder, oldClockVal);
   if (oldClockVal != newClockVal)
     changed = true;
 
   auto oldResetSignal = op.getResetSignal();
-  auto newResetSignal = fixAtomicOperand(oldResetSignal);
+  auto newResetSignal = fixAtomicOperand(builder, oldResetSignal);
   if (oldResetSignal != newResetSignal)
     changed = true;
 
   auto oldResetValue = op.getResetValue();
-  auto newResetValue = fixROperand(oldResetValue);
+  auto newResetValue = fixROperand(builder, oldResetValue);
   if (oldResetValue != newResetValue)
     changed = true;
 
@@ -524,8 +582,6 @@ LogicalResult LiftBundlesVisitor::visitDecl(RegResetOp op) {
     valueMap[result] = result;
     return success();
   }
-
-  OpBuilder builder(op);
 
   auto newOp = builder.create<RegResetOp>(
       op.getLoc(), newType, newClockVal, newResetSignal, newResetValue,
@@ -569,34 +625,37 @@ LogicalResult LiftBundlesVisitor::visitDecl(WireOp op) {
 template <typename OpTy>
 void LiftBundlesVisitor::handleConnect(OpTy op) {
   llvm::errs() << "handle connect\n";
+  ImplicitLocOpBuilder builder(op.getLoc(), op);
+
   auto oldLhs = op.getDest();
   auto oldLhsType = cast<FIRRTLBaseType>(oldLhs.getType());
 
-  auto [newLhs, lhsExploded] = fixOperand(oldLhs);
+  auto [newLhs, lhsExploded] = fixOperand(builder, oldLhs);
 
-  // Happy-path: The LHS did not explode, and is passive (so, not writing to the RHS).
-  // We can guarantee that the rhs will resolve to a single unexploded value.
+  // Happy-path: The LHS did not explode, and is passive (so, not writing to the
+  // RHS). We can guarantee that the rhs will resolve to a single unexploded
+  // value.
   if (!lhsExploded && oldLhsType.isPassive()) {
-    auto newRhs = fixROperand(op.getSrc());
-    OpBuilder(op).create<OpTy>(op.getLoc(), newLhs[0], newRhs);
+    auto newRhs = fixROperand(builder, op.getSrc());
+    builder.create<OpTy>(op.getLoc(), newLhs[0], newRhs);
     toDelete.insert(op);
     return;
   }
 
-  auto [newRhs, rhsExploded] = fixOperand(op.getSrc());
+  auto [newRhs, rhsExploded] = fixOperand(builder, op.getSrc());
   if (!rhsExploded && lhsExploded)
     newRhs = explode(newRhs[0]);
 
   if (!lhsExploded && rhsExploded)
     newLhs = explode(newLhs[0]);
 
-  llvm::errs() << "lhsSize = " << newLhs.size() << " rhsSize=" << newRhs.size() << "\n";
+  llvm::errs() << "lhsSize = " << newLhs.size() << " rhsSize=" << newRhs.size()
+               << "\n";
 
   assert(newLhs.size() == newRhs.size() &&
          "Something went wrong exploding the elements");
 
   // Emit connections between all leaf elements.
-  ImplicitLocOpBuilder builder(op.getLoc(), op);
   auto newLhsType = convertType(oldLhsType);
   const auto *newLhsIt = newLhs.begin();
   const auto *newRhsIt = newRhs.begin();
@@ -753,6 +812,8 @@ Value LiftBundlesVisitor::sinkVecDimIntoOperands(
 LogicalResult LiftBundlesVisitor::visitExpr(VectorCreateOp op) {
   llvm::errs() << "VectorCreateOp\n";
 
+  ImplicitLocOpBuilder builder(op.getLoc(), op);
+
   auto oldType = op.getType();
   auto newType = convertType(oldType);
 
@@ -760,7 +821,7 @@ LogicalResult LiftBundlesVisitor::visitExpr(VectorCreateOp op) {
     auto changed = false;
     SmallVector<Value> newFields;
     for (auto oldField : op.getFields()) {
-      auto newField = fixROperand(oldField);
+      auto newField = fixROperand(builder, oldField);
       llvm::errs() << "new field : " << newField << "\n";
       if (oldField != newField)
         changed = true;
@@ -773,7 +834,6 @@ LogicalResult LiftBundlesVisitor::visitExpr(VectorCreateOp op) {
       return success();
     }
 
-    OpBuilder builder(op);
     auto newOp =
         builder.create<VectorCreateOp>(op.getLoc(), newType, newFields);
     valueMap[op.getResult()] = newOp.getResult();
@@ -785,12 +845,11 @@ LogicalResult LiftBundlesVisitor::visitExpr(VectorCreateOp op) {
 
   SmallVector<Value> convertedOldFields;
   for (auto oldField : op.getFields()) {
-    auto convertedField = fixROperand(oldField);
+    auto convertedField = fixROperand(builder, oldField);
     llvm::errs() << "new field : " << convertedField << "\n";
     convertedOldFields.push_back(convertedField);
   }
 
-  ImplicitLocOpBuilder builder(op.getLoc(), op);
   auto value = sinkVecDimIntoOperands(
       builder, convertType(oldType.getElementType()), convertedOldFields);
   valueMap[op.getResult()] = value;

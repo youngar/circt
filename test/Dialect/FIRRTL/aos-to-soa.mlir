@@ -87,6 +87,7 @@ firrtl.circuit "Test" {
   //   firrtl.connect %element, 
   // }
 
+  // CHECK-LABEL: @TestIndexing
   firrtl.module @TestIndexing(in %port: !firrtl.vector<bundle<a flip: uint<8>>, 4>) {
     %value  = firrtl.constant 7 : !firrtl.uint<8>
     %bundle = firrtl.subindex %port[3] : !firrtl.vector<bundle<a flip: uint<8>>, 4>
@@ -117,53 +118,52 @@ firrtl.circuit "Test" {
     %n = firrtl.node %w : !firrtl.vector<bundle<a: uint<8>>, 2>
   }
   
+  // CHECK-LABEL: @TestSlicing()
   firrtl.module @TestSlicing() {
+    // CHECK: %w = firrtl.wire : !firrtl.bundle<a: vector<uint<8>, 2>, v: vector<vector<uint<7>, 3>, 2>>
     %w = firrtl.wire : !firrtl.vector<bundle<a: uint<8>, v: vector<uint<7>, 3>>, 2>
+
+    // CHECK: %0 = firrtl.subfield %w[a] : !firrtl.bundle<a: vector<uint<8>, 2>, v: vector<vector<uint<7>, 3>, 2>>
+    // CHECK: %1 = firrtl.subfield %w[v] : !firrtl.bundle<a: vector<uint<8>, 2>, v: vector<vector<uint<7>, 3>, 2>>
+    // CHECK: %2 = firrtl.subindex %0[0] : !firrtl.vector<uint<8>, 2>
+    // CHECK: %3 = firrtl.subindex %1[0] : !firrtl.vector<vector<uint<7>, 3>, 2>
+    // CHECK: %4 = firrtl.bundlecreate %2, %3 : (!firrtl.uint<8>, !firrtl.vector<uint<7>, 3>) -> !firrtl.bundle<a: uint<8>, v: vector<uint<7>, 3>>
+    // CHECK: %n = firrtl.node %4 : !firrtl.bundle<a: uint<8>, v: vector<uint<7>, 3>>
     %w_0 = firrtl.subindex %w[0] : !firrtl.vector<bundle<a: uint<8>, v: vector<uint<7>, 3>>, 2>
     %n = firrtl.node %w_0 : !firrtl.bundle<a: uint<8>, v: vector<uint<7>, 3>>
   }
   
+    // CHECK-LABEL: @TestDoubleSlicing()
   firrtl.module @TestDoubleSlicing() {
     // CHECK: %w = firrtl.wire : !firrtl.bundle<a: vector<vector<uint<8>, 2>, 4>, v: vector<vector<vector<uint<7>, 3>, 2>, 4>>
     %w = firrtl.wire : !firrtl.vector<vector<bundle<a: uint<8>, v: vector<uint<7>, 3>>, 2>, 4>
 
+    // CHECK: %0 = firrtl.subfield %w[a] : !firrtl.bundle<a: vector<vector<uint<8>, 2>, 4>, v: vector<vector<vector<uint<7>, 3>, 2>, 4>>
+    // CHECK: %1 = firrtl.subfield %w[v] : !firrtl.bundle<a: vector<vector<uint<8>, 2>, 4>, v: vector<vector<vector<uint<7>, 3>, 2>, 4>>
+    // CHECK: %2 = firrtl.subindex %0[0] : !firrtl.vector<vector<uint<8>, 2>, 4>
+    // CHECK: %3 = firrtl.subindex %1[0] : !firrtl.vector<vector<vector<uint<7>, 3>, 2>, 4>
+    // CHECK: %4 = firrtl.bundlecreate %2, %3 : (!firrtl.vector<uint<8>, 2>, !firrtl.vector<vector<uint<7>, 3>, 2>) -> !firrtl.bundle<a: vector<uint<8>, 2>, v: vector<vector<uint<7>, 3>, 2>>
+    // CHECK: %n_0 = firrtl.node %4 : !firrtl.bundle<a: vector<uint<8>, 2>, v: vector<vector<uint<7>, 3>, 2>>
     %w_0 = firrtl.subindex %w[0] : !firrtl.vector<vector<bundle<a: uint<8>, v: vector<uint<7>, 3>>, 2>, 4>
     %n_0 = firrtl.node %w_0 : !firrtl.vector<bundle<a: uint<8>, v: vector<uint<7>, 3>>, 2>
 
+    // CHECK: %5 = firrtl.subindex %2[0] : !firrtl.vector<uint<8>, 2>
+    // CHECK: %6 = firrtl.subindex %3[0] : !firrtl.vector<vector<uint<7>, 3>, 2>
+    // CHECK: %7 = firrtl.bundlecreate %5, %6 : (!firrtl.uint<8>, !firrtl.vector<uint<7>, 3>) -> !firrtl.bundle<a: uint<8>, v: vector<uint<7>, 3>>
+    // CHECK: %n_0_1 = firrtl.node %7 : !firrtl.bundle<a: uint<8>, v: vector<uint<7>, 3>>
     %w_0_1 = firrtl.subindex %w_0[0] : !firrtl.vector<bundle<a: uint<8>, v: vector<uint<7>, 3>>, 2>
     %n_0_1 = firrtl.node %w_0_1 : !firrtl.bundle<a: uint<8>, v: vector<uint<7>, 3>>
 
+    // CHECK: %n_0_1_b = firrtl.node %6 : !firrtl.vector<uint<7>, 3>
     %w_0_1_b = firrtl.subfield %w_0_1[v] : !firrtl.bundle<a: uint<8>, v: vector<uint<7>, 3>>
     %n_0_1_b = firrtl.node %w_0_1_b : !firrtl.vector<uint<7>, 3>
 
+    // CHECK: %8 = firrtl.subindex %6[2] : !firrtl.vector<uint<7>, 3>
+    // CHECK: %n_0_1_b_2 = firrtl.node %8 : !firrtl.uint<7>
     %w_0_1_b_2 = firrtl.subindex %w_0_1_b[2] : !firrtl.vector<uint<7>, 3>
     %n_0_1_b_2 = firrtl.node %w_0_1_b_2 : !firrtl.uint<7>
-
-    // CHECK: %0 = firrtl.subfield %w[v] : !firrtl.bundle<a: vector<vector<uint<8>, 2>, 4>, v: vector<vector<vector<uint<7>, 3>, 2>, 4>>
-    // CHECK: %1 = firrtl.subindex %0[0] : !firrtl.vector<vector<vector<uint<7>, 3>, 2>, 4>
-    // CHECK: %2 = firrtl.subindex %1[0] : !firrtl.vector<vector<uint<7>, 3>, 2>
-    // CHECK: %3 = firrtl.subindex %2[2] : !firrtl.vector<uint<7>, 3>
-    // CHECK: %4 = firrtl.subfield %w[v] : !firrtl.bundle<a: vector<vector<uint<8>, 2>, 4>, v: vector<vector<vector<uint<7>, 3>, 2>, 4>>
-    // CHECK: %5 = firrtl.subindex %4[0] : !firrtl.vector<vector<vector<uint<7>, 3>, 2>, 4>
-    // CHECK: %6 = firrtl.subindex %5[0] : !firrtl.vector<vector<uint<7>, 3>, 2>
-    // CHECK: %7 = firrtl.subfield %w[a] : !firrtl.bundle<a: vector<vector<uint<8>, 2>, 4>, v: vector<vector<vector<uint<7>, 3>, 2>, 4>>
-    // CHECK: %8 = firrtl.subfield %w[v] : !firrtl.bundle<a: vector<vector<uint<8>, 2>, 4>, v: vector<vector<vector<uint<7>, 3>, 2>, 4>>
-    // CHECK: %9 = firrtl.subindex %7[0] : !firrtl.vector<vector<uint<8>, 2>, 4>
-    // CHECK: %10 = firrtl.subindex %9[0] : !firrtl.vector<uint<8>, 2>
-    // CHECK: %11 = firrtl.subindex %8[0] : !firrtl.vector<vector<vector<uint<7>, 3>, 2>, 4>
-    // CHECK: %12 = firrtl.subindex %11[0] : !firrtl.vector<vector<uint<7>, 3>, 2>
-    // CHECK: %13 = firrtl.subfield %w[a] : !firrtl.bundle<a: vector<vector<uint<8>, 2>, 4>, v: vector<vector<vector<uint<7>, 3>, 2>, 4>>
-    // CHECK: %14 = firrtl.subfield %w[v] : !firrtl.bundle<a: vector<vector<uint<8>, 2>, 4>, v: vector<vector<vector<uint<7>, 3>, 2>, 4>>
-    // CHECK: %15 = firrtl.subindex %13[0] : !firrtl.vector<vector<uint<8>, 2>, 4>
-    // CHECK: %16 = firrtl.subindex %14[0] : !firrtl.vector<vector<vector<uint<7>, 3>, 2>, 4>
-    // CHECK: %17 = firrtl.bundlecreate %15, %16 : (!firrtl.vector<uint<8>, 2>, !firrtl.vector<vector<uint<7>, 3>, 2>) -> !firrtl.bundle<a: vector<uint<8>, 2>, v: vector<vector<uint<7>, 3>, 2>>
-    // CHECK: %n_0 = firrtl.node %17 : !firrtl.bundle<a: vector<uint<8>, 2>, v: vector<vector<uint<7>, 3>, 2>>
-    // CHECK: %18 = firrtl.bundlecreate %10, %12 : (!firrtl.uint<8>, !firrtl.vector<uint<7>, 3>) -> !firrtl.bundle<a: uint<8>, v: vector<uint<7>, 3>>
-    // CHECK: %n_0_1 = firrtl.node %18 : !firrtl.bundle<a: uint<8>, v: vector<uint<7>, 3>>
-    // CHECK: %n_0_1_b = firrtl.node %6 : !firrtl.vector<uint<7>, 3>
-    // CHECK: %n_0_1_b_2 = firrtl.node %3 : !firrtl.uint<7>
   }
-
+  // CHECK-LABEL: @TestDecls()
   firrtl.module @TestVectorAggregate(in %in : !firrtl.vector<bundle<a: uint<8>>, 2>) {
     // %in, and all aliases will change, and the inputs of the vector-create must be computed correctly.
     %in_0 = firrtl.subindex %in[0] : !firrtl.vector<bundle<a: uint<8>>, 2>
@@ -235,7 +235,7 @@ firrtl.circuit "Test" {
     %2 = firrtl.vectorcreate %0, %1 : (!firrtl.vector<bundle<a: uint<8>, b: uint<5>>, 2>, !firrtl.vector<bundle<a: uint<8>, b: uint<5>>, 2>) -> !firrtl.vector<vector<bundle<a: uint<8>, b: uint<5>>, 2>, 2>
   }
 
-  // connect rhs is a rematerialized bundle with flip, Do we preserve the flip? This seems broken
+  // connect rhs is a rematerialized bundle with flip, Do we preserve the flip?
   firrtl.module @VBF(
     in  %i : !firrtl.vector<bundle<a: uint<8>, b flip: uint<8>>, 2>,
     out %o : !firrtl.bundle<a: uint<8>, b flip: uint<8>>) {
@@ -264,4 +264,37 @@ firrtl.circuit "Test" {
     %0 = firrtl.subindex %o[0] : !firrtl.vector<bundle<a: uint<8>, b flip: uint<8>>, 2>
     firrtl.strictconnect %0, %i : !firrtl.bundle<a: uint<8>, b flip: uint<8>>
   }
+
+  /// CHECK-LABEL: @TestSubaccess()
+  firrtl.module @TestSubaccess() {
+
+  }
+
+    /// CHECK-LABEL: @TestPathCaching()
+  firrtl.module @TestPathCaching() {
+    // %w = firrtl.wire : !firrtl.bundle<a: bundle<b: uint<8>>>
+    // %0 = firrtl.subfield %w[a] : !firrtl.bundle<a: bundle<b: uint<8>>>
+    // %1 = firrtl.subfield %0[b] : !firrtl.bundle<b: uint<8>>
+    // %n1 = firrtl.node %0 : !firrtl.bundle<b: uint<8>>
+    // %n2 = firrtl.node %1 : !firrtl.uint<8>
+    %w = firrtl.wire : !firrtl.bundle<a: bundle<b: uint<8>>>
+    %a = firrtl.subfield %w[a] : !firrtl.bundle<a: bundle<b: uint<8>>>
+    %n1 = firrtl.node %a : !firrtl.bundle<b: uint<8>>
+    %b = firrtl.subfield %a[b] : !firrtl.bundle<b: uint<8>>
+    %n2 = firrtl.node %b : !firrtl.uint<8>
+  }
+
+  /// CHECK-LABEL: @TestWhen()
+  firrtl.module @TestWhen() {
+    %w = firrtl.wire : !firrtl.bundle<a: uint<8>>
+    %a = firrtl.subfield %w[a] : !firrtl.bundle<a: uint<8>>
+    %p = firrtl.constant 1 : !firrtl.uint<1>
+    // %n1 = firrtl.node %a : !firrtl.uint<8>
+    firrtl.when %p {
+      %n2 = firrtl.node %a : !firrtl.uint<8>
+    }
+    %n3 = firrtl.node %a : !firrtl.uint<8>
+  }
+
+
 }
