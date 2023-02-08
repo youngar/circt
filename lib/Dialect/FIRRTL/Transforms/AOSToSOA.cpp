@@ -47,21 +47,7 @@ public:
   using FIRRTLVisitor<LiftBundlesVisitor, LogicalResult>::visitExpr;
   using FIRRTLVisitor<LiftBundlesVisitor, LogicalResult>::visitStmt;
 
-  LogicalResult visitUnhandledOp(Operation *op) {
-    for (auto [index, operand] : llvm::enumerate(op->getOperands())) {
-      assert(operand.getType() == convertType(operand.getType()) &&
-             "This is probably a bogus assert");
-      op->setOperand(index, fixROperand(operand));
-    }
-
-    for (auto result : op->getResults()) {
-      assert(result.getType() == convertType(result.getType()) &&
-             "The op should be cloned if any result type changes");
-      valueMap[result] = result;
-    }
-
-    return success();
-  }
+  LogicalResult visitUnhandledOp(Operation *op);
 
   LogicalResult visitInvalidOp(Operation *) { return failure(); }
 
@@ -127,6 +113,7 @@ private:
   /// it must be deleted.
   DenseMap<Value, Value> valueMap;
   DenseMap<FIRRTLBaseType, FIRRTLBaseType> typeMap;
+  
 };
 } // end anonymous namespace
 
@@ -331,6 +318,42 @@ Value LiftBundlesVisitor::fixROperand(Value operand) {
   builder.setInsertionPointAfterValue(operand);
   return builder.create<BundleCreateOp>(operand.getLoc(), newType, values);
 }
+
+//===----------------------------------------------------------------------===//
+// Base Case -- Any Regular Operation
+//===----------------------------------------------------------------------===//
+
+LogicalResult LiftBundlesVisitor::visitUnhandledOp(Operation *op) {
+  // Typical operations are 
+    for (auto [index, operand] : llvm::enumerate(op->getOperands())) {
+      assert(operand.getType() == convertType(operand.getType()) &&
+             "If the operand type has changed, we need to ensure the op is okay with that");
+      op->setOperand(index, fixROperand(operand));
+    }
+
+    bool changed = false;
+    SmallVector<Type> newTypes;
+    for (auto oldResult : op->getResults()) {
+      auto oldType = oldResult.getType();
+      auto newType = convertType(oldType);
+      changed |= oldType != newType;
+      newTypes.push_back(newType);
+    }
+
+    if (changed) {
+      auto *newOp = op->clone();
+      for (size_t i = 0, e = op->getNumResults(); i < e; ++i) {
+        auto newResult = newOp->getResult(i);
+        newResult.setType(newTypes[i]);
+        valueMap[op->getResult(i)] = newResult;
+      }
+    } else {
+      for (auto result : op->getResults())
+        valueMap[result] = result;
+    }
+  
+    return success();
+  }
 
 //===----------------------------------------------------------------------===//
 // Declarations
