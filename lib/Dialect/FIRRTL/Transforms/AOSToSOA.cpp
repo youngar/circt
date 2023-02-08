@@ -64,7 +64,6 @@ public:
   LogicalResult visitStmt(StrictConnectOp);
 
   LogicalResult visitExpr(AggregateConstantOp);
-  LogicalResult visitExpr(BundleCreateOp);
   LogicalResult visitExpr(VectorCreateOp);
   LogicalResult visitExpr(SubindexOp);
   LogicalResult visitExpr(SubfieldOp);
@@ -117,12 +116,12 @@ private:
   /// A cache mapping uncoverted types to their soa-converted equivalents.
   DenseMap<FIRRTLBaseType, FIRRTLBaseType> typeMap;
 
-  /// A cache of subfield/index/access operations, which are typically used
-  /// repeatedly.
+  /// pull an access op from the cache if available, create the op if needed.
   Value getSubfield(Value value, unsigned index);
   Value getSubindex(Value value, unsigned index);
   Value getSubaccess(Value value, Value index);
 
+  /// A cache of generated subfield/index/access operations
   DenseMap<std::pair<Value, unsigned>, Value> subfieldCache;
   DenseMap<std::pair<Value, unsigned>, Value> subindexCache;
   DenseMap<std::pair<Value, Value>, Value> subaccessCache;
@@ -380,6 +379,8 @@ Value LiftBundlesVisitor::fixROperand(ImplicitLocOpBuilder &builder,
 //===----------------------------------------------------------------------===//
 
 LogicalResult LiftBundlesVisitor::visitUnhandledOp(Operation *op) {
+  llvm::errs() << "visitUnhandledOp: " << *op << "\n";
+
   ImplicitLocOpBuilder builder(op->getLoc(), op);
   bool changed = false;
 
@@ -391,6 +392,8 @@ LogicalResult LiftBundlesVisitor::visitUnhandledOp(Operation *op) {
     auto newOperand = fixROperand(builder, oldOperand);
     changed |= (oldOperand != newOperand);
     newOperands.push_back(newOperand);
+    llvm::errs() << "visitUnhandledOp: old operand: " << oldOperand << "\n";
+    llvm::errs() << "visitUnhandledOp: new operand: " << newOperand << "\n";
   }
 
   /// We can rewrite the type of any result, but if any result type changes,
@@ -404,14 +407,23 @@ LogicalResult LiftBundlesVisitor::visitUnhandledOp(Operation *op) {
   }
 
   if (changed) {
-    auto *newOp = op->clone();
+    auto *newOp = builder.clone(*op);
+    llvm::errs() << "visitUnhandledOp: (changed) newOp=" << *newOp << "\n";
     newOp->setOperands(newOperands);
+    for (auto operand : newOperands)
+      llvm::errs() << "visitUnhandledOp: (changed) operand=" << operand << "\n";
+    for (auto i = unsigned(0), e = newOp->getNumOperands(); i < e; ++i) {
+      newOp->setOperand(i, newOperands[i]);
+    }
+  
+    llvm::errs() << "visitUnhandledOp: newOp=" << *newOp << "\n";
     for (size_t i = 0, e = op->getNumResults(); i < e; ++i) {
       auto newResult = newOp->getResult(i);
       newResult.setType(newTypes[i]);
       valueMap[op->getResult(i)] = newResult;
-      toDelete.insert(op);
     }
+    toDelete.insert(op);
+    llvm::errs() << "visitUnhandledOp: newOp=" << *newOp << "\n";
   } else {
     // As a safety precaution, all unchanged "canonical storage locations" must
     // be mapped to themselves.
@@ -758,7 +770,7 @@ LogicalResult LiftBundlesVisitor::visitExpr(AggregateConstantOp op) {
   auto oldType = oldValue.getType();
   auto newType = convertType(oldType);
   if (oldType == newType) {
-    valueMap.insert({oldValue, oldValue});
+    valueMap[oldValue] = oldValue;
     return success();
   }
 
@@ -768,7 +780,7 @@ LogicalResult LiftBundlesVisitor::visitExpr(AggregateConstantOp op) {
   auto newOp =
       builder.create<AggregateConstantOp>(op.getLoc(), newType, fields);
 
-  valueMap[op.getResult()] = newOp.getResult();
+  valueMap[oldValue] = newOp.getResult();
   toDelete.insert(op);
 
   return success();
@@ -777,13 +789,6 @@ LogicalResult LiftBundlesVisitor::visitExpr(AggregateConstantOp op) {
 //===----------------------------------------------------------------------===//
 // Aggregate Create Ops
 //===----------------------------------------------------------------------===//
-
-LogicalResult LiftBundlesVisitor::visitExpr(BundleCreateOp op) {
-  // Tentatively mark as deleted. BundleCreateOps are converted or preserved
-  // on demand.
-  toDelete.insert(op);
-  return success();
-}
 
 Value LiftBundlesVisitor::sinkVecDimIntoOperands(
     ImplicitLocOpBuilder &builder, FIRRTLBaseType type,
