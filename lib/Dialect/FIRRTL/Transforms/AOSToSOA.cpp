@@ -76,7 +76,6 @@ public:
   LogicalResult visitStmt(ConnectOp);
   LogicalResult visitStmt(StrictConnectOp);
 
-  LogicalResult visitStmt(PrintFOp);
   LogicalResult visitExpr(AggregateConstantOp);
   LogicalResult visitExpr(BundleCreateOp);
   LogicalResult visitExpr(VectorCreateOp);
@@ -601,36 +600,6 @@ LogicalResult LiftBundlesVisitor::visitStmt(ConnectOp op) {
 LogicalResult LiftBundlesVisitor::visitStmt(StrictConnectOp op) {
   llvm::errs() << "StrictConnectOp\n";
   handleConnect(op);
-  return success();
-}
-
-LogicalResult LiftBundlesVisitor::visitStmt(PrintFOp op) {
-  bool changed = false;
-
-  auto newClock = fixAtomicOperand(op.getClock());
-  if (newClock != op.getClock())
-    changed = true;
-
-  auto newCond = fixAtomicOperand(op.getCond());
-  if (newCond != op.getCond())
-    changed = true;
-
-  SmallVector<Value, 4> newSubstitutions;
-  for (auto oldSubstitution : op.getSubstitutions()) {
-    auto newSubstitution = fixROperand(oldSubstitution);
-    if (newSubstitution != oldSubstitution)
-      changed = true;
-    newSubstitutions.push_back(newSubstitution);
-  }
-
-  if (!changed)
-    return success();
-
-  OpBuilder builder(op);
-  builder.create<PrintFOp>(op.getLoc(), newClock, newCond, op.getFormatString(),
-                           newSubstitutions, op.getName());
-
-  toDelete.insert(op);
   return success();
 }
 
