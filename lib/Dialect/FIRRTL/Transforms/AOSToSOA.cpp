@@ -493,8 +493,6 @@ LiftBundlesVisitor::fixOperand(FieldRef ref) {
   auto value = ref.getValue();
   auto converted = valueMap.lookup(value);
   assert(converted);
-  if (converted == value)
-    return {{value}, false};
   return buildPath(value, converted, ref.getFieldID());
 }
 
