@@ -105,7 +105,7 @@ private:
                                const SmallVectorImpl<Value> &);
 
   MLIRContext *context;
-  DenseSet<Operation *> toDelete;
+  SmallVector<Operation *> toDelete;
 
   /// A mapping from old values to their fixed up values.
   /// If a value is unchanged, it will be mapped to itself.
@@ -423,7 +423,7 @@ LogicalResult LiftBundlesVisitor::visitUnhandledOp(Operation *op) {
       newResult.setType(newTypes[i]);
       valueMap[op->getResult(i)] = newResult;
     }
-    toDelete.insert(op);
+    toDelete.push_back(op);
     // llvm::errs() << "visitUnhandledOp: newOp=" << *newOp << "\n";
   } else {
     // As a safety precaution, all unchanged "canonical storage locations" must
@@ -468,7 +468,7 @@ LogicalResult LiftBundlesVisitor::visitDecl(InstanceOp op) {
   for (size_t i = 0, e = op.getNumResults(); i < e; ++i)
     valueMap[op.getResult(i)] = newOp.getResult(i);
 
-  toDelete.insert(op);
+  toDelete.push_back(op);
   return success();
 }
 
@@ -502,7 +502,7 @@ LogicalResult LiftBundlesVisitor::visitDecl(MemOp op) {
   for (size_t i = 0, e = op.getNumResults(); i < e; ++i)
     valueMap[op.getResult(i)] = newOp.getResult(i);
 
-  toDelete.insert(op);
+  toDelete.push_back(op);
   return success();
 }
 
@@ -533,7 +533,7 @@ LogicalResult LiftBundlesVisitor::visitDecl(NodeOp op) {
       op.getAnnotationsAttr(), op.getInnerSymAttr());
 
   valueMap[op.getResult()] = newOp.getResult();
-  toDelete.insert(op);
+  toDelete.push_back(op);
   return success();
 }
 
@@ -561,7 +561,7 @@ LogicalResult LiftBundlesVisitor::visitDecl(RegOp op) {
       op.getLoc(), newType, newClockVal, op.getNameAttr(), op.getNameKindAttr(),
       op.getAnnotationsAttr(), op.getInnerSymAttr());
 
-  toDelete.insert(op);
+  toDelete.push_back(op);
   valueMap.insert({op.getResult(), newOp.getResult()});
   return success();
 }
@@ -601,7 +601,7 @@ LogicalResult LiftBundlesVisitor::visitDecl(RegResetOp op) {
       op.getNameAttr(), op.getNameKindAttr(), op.getAnnotationsAttr(),
       op.getInnerSymAttr());
 
-  toDelete.insert(op);
+  toDelete.push_back(op);
   valueMap.insert({op.getResult(), newOp.getResult()});
   return success();
 }
@@ -627,7 +627,7 @@ LogicalResult LiftBundlesVisitor::visitDecl(WireOp op) {
       op.getAnnotationsAttr(), op.getInnerSymAttr());
 
   valueMap[op.getResult()] = newOp.getResult();
-  toDelete.insert(op);
+  toDelete.push_back(op);
   return success();
 }
 
@@ -651,7 +651,7 @@ void LiftBundlesVisitor::handleConnect(OpTy op) {
   if (!lhsExploded && oldLhsType.isPassive()) {
     auto newRhs = fixROperand(builder, op.getSrc());
     builder.create<OpTy>(op.getLoc(), newLhs[0], newRhs);
-    toDelete.insert(op);
+    toDelete.push_back(op);
     return;
   }
 
@@ -682,12 +682,17 @@ void LiftBundlesVisitor::handleConnect(OpTy op) {
     } else if (auto vectorType = type.dyn_cast<FVectorType>()) {
       explodeConnect(vectorType.getElementType());
     } else {
-      builder.create<OpTy>(*newLhsIt++, *newRhsIt++);
+
+      auto newLHS = *newLhsIt++;
+      auto newRHS = *newRhsIt++;
+      llvm::errs() << "lhs=" << newLHS << "\n";
+      llvm::errs() << "rhs=" << newRHS << "\n";
+      builder.create<OpTy>(newLHS, newRHS);
     }
   };
   explodeConnect(newLhsType);
 
-  toDelete.insert(op);
+  toDelete.push_back(op);
 }
 
 LogicalResult LiftBundlesVisitor::visitStmt(ConnectOp op) {
@@ -782,7 +787,7 @@ LogicalResult LiftBundlesVisitor::visitExpr(AggregateConstantOp op) {
       builder.create<AggregateConstantOp>(op.getLoc(), newType, fields);
 
   valueMap[oldValue] = newOp.getResult();
-  toDelete.insert(op);
+  toDelete.push_back(op);
 
   return success();
 }
@@ -843,7 +848,7 @@ LogicalResult LiftBundlesVisitor::visitExpr(VectorCreateOp op) {
     auto newOp =
         builder.create<VectorCreateOp>(op.getLoc(), newType, newFields);
     valueMap[op.getResult()] = newOp.getResult();
-    toDelete.insert(op);
+    toDelete.push_back(op);
     return success();
   }
 
@@ -859,7 +864,7 @@ LogicalResult LiftBundlesVisitor::visitExpr(VectorCreateOp op) {
   auto value = sinkVecDimIntoOperands(
       builder, convertType(oldType.getElementType()), convertedOldFields);
   valueMap[op.getResult()] = value;
-  toDelete.insert(op);
+  toDelete.push_back(op);
   return success();
 }
 
@@ -871,7 +876,7 @@ LogicalResult LiftBundlesVisitor::visitExpr(SubindexOp op) {
   llvm::errs() << "SubindexOp\n";
   // auto rootValue = getFieldRefFromValue(op).getValue();
   // if (valueMap.count(rootValue))
-  toDelete.insert(op);
+  toDelete.push_back(op);
   return success();
 }
 
@@ -879,7 +884,7 @@ LogicalResult LiftBundlesVisitor::visitExpr(SubfieldOp op) {
   llvm::errs() << "SubfieldOp\n";
   // auto rootValue = getFieldRefFromValue(op).getValue();
   // if (valueMap.count(rootValue))
-  toDelete.insert(op);
+  toDelete.push_back(op);
   return success();
 }
 
@@ -939,16 +944,14 @@ LogicalResult LiftBundlesVisitor::visit(FModuleOp op) {
 
   // for (auto it = body->begin(), e = body->end(); it != e; ++it) {
 
-  auto result = body->walk([&](Operation *op) {
+  auto result = body->walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
     if (failed(dispatchVisitor(op)))
       return WalkResult::interrupt();
     return WalkResult::advance();
   });
 
-  for (auto *op : toDelete) {
-    op->dropAllUses();
-    op->erase();
-  }
+  while (!toDelete.empty())
+    toDelete.pop_back_val()->erase();
   op.erasePorts(portsToErase);
 
   if (result.wasInterrupted())
