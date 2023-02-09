@@ -204,16 +204,17 @@ struct VectorAccess {
 } // namespace
 
 Value LiftBundlesVisitor::getSubfield(Value value, unsigned index) {
-  Value &result = subfieldCache[{value, index}];
+  Value result = subfieldCache[{value, index}];
   if (!result) {
     OpBuilder builder(context);
     builder.setInsertionPointAfterValue(value);
-    llvm::errs() << "    getSubfield: cache miss value=" << value
-                 << " index=" << index << "\n";
+    // llvm::errs() << "    getSubfield: cache miss value=" << value
+    //              << " index=" << index << "\n";
     result =
         builder.create<SubfieldOp>(value.getLoc(), value, index).getResult();
+    subfieldCache[{value, index}] = result;
   }
-  llvm::errs() << "    getSubfield: " << result << "\n";
+  // llvm::errs() << "    getSubfield: " << result << "\n";
   return result;
 }
 
@@ -222,12 +223,12 @@ Value LiftBundlesVisitor::getSubindex(Value value, unsigned index) {
   if (!result) {
     OpBuilder builder(context);
     builder.setInsertionPointAfterValue(value);
-    llvm::errs() << "    getSubindex: cache miss value=" << value
-                 << " index=" << index << "\n";
+    // llvm::errs() << "    getSubindex: cache miss value=" << value
+    //              << " index=" << index << "\n";
     result =
         builder.create<SubindexOp>(value.getLoc(), value, index).getResult();
   }
-  llvm::errs() << "    getSubindex: " << result << "\n";
+  // llvm::errs() << "    getSubindex: " << result << "\n";
   return result;
 }
 
@@ -236,12 +237,12 @@ Value LiftBundlesVisitor::getSubaccess(Value value, Value index) {
   if (!result) {
     OpBuilder builder(context);
     builder.setInsertionPointAfterValue(value);
-    llvm::errs() << "    getSubaccess: cache miss value=" << value
-                 << " index=" << index << "\n";
+    // llvm::errs() << "    getSubaccess: cache miss value=" << value
+    //              << " index=" << index << "\n";
     result =
         builder.create<SubaccessOp>(value.getLoc(), value, index).getResult();
   }
-  llvm::errs() << "    getSubaccess: " << result << "\n";
+  // llvm::errs() << "    getSubaccess: " << result << "\n";
   return result;
 }
 
@@ -277,12 +278,12 @@ LiftBundlesVisitor::fixOperand(ImplicitLocOpBuilder &builder, Value value) {
 
   // Value now points at the original canonical storage location.
   // find it's converted equivalent.
-  llvm::errs() << "old value = " << value << "\n";
+  // llvm::errs() << "old value = " << value << "\n";
 
   value = valueMap[value];
   assert(value && "canonical storage location must have been converted");
 
-  llvm::errs() << "new value = " << value << "\n";
+  // llvm::errs() << "new value = " << value << "\n";
 
   // Replay the subaccess operations, in the converted order
   // (bundle accesses first, then vector accesses).
@@ -318,9 +319,9 @@ LiftBundlesVisitor::fixOperand(ImplicitLocOpBuilder &builder, Value value) {
     }
   }
 
-  llvm::errs() << "fixOperand: values:\n";
-  for (auto value : values)
-    llvm::errs() << "    " << value << "\n";
+  // llvm::errs() << "fixOperand: values:\n";
+  // for (auto value : values)
+  //   llvm::errs() << "    " << value << "\n";
 
   return {values, exploded};
 }
@@ -361,14 +362,14 @@ Value LiftBundlesVisitor::fixAtomicOperand(ImplicitLocOpBuilder &builder,
 
 Value LiftBundlesVisitor::fixROperand(ImplicitLocOpBuilder &builder,
                                       Value operand) {
-  llvm::errs() << "fixROperand: val=" << operand << "\n";
+  // llvm::errs() << "fixROperand: val=" << operand << "\n";
 
   auto [values, exploded] = fixOperand(builder, operand);
   if (!exploded) {
-    llvm::errs() << "fixROperand not exploded\n";
+    // llvm::errs() << "fixROperand not exploded\n";
     return values.front();
   }
-  llvm::errs() << "fixROperand exploded\n";
+  // llvm::errs() << "fixROperand exploded\n";
 
   auto newType = convertType(operand.getType());
   return builder.create<BundleCreateOp>(operand.getLoc(), newType, values);
@@ -379,7 +380,7 @@ Value LiftBundlesVisitor::fixROperand(ImplicitLocOpBuilder &builder,
 //===----------------------------------------------------------------------===//
 
 LogicalResult LiftBundlesVisitor::visitUnhandledOp(Operation *op) {
-  llvm::errs() << "visitUnhandledOp: " << *op << "\n";
+  // llvm::errs() << "visitUnhandledOp: " << *op << "\n";
 
   ImplicitLocOpBuilder builder(op->getLoc(), op);
   bool changed = false;
@@ -392,8 +393,8 @@ LogicalResult LiftBundlesVisitor::visitUnhandledOp(Operation *op) {
     auto newOperand = fixROperand(builder, oldOperand);
     changed |= (oldOperand != newOperand);
     newOperands.push_back(newOperand);
-    llvm::errs() << "visitUnhandledOp: old operand: " << oldOperand << "\n";
-    llvm::errs() << "visitUnhandledOp: new operand: " << newOperand << "\n";
+    // llvm::errs() << "visitUnhandledOp: old operand: " << oldOperand << "\n";
+    // llvm::errs() << "visitUnhandledOp: new operand: " << newOperand << "\n";
   }
 
   /// We can rewrite the type of any result, but if any result type changes,
@@ -408,22 +409,22 @@ LogicalResult LiftBundlesVisitor::visitUnhandledOp(Operation *op) {
 
   if (changed) {
     auto *newOp = builder.clone(*op);
-    llvm::errs() << "visitUnhandledOp: (changed) newOp=" << *newOp << "\n";
+    // llvm::errs() << "visitUnhandledOp: (changed) newOp=" << *newOp << "\n";
     newOp->setOperands(newOperands);
     for (auto operand : newOperands)
-      llvm::errs() << "visitUnhandledOp: (changed) operand=" << operand << "\n";
+      // llvm::errs() << "visitUnhandledOp: (changed) operand=" << operand << "\n";
     for (auto i = unsigned(0), e = newOp->getNumOperands(); i < e; ++i) {
       newOp->setOperand(i, newOperands[i]);
     }
-  
-    llvm::errs() << "visitUnhandledOp: newOp=" << *newOp << "\n";
+
+    // llvm::errs() << "visitUnhandledOp: newOp=" << *newOp << "\n";
     for (size_t i = 0, e = op->getNumResults(); i < e; ++i) {
       auto newResult = newOp->getResult(i);
       newResult.setType(newTypes[i]);
       valueMap[op->getResult(i)] = newResult;
     }
     toDelete.insert(op);
-    llvm::errs() << "visitUnhandledOp: newOp=" << *newOp << "\n";
+    // llvm::errs() << "visitUnhandledOp: newOp=" << *newOp << "\n";
   } else {
     // As a safety precaution, all unchanged "canonical storage locations" must
     // be mapped to themselves.
@@ -661,8 +662,8 @@ void LiftBundlesVisitor::handleConnect(OpTy op) {
   if (!lhsExploded && rhsExploded)
     newLhs = explode(newLhs[0]);
 
-  llvm::errs() << "lhsSize = " << newLhs.size() << " rhsSize=" << newRhs.size()
-               << "\n";
+  // llvm::errs() << "lhsSize = " << newLhs.size() << " rhsSize=" << newRhs.size()
+  //              << "\n";
 
   assert(newLhs.size() == newRhs.size() &&
          "Something went wrong exploding the elements");
@@ -827,7 +828,7 @@ LogicalResult LiftBundlesVisitor::visitExpr(VectorCreateOp op) {
     SmallVector<Value> newFields;
     for (auto oldField : op.getFields()) {
       auto newField = fixROperand(builder, oldField);
-      llvm::errs() << "new field : " << newField << "\n";
+      // llvm::errs() << "new field : " << newField << "\n";
       if (oldField != newField)
         changed = true;
       newFields.push_back(newField);
@@ -851,7 +852,7 @@ LogicalResult LiftBundlesVisitor::visitExpr(VectorCreateOp op) {
   SmallVector<Value> convertedOldFields;
   for (auto oldField : op.getFields()) {
     auto convertedField = fixROperand(builder, oldField);
-    llvm::errs() << "new field : " << convertedField << "\n";
+    // llvm::errs() << "new field : " << convertedField << "\n";
     convertedOldFields.push_back(convertedField);
   }
 
@@ -895,10 +896,8 @@ LogicalResult LiftBundlesVisitor::visit(FModuleOp op) {
     for (auto &[index, port] : llvm::enumerate(ports)) {
       auto oldType = port.type;
       auto newType = convertType(oldType);
-      if (newType == oldType) {
-        // valueMap.insert({port, port});
+      if (newType == oldType)
         continue;
-      }
 
       auto newPort = port;
       newPort.type = newType;
