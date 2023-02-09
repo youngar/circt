@@ -409,28 +409,26 @@ LogicalResult LiftBundlesVisitor::visitUnhandledOp(Operation *op) {
 
   if (changed) {
     auto *newOp = builder.clone(*op);
-    // llvm::errs() << "visitUnhandledOp: (changed) newOp=" << *newOp << "\n";
     newOp->setOperands(newOperands);
-    for (auto operand : newOperands)
-      // llvm::errs() << "visitUnhandledOp: (changed) operand=" << operand << "\n";
-    for (auto i = unsigned(0), e = newOp->getNumOperands(); i < e; ++i) {
-      newOp->setOperand(i, newOperands[i]);
-    }
-
-    // llvm::errs() << "visitUnhandledOp: newOp=" << *newOp << "\n";
     for (size_t i = 0, e = op->getNumResults(); i < e; ++i) {
       auto newResult = newOp->getResult(i);
       newResult.setType(newTypes[i]);
       valueMap[op->getResult(i)] = newResult;
     }
     toDelete.push_back(op);
-    // llvm::errs() << "visitUnhandledOp: newOp=" << *newOp << "\n";
+    op = newOp;
   } else {
     // As a safety precaution, all unchanged "canonical storage locations" must
     // be mapped to themselves.
     for (auto result : op->getResults())
       valueMap[result] = result;
   }
+
+  for (auto &region : op->getRegions())
+    for (auto &block : region.getBlocks())
+      for (auto &op : block)
+        if (failed(dispatchVisitor(&op)))
+          return failure();
 
   return success();
 }
@@ -473,7 +471,7 @@ LogicalResult LiftBundlesVisitor::visitDecl(InstanceOp op) {
 }
 
 LogicalResult LiftBundlesVisitor::visitDecl(MemOp op) {
-  llvm::errs() << "MemOp\n";
+  // llvm::errs() << "MemOp\n";
 
   auto changed = false;
   auto oldTypes = op->getResultTypes();
@@ -507,7 +505,7 @@ LogicalResult LiftBundlesVisitor::visitDecl(MemOp op) {
 }
 
 LogicalResult LiftBundlesVisitor::visitDecl(NodeOp op) {
-  llvm::errs() << "NodeOp\n";
+  // llvm::errs() << "NodeOp\n";
 
   auto changed = false;
   ImplicitLocOpBuilder builder(op.getLoc(), op);
@@ -607,7 +605,7 @@ LogicalResult LiftBundlesVisitor::visitDecl(RegResetOp op) {
 }
 
 LogicalResult LiftBundlesVisitor::visitDecl(WireOp op) {
-  llvm::errs() << "WireOp\n";
+  // llvm::errs() << "WireOp\n";
   auto changed = false;
 
   auto oldType = op.getType();
@@ -637,18 +635,22 @@ LogicalResult LiftBundlesVisitor::visitDecl(WireOp op) {
 
 template <typename OpTy>
 void LiftBundlesVisitor::handleConnect(OpTy op) {
-  llvm::errs() << "handle connect\n";
+  // llvm::errs() << "handle connect\n";
   ImplicitLocOpBuilder builder(op.getLoc(), op);
+  llvm::errs() << op << "\n";
 
   auto oldLhs = op.getDest();
   auto oldLhsType = cast<FIRRTLBaseType>(oldLhs.getType());
+  llvm::errs() << "oldLhsType = " << oldLhsType << "\n";
 
   auto [newLhs, lhsExploded] = fixOperand(builder, oldLhs);
+  llvm::errs() << "exploded = " << lhsExploded << "\n";
 
   // Happy-path: The LHS did not explode, and is passive (so, not writing to the
   // RHS). We can guarantee that the rhs will resolve to a single unexploded
   // value.
   if (!lhsExploded && oldLhsType.isPassive()) {
+    llvm::errs() << "!!!!!!should not be here\n";
     auto newRhs = fixROperand(builder, op.getSrc());
     builder.create<OpTy>(op.getLoc(), newLhs[0], newRhs);
     toDelete.push_back(op);
@@ -662,7 +664,8 @@ void LiftBundlesVisitor::handleConnect(OpTy op) {
   if (!lhsExploded && rhsExploded)
     newLhs = explode(newLhs[0]);
 
-  // llvm::errs() << "lhsSize = " << newLhs.size() << " rhsSize=" << newRhs.size()
+  // llvm::errs() << "lhsSize = " << newLhs.size() << " rhsSize=" <<
+  // newRhs.size()
   //              << "\n";
 
   assert(newLhs.size() == newRhs.size() &&
@@ -685,8 +688,8 @@ void LiftBundlesVisitor::handleConnect(OpTy op) {
 
       auto newLHS = *newLhsIt++;
       auto newRHS = *newRhsIt++;
-      llvm::errs() << "lhs=" << newLHS << "\n";
-      llvm::errs() << "rhs=" << newRHS << "\n";
+      // llvm::errs() << "lhs=" << newLHS << "\n";
+      // llvm::errs() << "rhs=" << newRHS << "\n";
       builder.create<OpTy>(newLHS, newRHS);
     }
   };
@@ -696,13 +699,13 @@ void LiftBundlesVisitor::handleConnect(OpTy op) {
 }
 
 LogicalResult LiftBundlesVisitor::visitStmt(ConnectOp op) {
-  llvm::errs() << "ConnectOp\n";
+  // llvm::errs() << "ConnectOp\n";
   handleConnect(op);
   return success();
 }
 
 LogicalResult LiftBundlesVisitor::visitStmt(StrictConnectOp op) {
-  llvm::errs() << "StrictConnectOp\n";
+  // llvm::errs() << "StrictConnectOp\n";
   handleConnect(op);
   return success();
 }
@@ -821,7 +824,7 @@ Value LiftBundlesVisitor::sinkVecDimIntoOperands(
 }
 
 LogicalResult LiftBundlesVisitor::visitExpr(VectorCreateOp op) {
-  llvm::errs() << "VectorCreateOp\n";
+  // llvm::errs() << "VectorCreateOp\n";
 
   ImplicitLocOpBuilder builder(op.getLoc(), op);
 
@@ -873,7 +876,7 @@ LogicalResult LiftBundlesVisitor::visitExpr(VectorCreateOp op) {
 //===----------------------------------------------------------------------===//
 
 LogicalResult LiftBundlesVisitor::visitExpr(SubindexOp op) {
-  llvm::errs() << "SubindexOp\n";
+  // llvm::errs() << "SubindexOp\n";
   // auto rootValue = getFieldRefFromValue(op).getValue();
   // if (valueMap.count(rootValue))
   toDelete.push_back(op);
@@ -881,7 +884,7 @@ LogicalResult LiftBundlesVisitor::visitExpr(SubindexOp op) {
 }
 
 LogicalResult LiftBundlesVisitor::visitExpr(SubfieldOp op) {
-  llvm::errs() << "SubfieldOp\n";
+  // llvm::errs() << "SubfieldOp\n";
   // auto rootValue = getFieldRefFromValue(op).getValue();
   // if (valueMap.count(rootValue))
   toDelete.push_back(op);
@@ -913,6 +916,8 @@ LogicalResult LiftBundlesVisitor::visit(FModuleOp op) {
     }
     op.insertPorts(newPorts);
   }
+  
+  llvm::errs() << op.getNameAttr() << "\n";
 
   auto *body = op.getBodyBlock();
   for (unsigned i = 0, e = body->getNumArguments(); i < e; ++i) {
@@ -944,18 +949,15 @@ LogicalResult LiftBundlesVisitor::visit(FModuleOp op) {
 
   // for (auto it = body->begin(), e = body->end(); it != e; ++it) {
 
-  auto result = body->walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
-    if (failed(dispatchVisitor(op)))
-      return WalkResult::interrupt();
-    return WalkResult::advance();
-  });
+  for (auto &op : *body) {
+    if (failed(dispatchVisitor(&op)))
+      return failure();
+  }
 
   while (!toDelete.empty())
     toDelete.pop_back_val()->erase();
   op.erasePorts(portsToErase);
 
-  if (result.wasInterrupted())
-    return failure();
   return success();
 }
 
