@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "PassDetails.h"
+#include "circt/Dialect/FIRRTL/FIRRTLAnnotations.h"
 #include "circt/Dialect/FIRRTL/FIRRTLOps.h"
 #include "circt/Dialect/FIRRTL/FIRRTLTypes.h"
 #include "circt/Dialect/FIRRTL/FIRRTLUtils.h"
@@ -25,6 +26,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/ErrorHandling.h"
+#include <mlir/IR/BuiltinAttributes.h>
 
 #define DEBUG_TYPE "firrtl-aos-to-soa"
 
@@ -81,6 +83,10 @@ private:
   std::pair<SmallVector<Value>, bool> buildPath(ImplicitLocOpBuilder &builder,
                                                 Value oldValue, Value newValue,
                                                 unsigned fieldID);
+
+  void fixAnnotation(Type oldType, Type newType, DictionaryAttr anno,
+                     SmallVector<Attribute> &newAnnos);
+  ArrayAttr fixAnnotations(Type oldType, Type newType, Attribute annos);
 
   /// Operand Fixup
   std::pair<SmallVector<Value>, bool> fixOperand(Value);
@@ -173,6 +179,91 @@ LiftBundlesVisitor::convertType(FIRRTLBaseType type,
   for (auto size : llvm::reverse(dimensions))
     type = FVectorType::get(type, size);
   return type;
+}
+
+//===----------------------------------------------------------------------===//
+// Annotations
+//===----------------------------------------------------------------------===//
+
+void LiftBundlesVisitor::fixAnnotation(Type oldType, Type newType,
+                                       DictionaryAttr attr,
+                                       SmallVector<Attribute> &newAnnos) {
+  Annotation anno(attr);
+  auto fieldID = anno.getFieldID();
+  llvm::errs() << "fixAnnotation: " << attr << "\n";
+
+  // If the field ID targets the entire structure, we don't need to make a
+  // change.
+  if (fieldID == 0) {
+    newAnnos.push_back(anno.getAttr());
+    return;
+  }
+
+  SmallVector<uint32_t> bundleAccesses;
+  SmallVector<uint32_t> vectorAccesses;
+  while (fieldID != 0) {
+    if (auto bundleType = oldType.dyn_cast<BundleType>()) {
+      auto [index, subID] = bundleType.getIndexAndSubfieldID(fieldID);
+      bundleAccesses.push_back(index);
+      oldType = bundleType.getElementType(index);
+      fieldID = subID;
+      continue;
+    }
+    if (auto vectorType = oldType.dyn_cast<FVectorType>()) {
+      auto [index, subID] = vectorType.getIndexAndSubfieldID(fieldID);
+      vectorAccesses.push_back(index);
+      oldType = vectorType.getElementType();
+      fieldID = subID;
+      continue;
+    }
+    llvm_unreachable("non-zero field ID can only be used on aggregate types");
+  }
+
+  uint64_t newID = 0;
+  for (auto index : llvm::reverse(bundleAccesses)) {
+    auto bundleType = newType.cast<BundleType>();
+    newID += bundleType.getFieldID(index);
+    newType = bundleType.getElementType(index);
+  }
+
+  SmallVector<std::pair<Type, uint64_t>> fields;
+  if (newType.isa<BundleType>() && !vectorAccesses.empty()) {
+    llvm::errs() << "!!! exploded\n";
+    std::function<void(Type type, uint64_t fieldID)> explode =
+        [&](Type type, uint64_t fieldID) {
+          if (auto bundleType = type.dyn_cast<BundleType>()) {
+            for (size_t i = 0, e = bundleType.getNumElements(); i < e; ++i) {
+              auto eltType = bundleType.getElementType(i);
+              auto eltID = fieldID + bundleType.getFieldID(i);
+              explode(eltType, eltID);
+            }
+          } else {
+            fields.emplace_back(type, fieldID);
+          }
+        };
+    explode(newType, newID);
+  } else {
+    fields.emplace_back(newType, newID);
+  }
+
+  auto i64Type = IntegerType::get(context, 64);
+  for (auto [type, fieldID] : fields) {
+    for (auto index : llvm::reverse(vectorAccesses)) {
+      auto vectorType = type.cast<FVectorType>();
+      type = vectorType.getElementType();
+      fieldID += vectorType.getFieldID(index);
+    }
+    anno.setMember("circt.fieldID", IntegerAttr::get(i64Type, fieldID));
+    newAnnos.push_back(anno.getAttr());
+  }
+}
+
+ArrayAttr LiftBundlesVisitor::fixAnnotations(Type oldType, Type newType,
+                                             Attribute annos) {
+  SmallVector<Attribute> newAnnos;
+  for (auto anno : annos.cast<ArrayAttr>().getAsRange<DictionaryAttr>())
+    fixAnnotation(oldType, newType, anno, newAnnos);
+  return ArrayAttr::get(context, newAnnos);
 }
 
 //===----------------------------------------------------------------------===//
@@ -402,8 +493,34 @@ LogicalResult LiftBundlesVisitor::visitUnhandledOp(Operation *op) {
       newResult.setType(newTypes[i]);
       valueMap[op->getResult(i)] = newResult;
     }
+
+    // Annotation updates.
+    if (auto portAnnos = op->getAttrOfType<ArrayAttr>("portAnnotations")) {
+      // Update port annotations. We make a hard assumption that there is one
+      // operation result per set of port annotations.
+      SmallVector<Attribute> newPortAnnos;
+      for (unsigned i = 0, e = portAnnos.size(); i < e; ++i) {
+        auto oldType = op->getResult(i).getType();
+        auto newType = newTypes[i];
+        newPortAnnos.push_back(fixAnnotations(oldType, newType, portAnnos[i]));
+      }
+      newOp->setAttr("portAnnotations", ArrayAttr::get(context, newPortAnnos));
+    } else if (newOp->getNumResults() == 1) {
+      // Update annotations. If the operation does not have exactly 1 result,
+      // then we have no type change with which to understand how to transform
+      // the annotations. We do not update the regular annotations if the
+      // operation had port annotations.
+      if (auto annos = newOp->getAttrOfType<ArrayAttr>("annotations")) {
+        auto oldType = op->getResult(0).getType();
+        auto newType = newTypes[0];
+        auto newAnnos = fixAnnotations(oldType, newType, annos);
+        AnnotationSet(newAnnos, context).applyToOperation(newOp);
+      }
+    }
+
     toDelete.push_back(op);
     op = newOp;
+
   } else {
     // As a safety precaution, all unchanged "canonical storage locations" must
     // be mapped to themselves.
@@ -697,12 +814,13 @@ LogicalResult LiftBundlesVisitor::visit(FModuleOp op) {
       auto newType = convertType(oldType);
       if (newType == oldType)
         continue;
-
       auto newPort = port;
       newPort.type = newType;
-
+      newPort.annotations = AnnotationSet(
+          fixAnnotations(oldType, newType, port.annotations.getArrayAttr()));
       portsToErase[count + index] = true;
       newPorts.push_back({index + 1, newPort});
+
       ++count;
     }
     op.insertPorts(newPorts);
