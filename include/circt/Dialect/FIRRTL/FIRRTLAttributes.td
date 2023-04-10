@@ -16,6 +16,22 @@
 include "FIRRTLDialect.td"
 include "mlir/IR/BuiltinAttributeInterfaces.td"
 
+def FEnumAttr : AttrDef<FIRRTLDialect, "FEnum"> {
+  let mnemonic = "fenum";
+  let summary = "A value of an enumeration";
+  let description = [{
+    This attribute represents a constant value of an anonymous enumeration type.
+    The tag must be one of the valid tags in the enumeration.  The data member
+    represents the constant 
+  }];
+  let parameters = (ins
+    "::mlir::StringAttr":$tag,
+    "::mlir::Attribute":$data,
+    "::circt::firrtl::FEnumType":$type
+  );
+ let assemblyFormat = "`<` $tag `(` $data `)` `:` $type `>`";
+}
+
 //===----------------------------------------------------------------------===//
 // FIRRTL Annotations Definition
 //===----------------------------------------------------------------------===//

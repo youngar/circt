@@ -1583,6 +1583,13 @@ LogicalResult MultibitMuxOp::canonicalize(MultibitMuxOp op,
   return success();
 }
 
+OpFoldResult FEnumCreateOp::fold(FoldAdaptor adaptor) {
+  if (auto input = adaptor.getInput())
+    return FEnumAttr::get(getContext(), adaptor.getTagAttr(), input,
+                          getResult().getType());
+  return {};
+}
+
 //===----------------------------------------------------------------------===//
 // Declarations
 //===----------------------------------------------------------------------===//

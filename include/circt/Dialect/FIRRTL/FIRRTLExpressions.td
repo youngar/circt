@@ -313,6 +313,22 @@ def SubaccessOp : FIRRTLExprOp<"subaccess", [
   let hasCanonicalizer = true;
 }
 
+def FEnumCreateOp : FIRRTLOp<"fenumcreate", [Pure]> {
+  let summary = "Create a value of an enum type";
+  let description = [{
+    This operation creates a value of an enumeration.
+    Example:
+    ```mlir
+      !firrtl.enum "Some"(%0): !firrtl.fenum<None: UInt<0>, Some: UInt<8>>
+    ```
+  }];
+  let arguments = (ins StrAttr:$tag, FIRRTLBaseType:$input);
+  let results = (outs FEnumType:$result);
+  let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
+  let hasFolder = true;
+}
+
 def SubtagOp : FIRRTLExprOp<"subtag"> {
   let summary = "Extract an element of a enum value";
   let description = [{

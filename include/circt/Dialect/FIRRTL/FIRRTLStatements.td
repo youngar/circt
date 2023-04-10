@@ -228,6 +228,34 @@ def WhenOp : FIRRTLOp<"when", [SingleBlock, NoTerminator, NoRegionArguments,
   }];
 }
 
+def MatchOp : FIRRTLOp<"match", [SingleBlock, NoTerminator,
+                               RecursiveMemoryEffects, RecursivelySpeculatable]> {
+  let summary = "Match Statement";
+  let description = [{
+    The "firrtl.match" operation represents a pattern matching statement on a
+    enumeration. This operation does not return a value and cannot be used as an
+    expression. Last connect semantics work similarly to a when statement.
+
+    Example:
+    
+    ```mlir
+      firrtl.match %in : !firrtl.enum<Some: uint<1>, None: uint<0>> {
+        case Some %arg0 {
+          !firrtl.strictconnect %w, %arg0 : !firrtl.uint<1>
+        }
+        case None %arg0 {
+          !firrt.strictconnect %w, %c1 : !firrtl.uint<1>
+        }
+      }
+    ```
+  }];
+  let arguments = (ins FEnumType:$input, StrArrayAttr:$labels);
+  let results = (outs);
+  let regions = (region VariadicRegion<SizedRegion<1>>:$regions);
+  let hasVerifier = 1;
+  let hasCustomAssemblyFormat = 1;
+}
+
 def ForceOp : FIRRTLOp<"force", [SameTypeOperands]> {
   let summary = "Force procedural statement";
   let description = "Maps to the corresponding `sv.force` operation.";

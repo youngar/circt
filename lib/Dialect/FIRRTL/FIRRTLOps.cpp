@@ -2418,6 +2418,122 @@ void WhenOp::build(OpBuilder &builder, OperationState &result, Value condition,
 }
 
 //===----------------------------------------------------------------------===//
+// Match Op
+//===----------------------------------------------------------------------===//
+
+LogicalResult MatchOp::verify() {
+  auto type = getInput().getType();
+
+  // Make sure that the number of labels matches the number of regions.
+  auto numLabels = getLabels().size();
+  auto numRegions = getNumRegions();
+  if (numRegions != numLabels)
+    return emitOpError("expected ")
+           << numRegions << " labels but got " << numLabels;
+
+  // Record the expected types for each label.
+  SmallDenseMap<Attribute, Type> types;
+  for (const auto &elt : getInput().getType())
+    types.try_emplace(elt.name, elt.type);
+
+  SmallDenseSet<Attribute> seen;
+  for (const auto &[label, region] : llvm::zip(getLabels(), getRegions())) {
+
+    // Ensure that the block has a single argument.
+    if (region.getNumArguments() != 1)
+      return emitOpError("region should have exactly one argument");
+
+    // Make sure we have not already matched this label.
+    auto [it, inserted] = seen.insert(label);
+    if (!inserted)
+      return emitOpError("the label ") << label << " is matched more than once";
+
+    // Check if the label does not exist in the enumeration.
+    auto expectedType = types.lookup(label);
+    if (!expectedType)
+      return emitOpError("the label ")
+             << label << " is not a member of the enumeration " << type;
+
+    // Check that the block argument type matches the label's type.
+    auto regionType = region.getArgument(0).getType();
+    if (regionType != expectedType)
+      return emitOpError("region type ")
+             << regionType << " does not match the expected type "
+             << expectedType;
+  }
+
+  // Check that the match statement is exhaustive.
+  for (auto [name, type] : types) {
+    if (!seen.contains(name))
+      return emitOpError("missing case for label ") << name;
+  }
+
+  return success();
+}
+
+void MatchOp::print(OpAsmPrinter &p) {
+  auto input = getInput();
+  auto type = input.getType();
+  auto regions = getRegions();
+  p << " " << input << " : " << type;
+  SmallVector<StringRef> elided = {};
+  p.printOptionalAttrDictWithKeyword((*this)->getAttrs(), elided);
+  p << " {";
+  p.increaseIndent();
+  for (const auto &[label, region] : llvm::zip(getLabels(), regions)) {
+    p.printNewline();
+    p << "case ";
+    p.printKeywordOrString(cast<StringAttr>(label).getValue());
+    p << "(";
+    p.printRegionArgument(region.front().getArgument(0), /*attrs=*/{},
+                          /*omitType=*/true);
+    p << ") ";
+    p.printRegion(region, /*printEntryBlockArgs=*/false);
+  }
+  p.decreaseIndent();
+  p.printNewline();
+  p << "}";
+}
+
+ParseResult MatchOp::parse(OpAsmParser &parser, OperationState &result) {
+  auto *context = parser.getContext();
+  OpAsmParser::UnresolvedOperand input;
+  if (parser.parseOperand(input) || parser.parseColon())
+    return failure();
+
+  auto loc = parser.getCurrentLocation();
+  Type type;
+  if (parser.parseType(type))
+    return failure();
+  auto enumType = type.dyn_cast<FEnumType>();
+  if (!enumType)
+    return parser.emitError(loc, "expected enumeration type but got") << type;
+
+  if (parser.resolveOperand(input, type, result.operands) ||
+      parser.parseOptionalAttrDictWithKeyword(result.attributes) ||
+      parser.parseLBrace())
+    return failure();
+
+  SmallVector<Attribute> labels;
+  for (const auto &elt : enumType) {
+    std::string name;
+    OpAsmParser::Argument arg;
+    auto *region = result.addRegion();
+    if (parser.parseKeyword("case") || parser.parseKeywordOrString(&name) ||
+        parser.parseLParen() || parser.parseArgument(arg) ||
+        parser.parseRParen())
+      return failure();
+    arg.type = elt.type;
+    labels.push_back(StringAttr::get(context, name));
+    if (parser.parseRegion(*region, arg))
+      return failure();
+  }
+  result.addAttribute("labels", ArrayAttr::get(context, labels));
+
+  return parser.parseRBrace();
+}
+
+//===----------------------------------------------------------------------===//
 // Expressions
 //===----------------------------------------------------------------------===//
 
@@ -2747,6 +2863,56 @@ LogicalResult VectorCreateOp::verify() {
     if (elemTy != getOperand(i).getType())
       return emitOpError("type of element doesn't match vector element");
   // TODO: check flow
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// FEnumCreateOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult FEnumCreateOp::verify() {
+  if (!getResult().getType().getElementIndex(getTag()))
+    return emitOpError("label ")
+           << getTag() << " is not a member of the enumeration type "
+           << getResult().getType();
+  return success();
+}
+
+void FEnumCreateOp::print(OpAsmPrinter &printer) {
+  printer << ' ';
+  printer.printKeywordOrString(getTag());
+  printer << '(' << getInput() << ')';
+  SmallVector<StringRef> elidedAttrs = {"tag"};
+  printer.printOptionalAttrDictWithKeyword((*this)->getAttrs(), elidedAttrs);
+  printer << " : " << getResult().getType();
+}
+
+ParseResult FEnumCreateOp::parse(OpAsmParser &parser, OperationState &result) {
+  std::string tag;
+  OpAsmParser::UnresolvedOperand input;
+  if (parser.parseKeywordOrString(&tag) || parser.parseLParen() ||
+      parser.parseOperand(input) || parser.parseRParen())
+    return failure();
+  result.addAttribute("tag", StringAttr::get(parser.getContext(), tag));
+
+  auto loc = parser.getCurrentLocation();
+  Type type;
+  if (parser.parseColonType(type))
+    return failure();
+  auto enumType = type.dyn_cast<FEnumType>();
+  if (!enumType)
+    return parser.emitError(loc, "expected enumeration type");
+
+  auto inputType = enumType.getElementType(tag);
+  if (!inputType)
+    return parser.emitError(loc, "tag ")
+           << tag << " is not a member of the enumeration " << type;
+  
+  if (parser.resolveOperand(input, inputType, result.operands))
+    return failure();
+
+  result.addTypes(type);
+
   return success();
 }
 

@@ -624,6 +624,10 @@ bool firrtl::areTypesEquivalent(FIRRTLType destFType, FIRRTLType srcFType) {
   if (srcType.isa<ResetType>())
     return destType.isResetType();
 
+  // Enum types require an exact match.
+  if (destType.isa<FEnumType>())
+    return destType == srcType;
+
   // Vector types can be connected if they have the same size and element type.
   auto destVectorType = destType.dyn_cast<FVectorType>();
   auto srcVectorType = srcType.dyn_cast<FVectorType>();
@@ -1092,7 +1096,7 @@ std::pair<uint64_t, bool> FVectorType::rootChildFieldID(uint64_t fieldID,
 }
 
 //===----------------------------------------------------------------------===//
-// Enum Type
+// FEnum Type
 //===----------------------------------------------------------------------===//
 
 struct circt::firrtl::detail::FEnumTypeStorage : mlir::TypeStorage {
@@ -1248,12 +1252,17 @@ std::pair<uint64_t, bool> FEnumType::rootChildFieldID(uint64_t fieldID,
 
 auto FEnumType::verify(function_ref<InFlightDiagnostic()> emitErrorFn,
                        ArrayRef<EnumElement> elements) -> LogicalResult {
+  llvm::SmallDenseSet<Attribute> tags;
   for (auto &elt : elements) {
     auto r = elt.type.getRecursiveTypeProperties();
     if (!r.isPassive)
       return emitErrorFn() << "enum field '" << elt.name << "' not passive";
     if (r.containsAnalog)
       return emitErrorFn() << "enum field '" << elt.name << "' contains analog";
+    auto [it, inserted] = tags.insert(elt.name);
+    if (!inserted)
+      return emitErrorFn() << "enum tag " << elt.name
+                           << " occurs more than once";
     // TODO: exclude reference containing
   }
   return success();

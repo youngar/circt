@@ -81,6 +81,12 @@ Operation *FIRRTLDialect::materializeConstant(OpBuilder &builder,
       return builder.create<AggregateConstantOp>(loc, type, arrayAttr);
   }
 
+  if (auto enumAttr = value.dyn_cast<FEnumAttr>()) {
+    auto inputType = enumAttr.getType();
+    // auto input = materializeConstant(builder, Attribute, Type type, Location
+    // loc);
+  }
+
   return nullptr;
 }
 
