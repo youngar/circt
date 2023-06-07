@@ -581,6 +581,7 @@ void IMConstPropPass::visitConnectLike(FConnectLike connect) {
   }
 
   FIRRTLBaseType baseType = getBaseType(destTypeFIRRTL);
+  assert(baseType && "can only connect base types");
 
   auto fieldRefSrc = getOrCacheFieldRefFromValue(connect.getSrc());
   auto fieldRefDest = getOrCacheFieldRefFromValue(connect.getDest());

@@ -646,8 +646,12 @@ LogicalResult circt::firrtl::applyGCTDataTaps(const AnnoPathValue &target,
     auto sinkBuilder = ImplicitLocOpBuilder::atBlockEnd(wireModule.getLoc(),
                                                         targetOp->getBlock());
     auto wireType = cast<FIRRTLBaseType>(targetOp->getResult(0).getType());
-    // Get type of sent value, if already a RefType, the base type.
+    // Get type of sent value, if already a RefType, the base type, otherwise
+    // error out.
     auto valType = getBaseType(cast<FIRRTLType>(sendVal.getType()));
+    if (!valType)
+      return mlir::emitError(sendVal.getLoc(), "uhhh");
+
     Value sink = getValueByFieldID(sinkBuilder, targetOp->getResult(0),
                                    wireTarget->fieldIdx);
 

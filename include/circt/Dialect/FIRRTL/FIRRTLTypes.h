@@ -296,6 +296,19 @@ public:
 };
 
 //===----------------------------------------------------------------------===//
+// PropertyTypes
+//===----------------------------------------------------------------------===//
+
+class PropertyType : public Type {
+public:
+  /// Support method to enable LLVM-style type casting.
+  static bool classof(Type type) { return llvm::isa<StringType>(type); }
+
+protected:
+  using Type::Type;
+};
+
+//===----------------------------------------------------------------------===//
 // Type helpers
 //===----------------------------------------------------------------------===//
 

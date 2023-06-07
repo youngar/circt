@@ -770,6 +770,7 @@ ParseResult FIRParser::parseEnumType(FIRRTLType &result) {
 ///      ::= type '[' intLit ']'
 ///      ::= 'Probe' '<' type '>'
 ///      ::= 'RWProbe' '<' type '>'
+///      ::= 'String'
 ///
 /// field: 'flip'? fieldId ':' type
 ///
@@ -879,6 +880,11 @@ ParseResult FIRParser::parseType(FIRRTLType &result, const Twine &message) {
   case FIRToken::l_brace_bar:
     if (parseEnumType(result))
       return failure();
+    break;
+
+  case FIRToken::kw_String:
+    consumeToken(FIRToken::kw_String);
+    result = StringType::get(getContext());
     break;
   }
 
@@ -1385,6 +1391,7 @@ private:
   ParseResult parseRefReleaseInitial();
   ParseResult parseRefRead(Value &result);
   ParseResult parseProbe(Value &result);
+  ParseResult parsePropAssign();
   ParseResult parseRWProbe(Value &result);
   ParseResult parseLeadingExpStmt(Value lhs);
   ParseResult parseConnect();
@@ -1600,6 +1607,26 @@ ParseResult FIRStmtParser::parseExpImpl(Value &result, const Twine &message,
     if (parseIntegerLiteralExp(result))
       return failure();
     break;
+  case FIRToken::kw_String: {
+    locationProcessor.setLoc(getToken().getLoc());
+    // auto startLoc = getToken().getLoc();
+    consumeToken(FIRToken::kw_String);
+    StringRef spelling;
+    if (parseToken(FIRToken::l_paren, "expected '(' in String expression") ||
+        parseGetSpelling(spelling) ||
+        parseToken(FIRToken::string,
+                   "expected string literal in String expression") ||
+        parseToken(FIRToken::r_paren, "expected ')' in String expression"))
+      return failure();
+    result = builder.create<StringConstantOp>(
+        builder.getStringAttr(FIRToken::getStringValue(spelling)));
+    break;
+  }
+  //case FIRToken::lp_strcat: {
+  //  consumeToken(FIRToken::lp_strcat);
+  //  result = builder.create<StringConcatOp>();
+  //  break;
+  //}
 
     // Otherwise there are a bunch of keywords that are treated as identifiers
     // try them.
@@ -2111,6 +2138,8 @@ ParseResult FIRStmtParser::parseSimpleStmtImpl(unsigned stmtIndent) {
   auto kind = getToken().getKind();
   /// Massage the kind based on the FIRRTL Version.
   switch (kind) {
+  // TODO: What version were these new properties added in?
+  //case FIRToken::kw_passign:
   case FIRToken::kw_invalidate:
   case FIRToken::kw_connect:
   case FIRToken::kw_regreset:
@@ -2136,6 +2165,8 @@ ParseResult FIRStmtParser::parseSimpleStmtImpl(unsigned stmtIndent) {
     return parseMemPort(MemDirAttr::ReadWrite);
   case FIRToken::kw_connect:
     return parseConnect();
+  case FIRToken::kw_passign:
+    return parsePropAssign();
   case FIRToken::kw_invalidate:
     return parseInvalidate();
   case FIRToken::lp_printf:
@@ -2963,7 +2994,7 @@ ParseResult FIRStmtParser::parseConnect() {
   auto lhsType = lhs.getType().dyn_cast<FIRRTLBaseType>();
   auto rhsType = rhs.getType().dyn_cast<FIRRTLBaseType>();
   if (!lhsType || !rhsType)
-    return emitError(loc, "cannot connect reference types");
+    return emitError(loc, "cannot connect reference or property types");
   // TODO: Once support lands for agg-of-ref, add test for this check!
   if (lhsType.containsReference() || rhsType.containsReference())
     return emitError(loc, "cannot connect types containing references");
@@ -2974,6 +3005,28 @@ ParseResult FIRStmtParser::parseConnect() {
 
   locationProcessor.setLoc(loc);
   emitConnect(builder, lhs, rhs);
+  return success();
+}
+
+/// passign ::= 'passign' expr expr
+ParseResult FIRStmtParser::parsePropAssign() {
+  auto startTok = consumeToken(FIRToken::kw_passign);
+  auto loc = startTok.getLoc();
+
+  Value lhs, rhs;
+  if (parseExp(lhs, "expected passign expression") ||
+      parseExp(rhs, "expected passign expression") || parseOptionalInfo())
+    return failure();
+
+  auto lhsType = lhs.getType().dyn_cast<PropertyType>();
+  auto rhsType = rhs.getType().dyn_cast<PropertyType>();
+  if (!lhsType || !rhsType)
+    return emitError(loc, "can only passign property types");
+  if (lhsType != rhsType)
+    return emitError(loc, "cannot passign non-equivalent type ")
+           << rhsType << " to " << lhsType;
+  locationProcessor.setLoc(loc);
+  builder.create<PropAssignOp>(lhs, rhs);
   return success();
 }
 
@@ -3032,7 +3085,7 @@ ParseResult FIRStmtParser::parseLeadingExpStmt(Value lhs) {
   auto lhsType = lhs.getType().dyn_cast<FIRRTLBaseType>();
   auto rhsType = rhs.getType().dyn_cast<FIRRTLBaseType>();
   if (!lhsType || !rhsType)
-    return emitError(loc, "cannot connect reference types");
+    return emitError(loc, "cannot connect reference or property types");
   // TODO: Once support lands for agg-of-ref, add test for this check!
   if (lhsType.containsReference() || rhsType.containsReference())
     return emitError(loc, "cannot connect types containing references");

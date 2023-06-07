@@ -401,6 +401,11 @@ OpFoldResult AggregateConstantOp::fold(FoldAdaptor adaptor) {
   return getFieldsAttr();
 }
 
+OpFoldResult StringConstantOp::fold(FoldAdaptor adaptor) {
+  assert(adaptor.getOperands().empty() && "constant has no operands");
+  return getValueAttr();
+}
+
 //===----------------------------------------------------------------------===//
 // Binary Operators
 //===----------------------------------------------------------------------===//
@@ -937,6 +942,14 @@ LogicalResult NEQPrimOp::canonicalize(NEQPrimOp op, PatternRewriter &rewriter) {
 
         return {};
       });
+}
+
+OpFoldResult StringConcatOp::fold(FoldAdaptor adaptor) {
+  auto lhs = dyn_cast_or_null<StringAttr>(adaptor.getLhs());
+  auto rhs = dyn_cast_or_null<StringAttr>(adaptor.getRhs());
+  if (!lhs || !rhs)
+    return {};
+  return StringAttr::get(getContext(), lhs.getValue() + rhs.getValue());
 }
 
 //===----------------------------------------------------------------------===//

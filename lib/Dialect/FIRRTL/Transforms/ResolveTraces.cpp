@@ -139,6 +139,9 @@ private:
   bool updatePortTarget(FModuleLike &module, Annotation &anno,
                         unsigned portIdx) {
     auto type = getBaseType(cast<FIRRTLType>(module.getPortType(portIdx)));
+    // TODO: what does this really do? Should we be emitting an error message?
+    if (!type)
+      return false;
     return updateTargetImpl(anno, module, type, module.getPortName(portIdx));
   }
 
@@ -165,6 +168,9 @@ private:
     }
 
     auto baseType = getBaseType(cast<FIRRTLType>(type));
+    // TODO: ???
+    if (!baseType)
+      return false;
     return updateTargetImpl(anno, module, baseType, name);
   }
 

@@ -104,9 +104,7 @@ static LogicalResult customTypePrinter(Type type, AsmPrinter &os) {
         printNestedType(refType.getType(), os);
         os << '>';
       })
-      .Case<StringType>([&](auto stringType) {
-        os << "string";
-      })
+      .Case<StringType>([&](auto stringType) { os << "string"; })
       .Default([&](auto) { anyFailed = true; });
   return failure(anyFailed);
 }
@@ -524,6 +522,9 @@ RecursiveTypeProperties FIRRTLType::getRecursiveTypeProperties() const {
       .Case<BundleType, FVectorType, FEnumType, OpenBundleType, OpenVectorType,
             RefType>(
           [](auto type) { return type.getRecursiveTypeProperties(); })
+      .Case<StringType>([](auto type) {
+        return RecursiveTypeProperties{true, false, false, false, false, false};
+      })
       .Default([](Type) {
         llvm_unreachable("unknown FIRRTL type");
         return RecursiveTypeProperties{};

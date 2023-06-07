@@ -2959,4 +2959,13 @@ firrtl.module @RefTypes(
   firrtl.strictconnect %flipbundle_wire, %flipbundle_read : !firrtl.bundle<a: uint<1>>
 }
 
+// CHECK-LABEL: @StringConcat
+firrtl.module @StringConcat(out %out : !firrtl.string) {
+  %0 = firrtl.string "hel"
+  %1 = firrtl.string "lo"
+  %2 = firrtl.string.concat %0, %1
+  firrtl.connect %out, %2 : !firrtl.string, !firrtl.string
+  // CHECK: %0 = firrtl.string "hello"
+  // CHECK: firrtl.connect %out, %0
+}
 }

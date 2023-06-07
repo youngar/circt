@@ -989,6 +989,60 @@ def BitCastOp: FIRRTLOp<"bitcast", [Pure]> {
 }
 
 //===----------------------------------------------------------------------===//
+// Properties
+//===----------------------------------------------------------------------===//
+
+def StringConstantOp : FIRRTLOp<"string", [Pure, ConstantLike]> {
+  let summary = "Produce a constant string value";
+  let description = [{
+    Produces a constant value of string type.
+
+    Example:
+    ```mlir
+    %0 = firrtl.string "hello world"
+    ```
+  }];
+  let arguments = (ins StrAttr:$value);
+  let results = (outs StringType:$result);
+  let hasFolder = 1;
+  let assemblyFormat = "$value attr-dict";
+}
+
+def StringConcatOp : FIRRTLOp<"string.concat", [Pure, HasCustomSSAName]> {
+  let summary = "Concatenate two strings together";
+  let description = [{
+    Produces a string by concatenating the string together in to a single
+    string.
+    
+    Example:
+    ```mlir
+    %1 = firrtl.string.concat %0, %1
+    ```
+  }];
+  let arguments = (ins StringType:$lhs, StringType:$rhs);
+  let results = (outs StringType:$result);
+  let hasFolder = 1;
+  let assemblyFormat = "$lhs `,` $rhs attr-dict";
+  let extraClassDeclaration = [{
+    /// Required for primitive operations.
+    static FIRRTLType validateAndInferReturnType(ValueRange operands,
+                                                 ArrayRef<NamedAttribute> attrs,
+                                                 Location loc) {
+      if (operands.size() == 2 &&
+          isa<StringType>(operands[0].getType()) &&
+          isa<StringType>(operands[1].getType()))
+        return cast<FIRRTLBaseType>(operands[0].getType());
+     return {};
+    }
+    static FIRRTLType inferReturnType(ValueRange operands,
+                                      ArrayRef<NamedAttribute> attrs,
+                                      std::optional<Location> loc) {
+      return cast<FIRRTLBaseType>(operands[0].getType());
+    }
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // RefOperations: Operations on the RefType.
 //
 // The RefType is used to capture dataflow paths.

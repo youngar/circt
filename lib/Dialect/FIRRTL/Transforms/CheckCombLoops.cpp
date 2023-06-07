@@ -248,12 +248,12 @@ public:
   void preprocess(SmallVector<Value> &worklist) {
     // All the input ports are added to the worklist.
     for (BlockArgument arg : module.getArguments()) {
-      auto argType = arg.getType();
-      if (argType.isa<RefType>())
+      auto argType = getBaseType(cast<FIRRTLType>(arg.getType()));
+      if (!argType)
         continue;
       if (module.getPortDirection(arg.getArgNumber()) == Direction::In)
         worklist.push_back(arg);
-      if (!argType.cast<FIRRTLBaseType>().isGround())
+      if (!argType.isGround())
         setValRefsTo(arg, FieldRef(arg, 0));
     }
     DenseSet<Value> memPorts;
