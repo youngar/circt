@@ -275,7 +275,7 @@ struct EachSubOp;
 template <typename F>
 struct EachSubOp<F, mlir::LogicalResult> {
   mlir::LogicalResult operator()(InstanceOp op, F &&fn) const {
-    for (auto *user : op->getUsers()) {
+    for (auto *user : llvm::make_early_inc_range(op->getUsers())) {
       auto subOp = mlir::cast<InstanceSubOp>(user);
       if (mlir::failed(fn(subOp)))
         return mlir::failure();
@@ -288,7 +288,7 @@ struct EachSubOp<F, mlir::LogicalResult> {
 template <typename F>
 struct EachSubOp<F, void> {
   void operator()(InstanceOp op, F &&fn) const {
-    for (auto *user : op->getUsers()) {
+    for (auto *user : llvm::make_early_inc_range(op->getUsers())) {
       auto subOp = mlir::cast<InstanceSubOp>(user);
       fn(subOp);
     }
