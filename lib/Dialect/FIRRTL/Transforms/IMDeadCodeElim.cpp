@@ -54,6 +54,7 @@ static bool isWeakReferencingAnnotation(Annotation anno) {
          (tpe == "OMReferenceTarget" || tpe == "OMMemberReferenceTarget" ||
           tpe == "OMMemberInstanceTarget");
 }
+
 namespace {
 struct IMDeadCodeElimPass : public IMDeadCodeElimBase<IMDeadCodeElimPass> {
   void runOnOperation() override;
@@ -102,10 +103,6 @@ private:
   /// The set of blocks that are known to execute, or are intrinsically alive.
   DenseSet<Block *> executableBlocks;
 
-  /// This keeps track of users the instance results that correspond to output
-  /// ports.
-  DenseMap<BlockArgument, llvm::TinyPtrVector<mlir::OpResult>>
-      resultPortToInstanceResultMapping;
   InstanceGraph *instanceGraph;
 
   // The type with which we associate liveness.
@@ -122,10 +119,6 @@ private:
   /// the users need to be reprocessed.
   SmallVector<ElementType, 64> worklist;
   llvm::DenseSet<ElementType> liveElements;
-
-  /// This keeps track of input ports that need to be kept if the associated
-  /// instance is alive.
-  DenseMap<InstanceOp, SmallVector<mlir::OpResult>> lazyLiveInputPorts;
 
   /// A map from instances to hierpaths whose last path is the associated
   /// instance.
@@ -157,8 +150,12 @@ void IMDeadCodeElimPass::visitInstanceOp(InstanceOp instance) {
     markAlive(hierPath);
 
   // Input ports get alive only when the instance is alive.
-  for (auto inputPort : lazyLiveInputPorts[instance])
-    markAlive(inputPort);
+  for (auto &blockArg : module.getBody().getArguments()) {
+    auto portNo = blockArg.getArgNumber();
+    if (module.getPortDirection(portNo) == Direction::In &&
+        isKnownAlive(module.getArgument(portNo)))
+      markAlive(instance.getResult(portNo));
+  }
 }
 
 void IMDeadCodeElimPass::visitModuleOp(FModuleOp module) {
@@ -215,14 +212,13 @@ void IMDeadCodeElimPass::markInstanceOp(InstanceOp instance) {
   // alive.
   if (!isa<FModuleOp>(op)) {
     auto module = dyn_cast<FModuleLike>(op);
-    for (auto *user : module->getUsers()) {
-      auto subOp = cast<InstanceSubOp>(user);
-      auto index = subOp.getIndex();
+    for (auto resultNo : llvm::seq(0u, instance.getNumResults())) {
       // If this is an output to the extmodule, we can ignore it.
       if (instance.getElement(index).direction == Direction::Out)
         continue;
+
       // Otherwise this is an input from it or an inout, mark it as alive.
-      markAlive(subOp);
+      markAlive(instance.getResult(resultNo));
     }
     markAlive(instance);
 
@@ -230,21 +226,8 @@ void IMDeadCodeElimPass::markInstanceOp(InstanceOp instance) {
   }
 
   // Otherwise this is a defined module.
-  auto module = cast<FModuleOp>(op);
-  markBlockExecutable(module.getBodyBlock());
-
-  // Ok, it is a normal internal module reference so populate
-  // resultPortToInstanceResultMapping.
-  for (auto *user : instance->getUsers()) {
-    auto subOp = cast<InstanceSubOp>(user);
-    auto index = subOp.getIndex();
-
-    // Otherwise we have a result from the instance.  We need to forward results
-    // from the body to this instance result's SSA value, so remember it.
-    BlockArgument modulePortVal = module.getArgument(index);
-    resultPortToInstanceResultMapping[modulePortVal].push_back(
-        subOp->getOpResult(0));
-  }
+  auto fModule = cast<FModuleOp>(op);
+  markBlockExecutable(fModule.getBodyBlock());
 }
 
 void IMDeadCodeElimPass::markBlockExecutable(Block *block) {
@@ -459,9 +442,7 @@ void IMDeadCodeElimPass::runOnOperation() {
 
   // Clean up data structures.
   executableBlocks.clear();
-  resultPortToInstanceResultMapping.clear();
   liveElements.clear();
-  lazyLiveInputPorts.clear();
   instanceToHierPaths.clear();
   hierPathToElements.clear();
 }
@@ -481,13 +462,10 @@ void IMDeadCodeElimPass::visitValue(Value value) {
     // instances as alive. We don't have to propagate the liveness of output
     // ports.
     if (portDirection == Direction::In) {
-      for (auto userOfResultPort :
-           resultPortToInstanceResultMapping[blockArg]) {
-        auto instance = userOfResultPort.getDefiningOp<InstanceOp>();
+      for (auto *instRec : instanceGraph->lookup(module)->uses()) {
+        auto instance = cast<InstanceOp>(instRec->getInstance());
         if (liveElements.contains(instance))
-          markAlive(userOfResultPort);
-        else
-          lazyLiveInputPorts[instance].push_back(userOfResultPort);
+          markAlive(instance.getResult(blockArg.getArgNumber()));
       }
     }
     return;
@@ -596,18 +574,17 @@ void IMDeadCodeElimPass::rewriteModuleSignature(FModuleOp module) {
   if (!isBlockExecutable(module.getBodyBlock()))
     return;
 
-  InstanceGraphNode *instanceGraphNode =
-      instanceGraph->lookup(module.getModuleNameAttr());
+  InstanceGraphNode *instanceGraphNode = instanceGraph->lookup(module);
   LLVM_DEBUG(llvm::dbgs() << "Prune ports of module: " << module.getName()
                           << "\n");
 
   auto replaceInstanceResultWithWire = [&](ImplicitLocOpBuilder &builder,
                                            unsigned index,
                                            InstanceOp instance) {
-    auto result = builder.create<InstanceSubOp>(instance, index);
-    if (isAssumedDead(*result)) {
-      // If the result is dead, replace the result with an unrealiazed
-      // conversion cast which works as a dummy placeholder.
+    auto result = instance.getResult(index);
+    if (isAssumedDead(result)) {
+      // If the result is dead, replace the result with an unrealized conversion
+      // cast which works as a dummy placeholder.
       auto wire = builder
                       .create<mlir::UnrealizedConversionCastOp>(
                           ArrayRef<Type>{result.getType()}, ArrayRef<Value>{})
@@ -686,15 +663,20 @@ void IMDeadCodeElimPass::rewriteModuleSignature(FModuleOp module) {
     if (hasDontTouch(argument))
       continue;
 
-    // If the port is known alive, then we can't delete it except for write-only
-    // output ports.
     if (isKnownAlive(argument)) {
-      bool deadOutputPortAtAnyInstantiation =
-          module.getPortDirection(index) == Direction::Out &&
-          llvm::all_of(resultPortToInstanceResultMapping[argument],
-                       [&](Value result) { return isAssumedDead(result); });
 
-      if (!deadOutputPortAtAnyInstantiation)
+      // If an output port is only used internally in the module, then we can
+      // remove the port and replace it with a wire.
+      if (module.getPortDirection(index) == Direction::In)
+        continue;
+
+      // Check if the output port is demanded by any instance.  If not, then it
+      // is only demanded internally to the module.
+      if (llvm::any_of(instanceGraph->lookup(module)->uses(),
+                       [&](InstanceRecord *record) {
+                         return isKnownAlive(
+                             record->getInstance()->getResult(index));
+                       }))
         continue;
 
       // RefType can't be a wire, especially if it won't be erased.  Skip.
