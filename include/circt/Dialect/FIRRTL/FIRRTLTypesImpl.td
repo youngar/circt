@@ -504,16 +504,13 @@ def InstanceImpl : FIRRTLImplType<"Instance", [MutableTypeTrait],
   }];
   let parameters = (ins
     FlatSymbolRefAttr:$moduleName,
-    "ArrayRef<InstanceElement>":$elements
+    ArrayRefParameter<"InstanceElement">:$elements
   );
-  let genStorageClass  =false;
+  let genStorageClass = false;
   let storageClass = "InstanceTypeStorage";
   let genAccessors = false;
   let skipDefaultBuilders = true;
   let builders = [
-    // Build an uninitialized module (fields have not been set).
-    TypeBuilderWithInferredContext<(ins "FlatSymbolRefAttr":$moduleName)>,
-    /// Build a module initialized with fields.
     TypeBuilderWithInferredContext<(ins "FlatSymbolRefAttr":$moduleName,
                                         "ArrayRef<InstanceElement>":$elements)>,
     TypeBuilderWithInferredContext<(ins "StringAttr":$moduleName,
@@ -521,9 +518,6 @@ def InstanceImpl : FIRRTLImplType<"Instance", [MutableTypeTrait],
     TypeBuilderWithInferredContext<(ins "FModuleLike":$module)>
   ];
   let extraClassDeclaration = [{
-    bool initialized() const;
-    LogicalResult initialize(ArrayRef<InstanceElement>);
-  
     FlatSymbolRefAttr getModuleNameAttr() const;
     StringRef getModuleName() const;
 

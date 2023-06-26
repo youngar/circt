@@ -453,11 +453,11 @@ class LowerXMRPass : public LowerXMRBase<LowerXMRPass> {
             getRefABIMacroForPort(extRefMod, index, circuitRefPrefix, true);
       }
 
-      inst.eachSubOp([&](auto subOp, auto i) {
+      inst.eachSubOp([&](auto subOp) {
         if (!isa<RefType>(subOp.getType()))
           return;
 
-        auto inRef = getInnerRefTo(inst);
+        auto inRef = getInnerRefTo(inst.getResult());
         auto index = addReachingSendsEntry(subOp, inRef);
         xmrPathSuffix[index] = paths[index];
       });
@@ -486,14 +486,16 @@ class LowerXMRPass : public LowerXMRBase<LowerXMRPass> {
       setPortToRemove(inst, portNum, numPorts);
     }
 
-    inst.eachSubOp([&](InstanceSubOp instanceResult) {
+    return inst.eachSubOp([&](InstanceSubOp instanceResult) -> LogicalResult {
       auto portNum = instanceResult.getIndex();
       if (!instanceResult.getType().isa<RefType>())
-        return;
+        return success();
       // Drop the dead-instance-ports.
       if (instanceResult.use_empty() ||
           isZeroWidth(cast<RefType>(instanceResult.getType()).getType()))
-        auto refModuleArg = refMod.getArgument(portNum);
+        return success();
+
+      auto refModuleArg = refMod.getArgument(portNum);
       if (inst.getPortDirection(portNum) == Direction::Out) {
         // For output instance ports, the dataflow is into this module.
         // Get the remote RefSendOp, that flows through the module ports.
@@ -503,7 +505,7 @@ class LowerXMRPass : public LowerXMRBase<LowerXMRPass> {
           return failure();
         // Get the path to reaching refSend at the referenced module argument.
         // Now append this instance to the path to the reaching refSend.
-        addReachingSendsEntry(instanceResult, getInnerRefTo(inst),
+        addReachingSendsEntry(instanceResult, getInnerRefTo(inst.getResult()),
                               remoteOpPath);
       } else {
         // For input instance ports, the dataflow is into the referenced module.
@@ -511,16 +513,16 @@ class LowerXMRPass : public LowerXMRBase<LowerXMRPass> {
         // No need to add the instance context, since downward reference must be
         // through single instantiated modules.
         if (multiplyInstantiated)
-          return refMod.emitOpError(
+          return LogicalResult(refMod.emitOpError(
                      "multiply instantiated module with input RefType port '")
-                 << refMod.getPortName(portNum) << "'";
+                 << refMod.getPortName(portNum) << "'");
         dataFlowClasses->unionSets(
             dataFlowClasses->getOrInsertLeaderValue(refModuleArg),
             dataFlowClasses->getOrInsertLeaderValue(instanceResult));
       }
-    });
 
-    return success();
+      return success();
+    });
   }
 
   LogicalResult handlePublicModuleRefPorts(FModuleOp module) {

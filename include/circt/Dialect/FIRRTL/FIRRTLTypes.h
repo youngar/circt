@@ -339,6 +339,10 @@ struct InstanceElement {
   bool operator!=(const InstanceElement &rhs) const { return !(*this == rhs); }
 };
 
+inline llvm::hash_code hash_value(const InstanceElement &element) {
+  return llvm::hash_combine(element.name, element.type, element.direction);
+}
+
 //===----------------------------------------------------------------------===//
 // Type helpers
 //===----------------------------------------------------------------------===//
@@ -389,5 +393,5 @@ struct DenseMapInfo<circt::firrtl::FIRRTLType> {
 };
 
 } // namespace llvm
-  
+
 #endif // CIRCT_DIALECT_FIRRTL_TYPES_H

@@ -604,8 +604,8 @@ void IMDeadCodeElimPass::rewriteModuleSignature(FModuleOp module) {
   auto replaceInstanceResultWithWire = [&](ImplicitLocOpBuilder &builder,
                                            unsigned index,
                                            InstanceOp instance) {
-    auto result = instance.getResult(index);
-    if (isAssumedDead(result)) {
+    auto result = builder.create<InstanceSubOp>(instance, index);
+    if (isAssumedDead(*result)) {
       // If the result is dead, replace the result with an unrealiazed
       // conversion cast which works as a dummy placeholder.
       auto wire = builder

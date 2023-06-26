@@ -2243,45 +2243,41 @@ static uint64_t getMaxFieldID(Type type) {
 }
 
 struct firrtl::detail::InstanceTypeStorage : public TypeStorage {
-  using KeyTy = FlatSymbolRefAttr;
-  using InstanceElement = InstanceElement;
+  using KeyTy = std::tuple<FlatSymbolRefAttr, ArrayRef<InstanceElement>>;
 
   static InstanceTypeStorage *construct(TypeStorageAllocator &allocator,
                                         const KeyTy &key) {
     auto *storage = allocator.allocate<InstanceTypeStorage>();
-    return new (storage) InstanceTypeStorage(key);
+    auto [moduleName, elements] = key;
+    return new (storage) InstanceTypeStorage(allocator, moduleName, elements);
   }
 
-  InstanceTypeStorage(FlatSymbolRefAttr moduleName)
-      : moduleName(moduleName), elements() {}
-
-  bool initialized() const { return elements.data() != nullptr; }
-
-  LogicalResult mutate(TypeStorageAllocator &allocator,
-                       ArrayRef<InstanceElement> newElements) {
-    if (elements.data() != nullptr)
-      return success(elements == newElements);
-
+  InstanceTypeStorage(TypeStorageAllocator &allocator,
+                      FlatSymbolRefAttr moduleName,
+                      ArrayRef<InstanceElement> elements)
+      : moduleName(moduleName), elements(), fieldIDs(), maxFieldID(0) {
     uint64_t fieldID = 0;
-    SmallVector<uint64_t> newFieldIDs;
-    newFieldIDs.reserve(elements.size());
+    SmallVector<uint64_t> fieldIDs;
+    fieldIDs.reserve(elements.size());
     for (auto &element : elements) {
       fieldID += 1;
-      newFieldIDs.push_back(fieldID);
+      fieldIDs.push_back(fieldID);
       // Increment the field ID for the next field by the number of subfields.
       fieldID += getMaxFieldID(element.type);
     }
     maxFieldID = fieldID;
-    fieldIDs = allocator.copyInto(ArrayRef(newFieldIDs));
-    elements = allocator.copyInto(newElements);
-    return success();
+    this->fieldIDs = allocator.copyInto(ArrayRef(fieldIDs));
+    this->elements = allocator.copyInto(elements);
   }
 
   FlatSymbolRefAttr getModuleName() const { return moduleName; }
 
   ArrayRef<InstanceElement> getElements() const { return elements; }
 
-  bool operator==(KeyTy key) const { return moduleName == key; }
+  bool operator==(KeyTy key) const {
+    auto [otherModuleName, otherElements] = key;
+    return moduleName == otherModuleName && elements == otherElements;
+  }
 
   FlatSymbolRefAttr moduleName;
   ArrayRef<InstanceElement> elements;
@@ -2293,16 +2289,9 @@ struct firrtl::detail::InstanceTypeStorage : public TypeStorage {
 // InstanceType
 //===----------------------------------------------------------------------===//
 
-InstanceType InstanceType::get(FlatSymbolRefAttr moduleName) {
-  return Base::get(moduleName.getContext(), moduleName);
-}
-
 InstanceType InstanceType::get(FlatSymbolRefAttr moduleName,
                                ArrayRef<InstanceElement> elements) {
-  auto type = get(moduleName);
-  if (failed(type.initialize(elements)))
-    assert(0 && "failed to initialize type");
-  return type;
+  return Base::get(moduleName.getContext(), moduleName, elements);
 }
 
 InstanceType InstanceType::get(StringAttr moduleName,
@@ -2310,10 +2299,14 @@ InstanceType InstanceType::get(StringAttr moduleName,
   return get(FlatSymbolRefAttr::get(moduleName), elements);
 }
 
-bool InstanceType::initialized() const { return getImpl()->initialized(); }
-
-LogicalResult InstanceType::initialize(ArrayRef<InstanceElement> elements) {
-  return Base::mutate(elements);
+InstanceType InstanceType::get(FModuleLike module) {
+  auto numPorts = module.getNumPorts();
+  SmallVector<InstanceElement> elements;
+  elements.reserve(numPorts);
+  for (unsigned i = 0; i < numPorts; ++i)
+    elements.push_back({module.getPortNameAttr(i), module.getPortType(i),
+                        module.getPortDirection(i)});
+  return get(module.getModuleNameAttr(), elements);
 }
 
 FlatSymbolRefAttr InstanceType::getModuleNameAttr() const {
