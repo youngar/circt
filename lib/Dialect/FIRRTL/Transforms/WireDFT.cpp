@@ -460,7 +460,9 @@ void WireDFTPass::runOnOperation() {
           auto signal = getSignal(parent);
           auto builder = ImplicitLocOpBuilder::atBlockEnd(
               module->getLoc(), module.getBodyBlock());
-          emitConnect(builder, clone.getResult(portNo), signal);
+          auto port =
+              builder.create<InstanceSubOp>(clone.getLoc(), clone, portNo);
+          emitConnect(builder, port, signal);
         }
 
         return arg;

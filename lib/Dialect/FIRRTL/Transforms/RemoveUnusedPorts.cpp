@@ -164,7 +164,7 @@ void RemoveUnusedPortsPass::removeUnusedModulePorts(
         // Check that the input port is only written. Sometimes input ports are
         // used as temporary wires. In that case, we cannot erase connections.
         bool onlyWritten = llvm::all_of(results, [&](auto result) {
-          llvm::all_of(result->getUsers(), [&](Operation *op) {
+          llvm::all_of(result.getUsers(), [&](Operation *op) {
             if (auto connect = dyn_cast<FConnectLike>(op))
               return connect.getDest() == result;
             return false;

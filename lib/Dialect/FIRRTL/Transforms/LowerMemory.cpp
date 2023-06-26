@@ -471,10 +471,14 @@ InstanceOp LowerMemoryPass::emitMemoryInstance(MemOp op, FModuleOp module,
   // Create the instance to replace the memop. The instance name matches the
   // name of the original memory module before deduplication.
   // TODO: how do we lower port annotations?
-  auto type = InstanceType::get(module.getNameAttr(), )
+  SmallVector<InstanceElement> instanceElements;
+  for (unsigned i = 0, e = portTypes.size(); i < e; ++i) {
+    instanceElements.push_back(
+        {cast<StringAttr>(portNames[i]), portTypes[i], portDirections[i]});
+  }
+  auto type = InstanceType::get(module.getNameAttr(), instanceElements);
   auto inst = builder.create<InstanceOp>(
-      op.getLoc(), portTypes, module.getNameAttr(), summary.getFirMemoryName(),
-      op.getNameKind(), portDirections, portNames,
+      op.getLoc(), type, summary.getFirMemoryName(), op.getNameKind(),
       /*annotations=*/ArrayRef<Attribute>(),
       /*portAnnotations=*/ArrayRef<Attribute>(), /*lowerToBind=*/false,
       op.getInnerSymAttr());

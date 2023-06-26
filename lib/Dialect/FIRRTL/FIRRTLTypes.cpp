@@ -52,6 +52,18 @@ static LogicalResult customTypePrinter(Type type, AsmPrinter &os) {
   };
   bool anyFailed = false;
   TypeSwitch<Type>(type)
+      .Case<InstanceType>([&](auto instanceType) {
+        os << "instance<" << instanceType.getModuleName() << "(";
+        bool first = true;
+        for (const auto &element : instanceType.getElements()) {
+          if (!first)
+            os << ", ";
+          os << element.direction << " " << element.name << ": ";
+          printNestedType(element.type, os);
+          first = false;
+        }
+        os << ")>";
+      })
       .Case<ClockType>([&](auto) { os << "clock"; })
       .Case<ResetType>([&](auto) { os << "reset"; })
       .Case<AsyncResetType>([&](auto) { os << "asyncreset"; })

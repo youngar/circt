@@ -311,7 +311,8 @@ void IMDeadCodeElimPass::forwardConstantOutputPort(FModuleOp module) {
       auto index = subOp.getIndex();
       if (portConstants.count(index)) {
         auto constant = portConstants[subOp.getIndex()];
-        subOp.replaceAllUsesWith(builder.create<ConstantOp>(constant));
+        subOp.replaceAllUsesWith(
+            builder.create<ConstantOp>(constant).getResult());
       }
     });
   }
