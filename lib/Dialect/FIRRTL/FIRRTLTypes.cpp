@@ -2384,18 +2384,23 @@ InstanceType::verifyAgainstModule(function_ref<InFlightDiagnostic()> emitError,
   return success();
 }
 
-/// TODO: need to print annotations, too!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-void InstanceType::printModuleInterface(OpAsmPrinter &p) const {
+void InstanceType::printModuleInterface(OpAsmPrinter &p,
+                                        ArrayAttr portAnnotations) const {
+  assert(portAnnotations.size() == getNumElements() &&
+         "require a port annotation per array");
   // format:
   p.printSymbolName(getModuleName());
   p << "(";
   bool first = true;
-  for (auto element : getElements()) {
+  for (auto [element, annos] : llvm::zip(getElements(), portAnnotations)) {
     if (!first)
       p << ", ";
     p << element.direction << " " << element.name << ": " << element.type;
+    if (!annos.cast<ArrayAttr>().empty())
+      p << " " << annos;
     first = false;
   }
+  p << ")";
 }
 
 //===----------------------------------------------------------------------===//
@@ -2405,8 +2410,8 @@ void InstanceType::printModuleInterface(OpAsmPrinter &p) const {
 void FIRRTLDialect::registerTypes() {
   addTypes<SIntType, UIntType, ClockType, ResetType, AsyncResetType, AnalogType,
            // Derived Types
-           BundleType, FVectorType, FEnumType, RefType, OpenBundleType,
-           OpenVectorType, StringType, BigIntType>();
+           InstanceType, BundleType, FVectorType, FEnumType, RefType,
+           OpenBundleType, OpenVectorType, StringType, BigIntType>();
 }
 
 // Get the bit width for this type, return None  if unknown. Unlike

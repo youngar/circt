@@ -1340,11 +1340,13 @@ void InstanceOp::build(OpBuilder &builder, OperationState &result,
                        NameKindEnum nameKind, ArrayRef<Attribute> annotations,
                        ArrayRef<Attribute> portAnnotations, bool lowerToBind,
                        hw::InnerSymAttr innerSym) {
-  result.addTypes(resultType);
-  result.addAttribute("name", builder.getStringAttr(name));
-  result.addAttribute("nameKind",
-                      NameKindEnumAttr::get(builder.getContext(), nameKind));
-  result.addAttribute("annotations", builder.getArrayAttr(annotations));
+  auto *context = builder.getContext();
+
+  auto nameAttr = StringAttr::get(context, name);
+  auto nameKindAttr = NameKindEnumAttr::get(context, nameKind);
+  auto annotationsAttr = ArrayAttr::get(context, annotations);
+
+  ArrayAttr portAnnotationsAttr;
   if (portAnnotations.empty()) {
     SmallVector<Attribute, 16> portAnnotationsVec(resultType.getNumElements(),
                                                   builder.getArrayAttr({}));
@@ -1355,8 +1357,24 @@ void InstanceOp::build(OpBuilder &builder, OperationState &result,
     result.addAttribute("portAnnotations",
                         builder.getArrayAttr(portAnnotations));
   }
+
+  UnitAttr lowerToBindAttr = lowerToBind ? UnitAttr::get(context) : nullptr;
+
+  build(builder, result, resultType, nameAttr, nameKindAttr, annotationsAttr,
+        portAnnotationsAttr, lowerToBindAttr, innerSym);
+}
+
+void InstanceOp::build(OpBuilder &builder, OperationState &result,
+                       InstanceType resultType, StringAttr name,
+                       NameKindEnumAttr nameKind, ArrayAttr annotations,
+                       ArrayAttr portAnnotations, UnitAttr lowerToBind,
+                       hw::InnerSymAttr innerSym) {
+  result.addTypes(resultType);
+  result.addAttribute("name", name);
+  result.addAttribute("nameKind", nameKind);
+  result.addAttribute("annotations", annotations);
   if (lowerToBind)
-    result.addAttribute("lowerToBind", builder.getUnitAttr());
+    result.addAttribute("lowerToBind", lowerToBind);
   if (innerSym)
     result.addAttribute("inner_sym", innerSym);
 }
@@ -1386,7 +1404,7 @@ void InstanceOp::build(OpBuilder &builder, OperationState &result,
 SmallVector<Value> InstanceOp::getPortResults(size_t index) {
   SmallVector<Value> results;
   for (auto &use : getResult().getUses()) {
-    auto op = use.getOwner();
+    auto *op = use.getOwner();
     if (auto subOp = dyn_cast<InstanceSubOp>(op))
       if (subOp.getIndex() == index)
         results.push_back(subOp.getResult());
@@ -1525,15 +1543,13 @@ void InstanceOp::print(OpAsmPrinter &p) {
     p << ' ' << stringifyNameKindEnum(getNameKindAttr().getValue());
 
   // Print the attr-dict.
-  SmallVector<StringRef, 9> omittedAttrs = {"moduleName",     "name",
-                                            "portDirections", "portNames",
-                                            "portTypes",      "portAnnotations",
-                                            "inner_sym",      "nameKind"};
+  SmallVector<StringRef, 4> omittedAttrs = {"name", "portAnnotations",
+                                            "inner_sym", "nameKind"};
   if (getAnnotations().empty())
     omittedAttrs.push_back("annotations");
   p.printOptionalAttrDict((*this)->getAttrs(), omittedAttrs);
 
-  getType().printModuleInterface(p);
+  getType().printModuleInterface(p, getPortAnnotationsAttr());
 }
 
 ParseResult InstanceOp::parse(OpAsmParser &parser, OperationState &result) {

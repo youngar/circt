@@ -547,7 +547,7 @@ def InstanceImpl : FIRRTLImplType<"Instance", [MutableTypeTrait],
     /// ```
     /// @MyModule(in %port: !firrtl.uint<8>, out o: !firrtl.uint<8>)
     /// ```
-    void printModuleInterface(OpAsmPrinter &p) const;
+    void printModuleInterface(OpAsmPrinter &p, ArrayAttr portAnnotations) const;
   }];
 }
 
