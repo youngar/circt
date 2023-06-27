@@ -1533,8 +1533,8 @@ StringAttr InstanceOp::getInstanceNameAttr() { return getNameAttr(); }
 
 void InstanceOp::print(OpAsmPrinter &p) {
   // Print the instance name.
-  p << ' ';
-  p.printKeywordOrString(getName());
+  printImplicitSSAName(p, *this, getNameAttr());
+
   if (auto attr = getInnerSymAttr()) {
     p << " sym ";
     p.printSymbolName(attr.getSymName());
@@ -1542,7 +1542,7 @@ void InstanceOp::print(OpAsmPrinter &p) {
   if (getNameKindAttr().getValue() != NameKindEnum::DroppableName)
     p << ' ' << stringifyNameKindEnum(getNameKindAttr().getValue());
 
-  // Print the attr-dict.
+  // Omit already printed attributes.
   SmallVector<StringRef, 4> omittedAttrs = {"name", "portAnnotations",
                                             "inner_sym", "nameKind"};
   if (getAnnotations().empty())
@@ -1558,11 +1558,11 @@ ParseResult InstanceOp::parse(OpAsmParser &parser, OperationState &result) {
   auto &resultAttrs = result.attributes;
 
   // Parse the name.
-  std::string name;
-  if (parser.parseKeywordOrString(&name))
+  StringAttr name;
+  if (parseImplicitSSAName(parser, name))
     return failure();
   if (!resultAttrs.get("name"))
-    result.addAttribute("name", StringAttr::get(context, name));
+    result.addAttribute("name", name);
 
   // Parse the optional inner symbol.
   hw::InnerSymAttr innerSymAttr;
@@ -3113,6 +3113,7 @@ ParseResult parseSubfieldLikeOp(OpAsmParser &parser, OperationState &result) {
       "fieldIndex",
       IntegerAttr::get(IntegerType::get(context, 32), *fieldIndex));
 
+  llvm::errs() << "@@@@ " << bundleType << "\n@@@ at " << fieldIndex << "\n";
   SmallVector<Type> inferredReturnTypes;
   if (failed(OpTy::inferReturnTypes(context, result.location, result.operands,
                                     result.attributes.getDictionary(context),
