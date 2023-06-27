@@ -751,7 +751,7 @@ private:
     auto newInstanceType = InstanceType::get(toModule);
     for (auto *oldInstRec : llvm::make_early_inc_range(fromNode->uses())) {
       auto inst = ::cast<InstanceOp>(*oldInstRec->getInstance());
-      inst.setResultType(newInstanceType);
+      inst.getResult().setType(newInstanceType);
       oldInstRec->getParent()->addInstance(inst, toNode);
       oldInstRec->erase();
     }

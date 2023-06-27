@@ -1423,12 +1423,12 @@ InstanceOp InstanceOp::erasePorts(OpBuilder &builder,
     return *this;
 
   auto newElements =
-      removeElementsAtIndices(getResultType().getElements(), portIndices);
+      removeElementsAtIndices(getType().getElements(), portIndices);
   auto newPortAnnotations =
       removeElementsAtIndices(getPortAnnotations().getValue(), portIndices);
 
-  auto newResultType = InstanceType::get(
-      getResultType().getModuleNameAttr().getAttr(), newElements);
+  auto newResultType =
+      InstanceType::get(getType().getModuleNameAttr().getAttr(), newElements);
 
   auto newOp = builder.create<InstanceOp>(
       getLoc(), newResultType, getName(), getNameKind(),
@@ -1533,7 +1533,7 @@ StringAttr InstanceOp::getInstanceNameAttr() { return getNameAttr(); }
 
 void InstanceOp::print(OpAsmPrinter &p) {
   // Print the instance name.
-  p << " ";
+  p << ' ';
   p.printKeywordOrString(getName());
   if (auto attr = getInnerSymAttr()) {
     p << " sym ";
@@ -1549,6 +1549,7 @@ void InstanceOp::print(OpAsmPrinter &p) {
     omittedAttrs.push_back("annotations");
   p.printOptionalAttrDict((*this)->getAttrs(), omittedAttrs);
 
+  p << ' ';
   getType().printModuleInterface(p, getPortAnnotationsAttr());
 }
 
@@ -1556,20 +1557,15 @@ ParseResult InstanceOp::parse(OpAsmParser &parser, OperationState &result) {
   auto *context = parser.getContext();
   auto &resultAttrs = result.attributes;
 
+  // Parse the name.
   std::string name;
-  hw::InnerSymAttr innerSymAttr;
-  FlatSymbolRefAttr moduleName;
-  SmallVector<OpAsmParser::Argument> entryArgs;
-  SmallVector<Direction, 4> portDirections;
-  SmallVector<Attribute, 4> portNames;
-  SmallVector<Attribute, 4> portTypes;
-  SmallVector<Attribute, 4> portAnnotations;
-  SmallVector<Attribute, 4> portSyms;
-  SmallVector<Attribute, 4> portLocs;
-  NameKindEnumAttr nameKind;
-
   if (parser.parseKeywordOrString(&name))
     return failure();
+  if (!resultAttrs.get("name"))
+    result.addAttribute("name", StringAttr::get(context, name));
+
+  // Parse the optional inner symbol.
+  hw::InnerSymAttr innerSymAttr;
   if (succeeded(parser.parseOptionalKeyword("sym"))) {
     if (parser.parseCustomAttributeWithFallback(
             innerSymAttr, ::mlir::Type{},
@@ -1578,40 +1574,25 @@ ParseResult InstanceOp::parse(OpAsmParser &parser, OperationState &result) {
       return ::mlir::failure();
     }
   }
+
+  // Parse the name kind and attr-dict.
+  NameKindEnumAttr nameKind;
   if (parseNameKind(parser, nameKind) ||
-      parser.parseOptionalAttrDict(result.attributes) ||
-      parser.parseAttribute(moduleName, "moduleName", resultAttrs) ||
-      parseModulePorts(parser, /*hasSSAIdentifiers=*/false, entryArgs,
-                       portDirections, portNames, portTypes, portAnnotations,
-                       portSyms, portLocs))
+      parser.parseOptionalAttrDict(result.attributes))
     return failure();
-
-  // Add the attributes. We let attributes defined in the attr-dict override
-  // attributes parsed out of the module signature.
-  if (!resultAttrs.get("moduleName"))
-    result.addAttribute("moduleName", moduleName);
-  if (!resultAttrs.get("name"))
-    result.addAttribute("name", StringAttr::get(context, name));
   result.addAttribute("nameKind", nameKind);
-  if (!resultAttrs.get("portDirections"))
-    result.addAttribute("portDirections",
-                        direction::packAttribute(context, portDirections));
-  if (!resultAttrs.get("portNames"))
-    result.addAttribute("portNames", ArrayAttr::get(context, portNames));
-  if (!resultAttrs.get("portAnnotations"))
-    result.addAttribute("portAnnotations",
-                        ArrayAttr::get(context, portAnnotations));
-
-  // Annotations and LowerToBind are omitted in the printed format if they are
-  // empty and false, respectively.
   if (!resultAttrs.get("annotations"))
     resultAttrs.append("annotations", parser.getBuilder().getArrayAttr({}));
 
-  // Add result types.
-  result.types.reserve(portTypes.size());
-  llvm::transform(
-      portTypes, std::back_inserter(result.types),
-      [](Attribute typeAttr) { return cast<TypeAttr>(typeAttr).getValue(); });
+  // Parse the module interface.
+  InstanceType type;
+  SmallVector<Attribute, 4> portAnnotations;
+  if (InstanceType::parseModuleInterface(parser, type, portAnnotations))
+    return failure();
+  result.types.push_back(type);
+  if (!resultAttrs.get("portAnnotations"))
+    result.addAttribute("portAnnotations",
+                        ArrayAttr::get(context, portAnnotations));
 
   return success();
 }

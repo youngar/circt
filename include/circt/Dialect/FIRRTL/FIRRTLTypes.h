@@ -324,6 +324,9 @@ protected:
 //===----------------------------------------------------------------------===//
 
 struct InstanceElement {
+  InstanceElement(StringAttr name, Type type, Direction direction)
+      : name(name), type(type), direction(direction) {}
+
   StringAttr name;
   Type type;
   Direction direction;

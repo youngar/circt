@@ -53,12 +53,16 @@ static LogicalResult customTypePrinter(Type type, AsmPrinter &os) {
   bool anyFailed = false;
   TypeSwitch<Type>(type)
       .Case<InstanceType>([&](auto instanceType) {
-        os << "instance<" << instanceType.getModuleName() << "(";
+        os << "instance<";
+        os.printSymbolName(instanceType.getModuleName());
+        os << "(";
         bool first = true;
         for (const auto &element : instanceType.getElements()) {
           if (!first)
             os << ", ";
-          os << element.direction << " " << element.name << ": ";
+          os << element.direction << " ";
+          os.printKeywordOrString(element.name);
+          os << " : ";
           printNestedType(element.type, os);
           first = false;
         }
@@ -158,6 +162,7 @@ void circt::firrtl::printNestedType(Type type, AsmPrinter &os) {
 ///   ::= vector '<' type ',' int '>'
 ///   ::= const '.' type
 ///   ::= 'property.' firrtl-phased-type
+///   ::= 'instance<' id '(' (instance-elt (',' instance-elt)*)? ')>'
 /// bundle-elt ::= identifier flip? ':' type
 /// enum-elt ::= identifier ':' type
 /// ```
@@ -380,6 +385,49 @@ static OptionalParseResult customTypeParser(AsmParser &parser, StringRef name,
       return failure();
     }
     result = BigIntType::get(parser.getContext());
+    return success();
+  }
+  if (name.equals("instance")) {
+    if (isConst) {
+      parser.emitError(parser.getNameLoc(), "instance cannot be const");
+      return failure();
+    }
+
+    StringAttr moduleName;
+    if (parser.parseLess() || parser.parseSymbolName(moduleName))
+      return failure();
+
+    SmallVector<InstanceElement> elements;
+    auto parseInstanceElement = [&]() -> ParseResult {
+      // Parse port direction.
+      Direction direction;
+      if (succeeded(parser.parseOptionalKeyword("out")))
+        direction = Direction::Out;
+      else if (succeeded(parser.parseKeyword("in", "or 'out'")))
+        direction = Direction::In;
+      else
+        return failure();
+
+      // Parse port name.
+      std::string keyword;
+      if (parser.parseKeywordOrString(&keyword))
+        return failure();
+      StringAttr name = StringAttr::get(parser.getContext(), keyword);
+
+      // Parse port type.
+      FIRRTLType type;
+      if (parser.parseColon() || parseNestedType(type, parser))
+        return failure();
+
+      elements.emplace_back(name, type, direction);
+      return success();
+    };
+
+    if (parser.parseCommaSeparatedList(mlir::AsmParser::Delimiter::Paren,
+                                       parseInstanceElement))
+      return failure();
+
+    result = InstanceType::get(moduleName, elements);
     return success();
   }
 
@@ -2395,12 +2443,64 @@ void InstanceType::printModuleInterface(OpAsmPrinter &p,
   for (auto [element, annos] : llvm::zip(getElements(), portAnnotations)) {
     if (!first)
       p << ", ";
-    p << element.direction << " " << element.name << ": " << element.type;
+    p << element.direction << " ";
+    p.printKeywordOrString(element.name);
+    p << " : " << element.type;
     if (!annos.cast<ArrayAttr>().empty())
       p << " " << annos;
     first = false;
   }
   p << ")";
+}
+
+ParseResult InstanceType::parseModuleInterface(
+    OpAsmParser &parser, InstanceType &result,
+    SmallVectorImpl<Attribute> &portAnnotations) {
+
+  StringAttr moduleName;
+  if (parser.parseSymbolName(moduleName))
+    return failure();
+
+  SmallVector<InstanceElement> elements;
+  if (parser.parseCommaSeparatedList(
+          OpAsmParser::Delimiter::Paren, [&]() -> ParseResult {
+            // Parse port direction.
+            Direction direction;
+            if (succeeded(parser.parseOptionalKeyword("out")))
+              direction = Direction::Out;
+            else if (succeeded(parser.parseKeyword("in", "or 'out'")))
+              direction = Direction::In;
+            else
+              return failure();
+
+            // Parse port name.
+            std::string keyword;
+            if (parser.parseKeywordOrString(&keyword))
+              return failure();
+            StringAttr name = StringAttr::get(parser.getContext(), keyword);
+
+            // Parse port type.
+            Type type;
+            if (parser.parseColonType(type))
+              return failure();
+
+            elements.emplace_back(name, type, direction);
+
+            // Parse optional annotations.
+            ArrayAttr annos;
+            auto parseResult = parser.parseOptionalAttribute(annos);
+            if (!parseResult.has_value())
+              annos = parser.getBuilder().getArrayAttr({});
+            else if (failed(*parseResult))
+              return failure();
+            portAnnotations.push_back(annos);
+
+            return success();
+          }))
+    return failure();
+
+  result = InstanceType::get(moduleName, elements);
+  return success();
 }
 
 //===----------------------------------------------------------------------===//

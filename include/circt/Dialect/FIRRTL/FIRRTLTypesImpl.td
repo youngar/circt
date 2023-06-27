@@ -548,6 +548,10 @@ def InstanceImpl : FIRRTLImplType<"Instance", [MutableTypeTrait],
     /// @MyModule(in %port: !firrtl.uint<8>, out o: !firrtl.uint<8>)
     /// ```
     void printModuleInterface(OpAsmPrinter &p, ArrayAttr portAnnotations) const;
+
+    /// Helper to parse this type as a module interface.
+    static ParseResult parseModuleInterface(OpAsmParser &parser,
+      InstanceType &result, SmallVectorImpl<Attribute> &portAnnotations);
   }];
 }
 

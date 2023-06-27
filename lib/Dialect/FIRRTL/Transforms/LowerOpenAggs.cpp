@@ -413,7 +413,7 @@ LogicalResult Visitor::visitExpr(OpenSubindexOp op) {
 LogicalResult Visitor::visitDecl(InstanceOp op) {
   // Rewrite ports same strategy as for modules.
 
-  auto type = op.getResultType();
+  auto type = op.getType();
   SmallVector<PortMappingInfo, 16> portMappings(
       llvm::map_range(type.getElements(),
                       [&](auto element) { return mapPortType(element.type); }));

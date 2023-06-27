@@ -33,8 +33,7 @@ class ReferableDeclOp<string mnemonic, list<Trait> traits = []> :
 
 def InstanceOp : ReferableDeclOp<"instance", [HasParent<"firrtl::FModuleOp, firrtl::WhenOp">,
     DeclareOpInterfaceMethods<SymbolUserOpInterface>,
-    DeclareOpInterfaceMethods<HWInstanceLike>,
-    FirstAttrDerivedResultType]> {
+    DeclareOpInterfaceMethods<HWInstanceLike>]> {
   let summary = "Instantiate an instance of a module";
   let description = [{
     This represents an instance of a module.  The results are the modules inputs
@@ -46,8 +45,7 @@ def InstanceOp : ReferableDeclOp<"instance", [HasParent<"firrtl::FModuleOp, firr
     ```
   }];
 
-  let arguments = (ins TypeAttrOf<InstanceType>:$resultType,
-                       StrAttr:$name,
+  let arguments = (ins StrAttr:$name,
                        NameKindAttr:$nameKind,
                        AnnotationArrayAttr:$annotations,
                        PortAnnotationsAttr:$portAnnotations,
@@ -94,11 +92,11 @@ def InstanceOp : ReferableDeclOp<"instance", [HasParent<"firrtl::FModuleOp, firr
 
   let extraClassDeclaration = [{
     FlatSymbolRefAttr getModuleNameAttr() {
-      return getResultType().getModuleNameAttr();
+      return getType().getModuleNameAttr();
     }
 
     StringRef getModuleName() {
-      return getResultType().getModuleName();
+      return getType().getModuleName();
     }
 
     /// Lookup the module or extmodule for the symbol.  This returns null on
@@ -113,7 +111,7 @@ def InstanceOp : ReferableDeclOp<"instance", [HasParent<"firrtl::FModuleOp, firr
 
     /// Get information about an element (port or property) of this instance.
     const InstanceElement &getElement(size_t index) {
-      return getResultType().getElement(index);
+      return getType().getElement(index);
     }
 
     /// Return the port direction for the specified result number.
