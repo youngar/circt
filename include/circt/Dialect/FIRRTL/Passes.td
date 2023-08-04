@@ -15,6 +15,10 @@
 
 include "mlir/Pass/PassBase.td"
 
+def LowerAssertionsToSignals : Pass<"firrtl-lower-assertions-to-signals", "firrtl::CircuitOp"> {
+  let constructor = "circt::firrtl::createLowerAssertionsToSignals()";
+}
+
 def LowerFIRRTLAnnotations : Pass<"firrtl-lower-annotations", "firrtl::CircuitOp"> {
   let summary = "Lower FIRRTL annotations to usable entities";
   let description = [{

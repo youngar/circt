@@ -482,6 +482,9 @@ static cl::opt<bool> stripDebugInfo(
     cl::desc("Disable source locator information in output Verilog"),
     cl::init(false), cl::cat(mainCategory));
 
+static cl::opt<bool> fpgaDebug("fpga-debug", cl::desc(""), cl::init(false),
+                               cl::cat(mainCategory));
+
 // Build mode options.
 enum BuildMode { BuildModeDebug, BuildModeRelease };
 static cl::opt<BuildMode> buildMode(
@@ -780,6 +783,10 @@ static LogicalResult processBuffer(
   if (emitOMIR)
     pm.nest<firrtl::CircuitOp>().addPass(
         firrtl::createEmitOMIRPass(omirOutFile));
+
+  if (fpgaDebug)
+    pm.nest<firrtl::CircuitOp>().addPass(
+        firrtl::createLowerAssertionsToSignals());
 
   if (!disableOptimization &&
       preserveAggregate != firrtl::PreserveAggregate::None &&

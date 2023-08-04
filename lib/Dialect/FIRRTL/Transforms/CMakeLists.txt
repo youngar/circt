@@ -20,6 +20,7 @@ add_circt_dialect_library(CIRCTFIRRTLTransforms
   InnerSymbolDCE.cpp
   LegacyWiring.cpp
   LowerAnnotations.cpp
+  LowerAssertionsToSignals.cpp
   LowerCHIRRTL.cpp
   LowerIntrinsics.cpp
   LowerMemory.cpp
