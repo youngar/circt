@@ -310,6 +310,9 @@ firrtl.module @PathTest(in %in: !firrtl.path, out %out: !firrtl.path) {
   
   // CHECK: firrtl.unresolved_path "target-string"
   firrtl.unresolved_path "target-string"
+  
+  // CHECK: firrtl.deleted_path
+  firrtl.deleted_path
 }
 
 // CHECK-LABEL: TypeAlias

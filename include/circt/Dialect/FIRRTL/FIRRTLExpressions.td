@@ -1151,6 +1151,19 @@ def PathOp : FIRRTLOp<"path", [Pure,
   let assemblyFormat = "$target attr-dict";
 }
 
+def DeletedPathOp : FIRRTLOp<"deleted_path", [Pure]> {
+  let summary = "";
+  let description = [{
+
+    Example:
+    ```mlir
+    %0 = firrtl.deleted_path
+    ```
+  }];
+  let results = (outs PathType:$result);
+  let assemblyFormat = "attr-dict";
+}
+
 def ListCreateOp : FIRRTLOp<"list.create", [Pure, SameTypeOperands]> {
   let summary = "Produce a list value";
   let description = [{
