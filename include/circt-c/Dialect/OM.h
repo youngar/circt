@@ -187,6 +187,18 @@ MLIR_CAPI_EXPORTED bool omEvaluatorValueIsAMap(OMEvaluatorValue evaluatorValue);
 MLIR_CAPI_EXPORTED MlirType
 omEvaluatorMapGetType(OMEvaluatorValue evaluatorValue);
 
+MLIR_CAPI_EXPORTED bool
+omEvaluatorValueIsAFrozenPath(OMEvaluatorValue evaluatorValue);
+
+MLIR_CAPI_EXPORTED bool
+omEvaluatorValueIsAFrozenBasePath(OMEvaluatorValue evaluatorValue);
+
+MLIR_CAPI_EXPORTED OMEvaluatorValue
+omEvaluatorFrozenBasePathGetEmpty(MlirContext context);
+
+MLIR_CAPI_EXPORTED MlirAttribute
+omEvaluatorFrozenPathGetAsString(OMEvaluatorValue evaluatorValue);
+
 //===----------------------------------------------------------------------===//
 // ReferenceAttr API
 //===----------------------------------------------------------------------===//
@@ -232,13 +244,6 @@ MLIR_CAPI_EXPORTED MlirIdentifier omMapAttrGetElementKey(MlirAttribute attr,
 MLIR_CAPI_EXPORTED MlirAttribute omMapAttrGetElementValue(MlirAttribute attr,
                                                           intptr_t pos);
 
-//===----------------------------------------------------------------------===//
-// PathAttr API
-//===----------------------------------------------------------------------===//
-
-MLIR_CAPI_EXPORTED bool omAttrIsAPathAttr(MlirAttribute attr);
-
-MLIR_CAPI_EXPORTED MlirIdentifier omPathAttrGetPath(MlirAttribute attr);
 
 #ifdef __cplusplus
 }

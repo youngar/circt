@@ -292,6 +292,26 @@ bool omEvaluatorValueIsAMap(OMEvaluatorValue evaluatorValue) {
   return isa<evaluator::MapValue>(unwrap(evaluatorValue).get());
 }
 
+/// Query if the EvaluatorValue is a map.
+bool omEvaluatorValueIsAFrozenBasePath(OMEvaluatorValue evaluatorValue) {
+  return isa<evaluator::BasePathValue>(unwrap(evaluatorValue).get());
+}
+
+OMEvaluatorValue omEvaluatorFrozenBasePathGetEmpty(MlirContext context) {
+  return wrap(std::make_shared<evaluator::BasePathValue>(unwrap(context)));
+}
+
+/// Query if the EvaluatorValue is a map.
+bool omEvaluatorValueIsAFrozenPath(OMEvaluatorValue evaluatorValue) {
+  return isa<evaluator::PathValue>(unwrap(evaluatorValue).get());
+}
+
+MlirAttribute
+omEvaluatorFrozenPathGetAsString(OMEvaluatorValue evaluatorValue) {
+  const auto *path = cast<evaluator::PathValue>(unwrap(evaluatorValue).get());
+  return wrap((Attribute)path->getAsString());
+}
+
 //===----------------------------------------------------------------------===//
 // ReferenceAttr API.
 //===----------------------------------------------------------------------===//

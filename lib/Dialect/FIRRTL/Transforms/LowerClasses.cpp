@@ -571,12 +571,24 @@ static LogicalResult
 updateModuleInstanceClass(InstanceOp firrtlInstance, OpBuilder &builder,
                           SmallVectorImpl<Operation *> &opsToErase,
                           SymbolTable &symbolTable) {
+  // Get the referenced module to get its name.
+  auto referencedModule =
+      dyn_cast<FModuleLike>(firrtlInstance.getReferencedModule(symbolTable));
+
   // Collect the FIRRTL instance inputs to form the Object instance actual
   // parameters. The order of the SmallVector needs to match the order the
   // formal parameters are declared on the corresponding Class.
   SmallVector<Value> actualParameters;
+
   // The 0'th argument is the base path.
-  actualParameters.push_back(firrtlInstance->getBlock()->getArgument(0));
+  if (isa<FExtModuleOp>(referencedModule) || referencedModule.isPublic()) {
+    // If we are instantiating an external or public module, we have to
+    // rebase the path.
+    actualParameters.push_back(firrtlInstance->getBlock()->getArgument(0));
+  } else {
+    actualParameters.push_back(firrtlInstance->getBlock()->getArgument(0));
+  }
+
   for (auto result : firrtlInstance.getResults()) {
     // If the port is an output, continue.
     if (firrtlInstance.getPortDirection(result.getResultNumber()) ==
@@ -597,10 +609,6 @@ updateModuleInstanceClass(InstanceOp firrtlInstance, OpBuilder &builder,
     // Erase the property assignment.
     opsToErase.push_back(propertyAssignment);
   }
-
-  // Get the referenced module to get its name.
-  auto referencedModule =
-      dyn_cast<FModuleLike>(firrtlInstance.getReferencedModule(symbolTable));
 
   StringRef moduleName = referencedModule.getName();
 
