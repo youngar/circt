@@ -50,6 +50,12 @@ int main(int argc, char *argv[]) {
 
   llvm::cl::ParseCommandLineOptions(argc, argv, "HWML LSP Language Server");
 
+  if (litTest) {
+    inputStyle = JSONStreamStyle::Delimited;
+    logLevel = Logger::Level::Debug;
+    prettyPrint = true;
+  }
+
   DialectRegistry registry;
 
   // Configure the logger.
@@ -58,9 +64,6 @@ int main(int argc, char *argv[]) {
   // Configure the transport used for communication.
   llvm::sys::ChangeStdinToBinary();
   JSONTransport transport(stdin, llvm::outs(), inputStyle, prettyPrint);
-
-  // Register the additionally supported URI schemes for the MLIR server.
-  URIForFile::registerSupportedScheme("mlir.bytecode-mlir");
 
   // Configure the servers and start the main language server.
   HWMLServer server(registry);

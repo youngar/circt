@@ -2,7 +2,7 @@
 #include <iomanip>
 
 using namespace circt;
-using namespace hwml;
+using namespace circt::hwml;
 
 void circt::hwml::print(std::ostream &os, std::size_t indent,
                         const Capture &capture) {

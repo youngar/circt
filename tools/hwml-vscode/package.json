@@ -1,13 +1,12 @@
 {
-  "name": "vscode-hl",
-  "displayName": "hl",
-  "description": "HL Language Extension",
+  "name": "hwml-vscode",
+  "displayName": "hwml",
+  "description": "HWML Language Extension",
   "version": "0.0.1",
   "categories": [
     "Programming Languages"
   ],
   "main": "./out/extension",
-
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -b",
@@ -39,21 +38,21 @@
   "contributes": {
     "configuration": {
       "type": "object",
-      "title": "HL",
+      "title": "HWML",
       "properties": {
-        "hl.maxNumberOfProblems": {
+        "hwml.maxNumberOfProblems": {
           "scope": "resource",
           "type": "number",
           "default": 100,
           "description": "Controls the maximum number of problems produced by the server."
         },
-        "hl.server_path": {
+        "hwml.server_path": {
           "scope": "resource",
           "type": "string",
-          "default": "hl-server",
-          "description": "The file path of the hl-server executable."
+          "default": "hwml-lsp-server",
+          "description": "The file path of the hwml-lsp-server executable."
         },
-        "hl.trace.server": {
+        "hwml.trace.server": {
           "scope": "window",
           "type": "string",
           "enum": [
@@ -68,33 +67,33 @@
     },
     "languages": [
       {
-        "id": "hl",
+        "id": "hwml",
         "aliases": [
-          "hl",
-          "hl"
+          "hwml",
+          "hwml"
         ],
         "extensions": [
-          "hl"
+          "hwml"
         ],
         "configuration": "./language-configuration.json"
       }
     ],
     "grammars": [
       {
-        "language": "hl",
-        "scopeName": "source.hl",
-        "path": "./syntaxes/hl.tmLanguage.json"
+        "language": "hwml",
+        "scopeName": "source.hwml",
+        "path": "./syntaxes/hwml.tmLanguage.json"
       }
     ]
   },
   "commands": [
     {
-      "command": "hl.restart",
-      "title": "hl: Restart language server"
+      "command": "hwml.restart",
+      "title": "hwml: Restart language server"
     },
     {
-      "command": "hl.helloworld",
-      "title": "hl: hello world"
+      "command": "hwml.helloworld",
+      "title": "hwml: hello world"
     }
   ]
 }

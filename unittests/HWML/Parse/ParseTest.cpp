@@ -1,5 +1,5 @@
-#include "circt/HWML/HWMLAst.h"
 #include "circt/HWML/Parse/Machine.h"
+#include "circt/HWML/HWMLAst.h"
 #include "gtest/gtest.h"
 
 using namespace std;

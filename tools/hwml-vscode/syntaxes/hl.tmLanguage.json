@@ -1,6 +1,6 @@
 {
 	"$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
-	"name": "hl",
+	"name": "hwml",
 	"patterns": [
 		{
 			"include": "#keywords"
@@ -12,21 +12,21 @@
 	"repository": {
 		"keywords": {
 			"patterns": [{
-				"name": "keyword.control.hl",
+				"name": "keyword.control.hwml",
 				"match": "\\b(if|while|for|return)\\b"
 			}]
 		},
 		"strings": {
-			"name": "string.quoted.double.hl",
+			"name": "string.quoted.double.hwml",
 			"begin": "\"",
 			"end": "\"",
 			"patterns": [
 				{
-					"name": "constant.character.escape.hl",
+					"name": "constant.character.escape.hwml",
 					"match": "\\\\."
 				}
 			]
 		}
 	},
-	"scopeName": "source.hl"
+	"scopeName": "source.hwml"
 }

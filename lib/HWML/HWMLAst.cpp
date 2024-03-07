@@ -11,12 +11,12 @@ namespace hwml {
 
 void print(Type *type) {
   if (auto *tconst = dyn_cast<TConst>(type)) {
-    std::cout << tconst->value;
+    std::cerr << tconst->value;
     return;
   }
   if (auto *tarrow = dyn_cast<TArrow>(type)) {
     print(tarrow->left);
-    std::cout << " -> ";
+    std::cerr << " -> ";
     print(tarrow->right);
     return;
   }
@@ -27,32 +27,32 @@ void print(Type *type) {
 void print(Expr *expr) {
   if (auto *anno = dyn_cast<Anno>(expr)) {
     print(anno->expr);
-    std::cout << " : ";
+    std::cerr << " : ";
     print(anno->type);
     return;
   }
 
   if (auto *c = dyn_cast<Const>(expr)) {
-    std::cout << c->value;
+    std::cerr << c->value;
     return;
   }
 
   if (auto *var = dyn_cast<Var>(expr)) {
-    std::cout << "\\" << var->index;
+    std::cerr << "\\" << var->index;
     return;
   }
 
   if (auto *app = dyn_cast<App>(expr)) {
     print(app->fun);
-    std::cout << " ";
+    std::cerr << " ";
     print(app->arg);
     return;
   }
 
   if (auto *abs = dyn_cast<Abs>(expr)) {
-    std::cout << "(λ ";
+    std::cerr << "(λ ";
     print(abs->body);
-    std::cout << ")";
+    std::cerr << ")";
     return;
   }
 

@@ -1,6 +1,7 @@
 add_circt_library(CIRCTHWML
   HWML.cpp
   HWMLAst.cpp
+  HWMLParser.cpp
 
   LINK_LIBS PUBLIC
   CIRCTHWMLParse

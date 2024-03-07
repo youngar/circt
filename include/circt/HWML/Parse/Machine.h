@@ -4,6 +4,7 @@
 #include "circt/HWML/Parse/Capture.h"
 #include "circt/HWML/Parse/Insn.h"
 #include "circt/HWML/Parse/MemoTable.h"
+#include "llvm/Support/raw_ostream.h"
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
@@ -196,10 +197,13 @@ struct Machine {
   }
 
   void memoizeFailure(uintptr_t id, const uint8_t *sp, const uint8_t *epEnd) {
+    llvm::errs() << "!!!! memoizeFailure id=" << id << ", sp=" << sp
+                 << ", epEnd=" << epEnd << "\n";
     // Ensure the length is -1.
     size_t spOff = -1;
     // Number of examined bytes needs to be accurate.
     size_t epOff = epEnd - sp;
+    assert(epEnd >= sp);
     memoize(id, sp, spOff, epOff, {});
   }
 
@@ -218,6 +222,7 @@ struct Machine {
     // Increment the instruction and subject pointer.
     ++ip;
     ++sp;
+    ep = std::max(sp, ep);
     return false;
   }
 
@@ -258,21 +263,19 @@ struct Machine {
   /// the subject.
   bool fail() {
     ProgramPrinter printer(program);
-    std::cerr << "@@@ failing\n";
     while (!stack.empty()) {
-      std::cerr << "@@@ popping entry\n";
-      dumpStack(printer);
       auto entry = stack.back();
       stack.pop_back();
       if (entry.isBacktrack()) {
         ip = entry.getIP();
         sp = entry.getSP();
         return false;
-      } else if (entry.isMemo()) {
+      }
+
+      if (entry.isMemo()) {
         memoizeFailure(entry.getID(), sp, ep);
       }
     }
-    std::cerr << "@@@ failing done\n";
     return true;
   }
 
@@ -284,6 +287,7 @@ struct Machine {
 
     if (sets[i][*sp]) {
       ++sp;
+      ep = std::max(sp, ep);
       ++ip;
       return false;
     }
@@ -298,6 +302,7 @@ struct Machine {
       return fail();
     }
     sp += n;
+    ep = std::max(sp, ep);
     return false;
   }
 
@@ -336,6 +341,7 @@ struct Machine {
       if (!sets[i][*sp])
         return;
       ++sp;
+      ep = std::max(sp, ep);
       ++ip;
     }
   }
@@ -404,11 +410,12 @@ struct Machine {
     ProgramPrinter printer(program);
 
     while (true) {
+#if 0
       dumpStack(printer);
-
       std::cerr << "Executing ";
       printer.print(std::cerr, *ip);
       std::cerr << std::endl;
+#endif
 
       switch (ip->getKind()) {
       case InsnBase::Kind::Match:
@@ -484,10 +491,12 @@ struct Machine {
 
   static bool parse(const Program &program, MemoTable &memoTable,
                     const uint8_t *sp, const uint8_t *se,
-                    std::vector<Capture> &captures) {
+                    std::vector<Capture> &captures,
+                    std::vector<Diagnostic> &diagnostics) {
     Machine machine(program, memoTable, sp, se);
     auto result = machine.run();
     captures = std::move(machine.captures);
+    diagnostics = std::move(machine.diagnostics);
     machine.captures.clear();
     return result;
   }
@@ -496,7 +505,7 @@ struct Machine {
                     const uint8_t *se, std::vector<Capture> &captures,
                     std::vector<Diagnostic> &diagnostics) {
     MemoTable memoTable;
-    return Machine::parse(program, memoTable, sp, se, captures);
+    return Machine::parse(program, memoTable, sp, se, captures, diagnostics);
   }
 
   /// The program.

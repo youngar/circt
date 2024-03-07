@@ -13,7 +13,7 @@ import {
 let client: LanguageClient;
 
 export function activate(context: ExtensionContext) {
-    const outputChannel = vscode.window.createOutputChannel('HL-LSPD');
+    const outputChannel = vscode.window.createOutputChannel('hwml-vscode');
     context.subscriptions.push(outputChannel);
 
     // Get the path to the language server.
@@ -24,10 +24,10 @@ export function activate(context: ExtensionContext) {
     // Options to control the language client
     let clientOptions: LanguageClientOptions = {
         // Register the server for plain text documents
-        documentSelector: [{ scheme: 'file', language: 'hl' }],
+        documentSelector: [{ scheme: 'file', language: 'hwml' }],
         synchronize: {
             // Notify the server about file changes to '.clientrc files contained in the workspace
-            fileEvents: workspace.createFileSystemWatcher('**/.hl')
+            fileEvents: workspace.createFileSystemWatcher('**/.hwml')
         },
         outputChannel: outputChannel,
         revealOutputChannelOn: RevealOutputChannelOn.Info,
@@ -40,11 +40,11 @@ export function activate(context: ExtensionContext) {
         serverOptions,
         clientOptions
     );
-    
+
     // The command has been defined in the package.json file
     // Now provide the implementation of the command with registerCommand
     // The commandId parameter must match the command field in package.json
-    let disposable = vscode.commands.registerCommand('hl.helloworld', () => {
+    let disposable = vscode.commands.registerCommand('hwml.helloworld', () => {
         // The code you place here will be executed every time your command is executed
 
         // Display a message box to the user
@@ -52,7 +52,7 @@ export function activate(context: ExtensionContext) {
     });
     context.subscriptions.push(disposable);
 
-    let restartCommand = vscode.commands.registerCommand('hl.restart', () => {
+    let restartCommand = vscode.commands.registerCommand('hwml.restart', () => {
         // The code you place here will be executed every time your command is executed
 
         // Display a message box to the user
@@ -60,10 +60,10 @@ export function activate(context: ExtensionContext) {
     });
     context.subscriptions.push(restartCommand);
 
-    outputChannel.show();
-    outputChannel.appendLine("qwertyuiop");
-    vscode.window.showInformationMessage("hello from the client!", "yes", "no");
-    vscode.window.showErrorMessage("hello");
+    // outputChannel.show();
+    // outputChannel.appendLine("qwertyuiop");
+    // vscode.window.showInformationMessage("hello from the client!", "yes", "no");
+    // vscode.window.showErrorMessage("hello");
 
     // Start the client. This will also launch the server
     client.start();

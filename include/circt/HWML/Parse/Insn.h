@@ -254,7 +254,7 @@ struct ProgramPrinter {
 
     // Calculate how many character wide the maximum label size will be.
     labelWidth = 0;
-    if (labels.size())
+    if (!labels.empty())
       labelWidth = log10(labels.size() - 1) + 1;
   }
 
@@ -385,9 +385,7 @@ private:
   std::unordered_map<const Insn *, size_t> labels;
 };
 
-void print(std::ostream &os, const Program &program) {
-  ProgramPrinter(program).print(os);
-}
+void print(std::ostream &os, const Program &program);
 
 ///
 /// Instruction Stream
@@ -404,6 +402,7 @@ struct Index {
   explicit Index(uintptr_t index) : index(index) {}
   uintptr_t get() const { return index; }
   bool operator==(const Index &rhs) const { return get() == rhs.get(); }
+  bool operator!=(const Index &rhs) const { return !(*this == rhs); }
 
 private:
   uintptr_t index;
@@ -413,12 +412,14 @@ constexpr Index INVALID_INDEX;
 
 struct InsnStream {
 
+  Index getIndex() { return Index(insns.size()); }
+
 private:
   template <typename T, typename... Args>
   Index push(Args &&...args) {
-    auto size = insns.size();
+    auto index = getIndex();
     insns.emplace_back(T(std::forward<Args>(args)...));
-    return Index(size);
+    return index;
   };
 
   uintptr_t getSetIndex(std::bitset<256> set) {
@@ -441,9 +442,10 @@ public:
     return l;
   }
 
-  void setLabel(Label label, Index index) {
+  Index setLabel(Label label, Index index) {
     assert(labels[label.index] == INVALID_INDEX);
     labels[label.index] = index;
+    return index;
   }
 
   Index match(uint8_t b) { return push<Match>(b); }
@@ -456,7 +458,7 @@ public:
   Index end() { return push<End>(); }
   Index endFail() { return push<EndFail>(); }
   Index set(std::bitset<256> set) { return push<Set>(getSetIndex(set)); }
-  Index set(std::string str) {
+  Index set(const std::string &str) {
     std::bitset<256> bitset;
     for (auto c : str)
       bitset.set(c);
@@ -475,6 +477,86 @@ public:
   Index memoClose() { return push<MemoClose>(); }
   Index error(const char *m, Label l) {
     return push<Error>(m, l.placeholder());
+  }
+
+  /// Match every character of the string sequentially.
+  Index string(const std::string &s) {
+    auto index = getIndex();
+    for (auto c : s)
+      match(c);
+    return index;
+  }
+
+  /// Attempt to match p1, and if that fails, match p2.
+  template <typename CallableT, typename CallableU>
+  Index alt(CallableT p1, CallableU p2) {
+    auto index = getIndex();
+    auto l1 = label();
+    auto l2 = label();
+    choice(l1);
+    p1(*this);
+    commit(l2);
+    setLabel(l1, getIndex());
+    p2(*this);
+    assert(index != getIndex());
+    setLabel(l2, getIndex());
+    return index;
+  }
+
+  template <typename CallableT>
+  Index star(CallableT p) {
+    auto index = getIndex();
+    auto l1 = label();
+    auto l2 = label();
+    choice(l2);
+    setLabel(l1, getIndex());
+    p(*this);
+    partialCommit(l1);
+    setLabel(l2, getIndex());
+    return index;
+  }
+
+  template <typename CallableT>
+  Index plus(CallableT p) {
+    auto index = getIndex();
+    auto l1 = label();
+    auto l2 = label();
+    p(*this);
+    choice(l2);
+    setLabel(l1, getIndex());
+    p(*this);
+    partialCommit(l1);
+    setLabel(l2, getIndex());
+    return index;
+  }
+
+  template <typename CallableT>
+  Index failIf(CallableT p) {
+    auto l1 = label();
+    choice(l1);
+    p(*this);
+    failTwice();
+    setLabel(l1, getIndex());
+  }
+
+  template <typename CallableT>
+  Index memo(uintptr_t id, CallableT p) {
+    auto index = getIndex();
+    auto l1 = label();
+    memoOpen(l1, id);
+    p(*this);
+    memoClose();
+    setLabel(l1, getIndex());
+    return index;
+  }
+
+  template <typename CallableT>
+  Index require(const char *m, CallableT p) {
+    return alt(p, [=](InsnStream &s) {
+      auto l1 = label();
+      error(m, l1);
+      setLabel(l1, getIndex());
+    });
   }
 
   Program finalize() {
@@ -522,6 +604,142 @@ private:
   std::unordered_map<std::bitset<256>, uintptr_t> setMap;
   std::vector<Index> labels;
 };
+
+namespace p {
+
+template <typename T>
+struct Coerce {
+  T operator()(T value) const { return value; }
+};
+
+template <>
+struct Coerce<const char *> {
+  auto operator()(const char *str) const {
+    return [=](InsnStream &s) -> Index { return s.string(str); };
+  }
+};
+
+template <>
+struct Coerce<std::string> {
+  auto operator()(const std::string &str) const {
+    return [&](InsnStream &s) -> Index { return s.string(str); };
+  }
+};
+
+template <>
+struct Coerce<Label> {
+  auto operator()(Label l) const {
+    return [=](InsnStream &s) -> Index { return s.call(l); };
+  }
+};
+
+// template <typename T>
+// struct Coerce<const T> : Coerce<T> {};
+
+template <typename T>
+auto coerce(T &&t) {
+  using U = std::remove_cv_t<std::remove_reference_t<T>>;
+  return Coerce<U>()(std::forward<T>(t));
+}
+
+template <typename T>
+auto label(Label l, T p) {
+  return [=](InsnStream &s) -> Index { return s.setLabel(l, p(s)); };
+}
+
+inline auto set(const std::string &str) {
+  return [=](InsnStream &s) -> Index { return s.set(str); };
+}
+
+inline auto jmp(Label l) {
+  return [=](InsnStream &s) -> Index { return s.jump(l); };
+}
+
+inline auto call(Label l) {
+  return [=](InsnStream &s) -> Index { return s.call(l); };
+}
+
+inline Index ret(InsnStream &s) { return s.ret(); }
+
+inline Index end(InsnStream &s) { return s.end(); }
+
+template <typename T>
+auto seq(T p) {
+  return coerce(p);
+}
+
+template <typename T, typename U>
+auto seq(T p1, U p2) {
+  return [=](InsnStream &s) -> Index {
+    auto index = coerce(p1)(s);
+    coerce(p2)(s);
+    return index;
+  };
+}
+
+template <typename T, typename U, typename... Args>
+auto seq(T p1, U p2, Args... args) {
+  return seq(p1, seq(p2, args...));
+}
+
+// Program Builders
+
+template <typename T>
+auto program(T p) {
+  return seq(p, end);
+}
+
+template <typename... Args>
+auto program(Label l, Args... p) {
+  return seq(call(l), end, p...);
+}
+
+template <typename... Args>
+auto rule(Label l, Args... p) {
+  return label(l, seq(p..., ret));
+}
+
+template <typename T, typename U>
+auto alt(T p1, U p2) {
+  return [=](InsnStream &s) -> Index { return s.alt(coerce(p1), coerce(p2)); };
+}
+
+template <typename T, typename U, typename... Args>
+auto alt(T p1, U p2, Args... args) {
+  return alt(p1, alt(p2, args...));
+}
+
+template <typename... Args>
+auto star(Args... args) {
+  return [=](InsnStream &s) -> Index { return s.star(seq(args...)); };
+}
+
+template <typename... Args>
+auto plus(Args... args) {
+  return [=](InsnStream &s) -> Index { return s.plus(seq(args...)); };
+}
+
+template <typename... Args>
+auto failIf(Args... args) {
+  return [=](InsnStream &s) -> Index { return s.failIf(seq(args...)); };
+}
+
+template <typename... Args>
+auto memo(uintptr_t id, Args... args) {
+  return [=](InsnStream &s) -> Index { return s.memo(id, seq(args...)); };
+}
+
+template <typename... Args>
+auto require(const char *m, Args... args) {
+  return [=](InsnStream &s) -> Index { return s.require(m, seq(args...)); };
+}
+
+// template <typename T, typename U>
+// auto require(const char *m, T p1, U p2) {
+//   return [=](InsnStream &s) -> Index { return alt(require(m, p1), p2); };
+// }
+
+} // namespace p
 
 } // namespace hwml
 } // namespace circt

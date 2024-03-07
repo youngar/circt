@@ -1,7 +1,3 @@
-////////////////////////////////////////////////////////////////////////////////
-/// Parser Memoization Table
-////////////////////////////////////////////////////////////////////////////////
-
 #ifndef CIRCT_HWML_PARSE_MEMOTABLE_H
 #define CIRCT_HWML_PARSE_MEMOTABLE_H
 
@@ -40,8 +36,8 @@ struct MemoNode {
   }
 
   const uint8_t *examinedMaxEnd() const { return sp + examined_max; }
-
-  const uint8_t *end() const { return sp + length; }
+  const uint8_t *examinedEnd() const { return sp + examined; }
+  // const uint8_t *end() const { return sp + length; }
 
   // Replace the memodata in this node with the memodata of another node.
   void assignMemoData(MemoNode &&rhs) {
@@ -158,19 +154,19 @@ struct MemoTable {
   /// Propagate the examined_max from the children of the node to the node
   /// itself.
   bool propMaxExamined(MemoNode *parent) {
-    auto newMax = parent->length;
+    auto *examinedMax = parent->examinedMaxEnd();
     if (auto *lchild = parent->lchild) {
-      size_t lmax = (size_t)(lchild->examinedMaxEnd() - parent->sp);
-      newMax = std::max(newMax, lmax);
+      if (lchild->examinedMaxEnd() > examinedMax)
+        examinedMax = lchild->examinedMaxEnd();
     }
     if (auto *rchild = parent->rchild) {
-      size_t rmax = (size_t)(rchild->examinedMaxEnd() - parent->sp);
-      newMax = std::max(newMax, rmax);
+      if (rchild->examinedMaxEnd() > examinedMax)
+        examinedMax = rchild->examinedMaxEnd();
     }
-    if (parent->examined_max == newMax)
+    if (examinedMax == parent->examinedMaxEnd())
       return false;
     // Return true if updated.
-    parent->examined_max = newMax;
+    parent->examined_max = examinedMax - parent->sp;
     return true;
   };
 
@@ -194,7 +190,6 @@ struct MemoTable {
   ///             ┌─┴─┐
   ///             RL  RR
   MemoNode *rotateR(MemoNode *root) {
-    std::cout << "!!!!!!!!!! rotate R" << std::endl;
     auto node = root->lchild;
     root->lchild = node->rchild;
     node->rchild = root;
@@ -227,10 +222,7 @@ struct MemoTable {
   /// ┌─┴─┐
   /// LL  LR
   MemoNode *rotateL(MemoNode *root) {
-    std::cout << "!!!!!!!!!! rotate L" << std::endl;
-    dump(root, 2);
-    std::cout << std::endl;
-    auto node = root->rchild;
+    auto *node = root->rchild;
     root->rchild = node->lchild;
     node->lchild = root;
     if (node->balance == 0) {
@@ -246,14 +238,13 @@ struct MemoTable {
   }
 
   MemoNode *rotateRL(MemoNode *root) {
-    std::cout << "!!!!!!!!!! rotate RL" << std::endl;
 
     // Assumption: the root node has balance +2.
-    auto l = root;
-    auto r = root->rchild;
-    auto c = root->rchild->lchild;
-    auto cl = c->lchild;
-    auto cr = c->rchild;
+    auto *l = root;
+    auto *r = root->rchild;
+    auto *c = root->rchild->lchild;
+    auto *cl = c->lchild;
+    auto *cr = c->rchild;
     assert(r->balance == -1);
 
     // Rotate center and right node to the right.
@@ -287,7 +278,6 @@ struct MemoTable {
   }
 
   MemoNode *rotateLR(MemoNode *root) {
-    std::cout << "!!!!!!!!!! rotate LR" << std::endl;
     // Assumption: the root node has balance +2.
     auto r = root;
     auto l = root->lchild;
@@ -351,18 +341,16 @@ struct MemoTable {
   /// Retrace through the ancestors and rotate as needed to ensure balance.
   void rebalanceInsertion(MemoNode **slot,
                           const std::vector<MemoNode **> &ancestors) {
-    std::cout << "!!! begin rebalanceInsertion\n";
     auto i = ancestors.rbegin();
     auto e = ancestors.rend();
 
     // Propagate the max from the child to the parent.
     auto propMaxExamined = [](MemoNode *child, MemoNode *parent) {
-      size_t childMax = (child->examinedMaxEnd() - parent->sp);
-      auto oldMax = parent->examined_max;
-      auto newMax = std::max(parent->examined_max, childMax);
-      parent->examined_max = newMax;
-      // Return true if updated.
-      return oldMax != newMax;
+      if (child->examinedMaxEnd() > parent->examinedMaxEnd()) {
+        parent->examined_max = child->examinedMaxEnd() - parent->sp;
+        return true;
+      }
+      return false;
     };
 
     // Propagate the max from the current element of the path all the way up to
@@ -407,6 +395,7 @@ struct MemoTable {
           *parentSlot = rotateLR(parent);
         else
           *parentSlot = rotateR(parent);
+        slot = parentSlot;
       } else {
         // Right side grew.
 
@@ -430,6 +419,7 @@ struct MemoTable {
           *parentSlot = rotateRL(parent);
         else
           *parentSlot = rotateL(parent);
+        slot = parentSlot;
       }
     }
   }
@@ -437,13 +427,10 @@ struct MemoTable {
   MemoNode *insert(uintptr_t id, const uint8_t *sp, size_t length,
                    size_t examined, std::vector<Capture> &&captures) {
     std::vector<MemoNode **> ancestorSlots;
-    std::cout << "!!!!!!! insert" << std::endl;
     auto slot = &root;
     // ancestorSlots.push_back(slot);
     auto node = root;
     while (node) {
-      std::cout << "!!!!!!!!! begin loop" << std::endl;
-      std::cout << "!!!!!!!!! node = " << node << std::endl;
       auto order = node->compare(id, sp);
       // if the node is _less_, go to the right slot.
       if (order == Order::LT) {
@@ -482,7 +469,6 @@ struct MemoTable {
   /// - The first element of path should be a slot in the grandparent which
   //    contains.
   void rebalanceRemoval(MemoNode **slot, const std::vector<MemoNode **> &path) {
-    std::cout << "!!! begin rebalanceRemoval\n";
     auto i = path.rbegin();
     auto e = path.rend();
 
@@ -525,6 +511,7 @@ struct MemoTable {
         // Parent: right-heavy -> very-right-heavy.
         // Rebalance the parent and continue retracing the path.
         *parentSlot = rebalanceRHeavy(parent);
+        slot = parentSlot;
       }
       // The right subtree shrunk.
       else {
@@ -548,6 +535,7 @@ struct MemoTable {
         // Parent: left-heavy => very-left-heavy.
         // Rebalance the parent and continue retracing the path.
         *parentSlot = rebalanceLHeavy(parent);
+        slot = parentSlot;
       }
     }
   }
@@ -561,7 +549,7 @@ struct MemoTable {
     // which needs to be rebalanced.
     std::cerr << "!!! remove start\n";
     std::cerr << "path = \n";
-    dump(path);
+    dump(std::cerr, path);
     std::cerr << "slot @" << slot << "=" << *slot << std::endl;
     PathGuard guard(path);
     auto *node = *slot;
@@ -594,7 +582,7 @@ struct MemoTable {
     auto *node = *slot;
     if (node == nullptr)
       return;
-    assert(!(node->sp <= sp && sp < node->end()) &&
+    assert(!(node->sp <= sp && sp < node->examinedEnd()) &&
            "node must not intersect insertion point");
     assert(!(node->sp <= sp && sp < node->examinedMaxEnd()) &&
            "node must not intersect insertion point");
@@ -616,7 +604,7 @@ struct MemoTable {
               << ", low=" << (void *)low << ", high=" << (void *)high
               << std::endl;
     std::cerr << "path = \n";
-    dump(path);
+    dump(std::cerr, path);
 
     // Left.
     if (low >= node->examinedMaxEnd())
@@ -627,7 +615,7 @@ struct MemoTable {
     path.pop_back();
 
     // Center.
-    if (node->sp < high && low < node->end()) {
+    if (node->sp < high && low < node->examinedEnd()) {
       // assert(node->sp < high);
       // assert(node->sp + node->examined >= node->sp);
       remove(slot, path);
@@ -656,42 +644,43 @@ struct MemoTable {
   // Printing
   //////////////////////////////////////////////////////////////////////////////
 
-  void dump(const std::vector<MemoNode **> &ancestors) const {
+  void dump(std::ostream &os, const std::vector<MemoNode **> &ancestors) const {
     auto i = ancestors.begin();
     auto e = ancestors.end();
-    std::cout << "[";
+    os << "[";
     bool first = true;
     while (i != e) {
       if (!first)
-        std::cout << ", ";
-      std::cout << "@" << *i << "=" << **i;
+        os << ", ";
+      os << "@" << *i << "=" << **i;
       first = false;
       ++i;
     }
-    std::cout << "]\n";
+    os << "]\n";
   }
 
-  void dump(const char *label, const MemoNode *node, size_t depth) const {
+  void dump(std::ostream &os, const char *label, const MemoNode *node,
+            size_t depth) const {
     for (size_t i = 0; i < depth; ++i)
-      std::cout << "  ";
-    std::cout << label << ": ";
+      os << "  ";
+    os << label << ": ";
     if (!node) {
-      std::cout << "<nil>\n";
+      os << "<nil>\n";
       return;
     }
-    std::cout << "@" << node << "=" << *node << "\n";
-    dump("L", node->lchild, depth + 1);
-    dump("R", node->rchild, depth + 1);
+    os << "@" << node << "=" << *node << "\n";
+    dump(os, "L", node->lchild, depth + 1);
+    dump(os, "R", node->rchild, depth + 1);
   }
 
-  void dump(const MemoNode *node, size_t depth = 0) const {
-    dump("C", node, depth);
+  void dump(std::ostream &os, const MemoNode *node, size_t depth = 0) const {
+    dump(os, "C", node, depth);
   }
 
-  void dump() const {
-    std::cout << "--------\n";
-    dump(root);
-    std::cout << "--------\n";
+  void dump(std::ostream &os) const {
+    os << "--------\n";
+    dump(os, root);
+    os << "--------\n";
   }
 };
 

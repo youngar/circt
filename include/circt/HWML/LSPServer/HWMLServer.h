@@ -1,6 +1,7 @@
 #ifndef CIRCT_HWML_SERVER_SERVER_H
 #define CIRCT_HWML_SERVER_SERVER_H
 
+#include "circt/HWML/HWMLParser.h"
 #include "circt/HWML/Parse/MemoTable.h"
 #include "circt/Support/LLVM.h"
 #include "llvm/ADT/StringMap.h"
@@ -34,15 +35,25 @@ namespace circt {
 namespace hwml {
 
 struct HWMLDocument {
-  HWMLDocument(const mlir::lsp::URIForFile &uri, StringRef contents,
-               const std::vector<std::string> &extraDirs,
+  HWMLDocument(const mlir::lsp::URIForFile &uri, int64_t version,
+               StringRef contents,
                std::vector<mlir::lsp::Diagnostic> &diagnostics);
   HWMLDocument(const HWMLDocument &) = delete;
   HWMLDocument &operator=(const HWMLDocument &) = delete;
 
-  /// The source manager containing the contents of the input file.
-  llvm::SourceMgr sourceMgr;
+  void update(const mlir::lsp::URIForFile &uri, int64_t version,
+              ArrayRef<mlir::lsp::TextDocumentContentChangeEvent> changes,
+              std::vector<mlir::lsp::Diagnostic> &diagnostics);
 
+  int64_t getVersion() const { return version; }
+
+private:
+  HWMLParser parser;
+  /// The full string contents of the file.
+  std::string contents;
+  /// The version of this file.
+  int64_t version;
+  /// Memoization of the AST.
   MemoTable memoTable;
 };
 
@@ -74,6 +85,8 @@ private:
   /// The registry containing dialects that can be recognized in parsed .mlir
   /// files.
   mlir::DialectRegistry &registry;
+
+  llvm::StringMap<std::unique_ptr<HWMLDocument>> files;
 
   void run();
 };
