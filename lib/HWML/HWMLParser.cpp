@@ -19,7 +19,6 @@ struct AstKinds {
 };
 
 HWMLParser::HWMLParser() {
-
   InsnStream s;
   auto ws = s.label();
   auto wsp = s.label();
@@ -35,7 +34,12 @@ HWMLParser::HWMLParser() {
 
   using namespace p;
   // clang-format off
-  p::program(program, rule(ws, star(set("\t\n\r "))),
+  p::program(program,
+    // ws ::= [\t\n\r ]*
+    // wsp ::= [\t\n\r ]+
+    // a+b  a    +  b
+    // id ws '+' ws id
+    rule(ws, star(set("\t\n\r "))),
     rule(wsp, plus(set("\t\n\r "))),
     rule(num, memo(AstKinds::Number,
         plus(set("1234567890")))),
@@ -50,10 +54,7 @@ HWMLParser::HWMLParser() {
      rule(stmt, decl),
      rule(program, star(ws, stmt))
   )(s);
-  this->program = s.finalize();
-  print(std::cerr, this->program);
   // clang-format on
-
   this->program = s.finalize();
   print(std::cerr, this->program);
 }

@@ -1,5 +1,5 @@
-#include "circt/HWML/Parse/Machine.h"
 #include "circt/HWML/HWMLAst.h"
+#include "circt/HWML/Parse/Machine.h"
 #include "gtest/gtest.h"
 
 using namespace std;
@@ -86,6 +86,73 @@ TEST(Inc, Basic) {
     std::cout << "hello\n";
   print(ast);
   print(eval(ast));
+}
+
+TEST(Machine, CaptureReduce) {
+  InsnStream stream;
+  // expr = :: (expr '+' "a") / "a"
+  std::cout << "AAAAAAAAAAAAA" << std::endl;
+
+  auto term = stream.label();
+  auto id = stream.label();
+  auto ws = stream.label();
+
+  // EXP
+  stream.call(ws);
+  stream.captureBegin(5);
+  stream.call(term);
+  stream.captureEnd();
+  stream.call(ws);
+
+  stream.star([&](InsnStream &stream) {
+    stream.captureBegin(4);
+    stream.captureBegin(2);
+    stream.set("+-");
+    stream.captureEnd();
+    stream.call(ws);
+    stream.call(term);
+    stream.captureEndReduce();
+  });
+  stream.end();
+
+  stream.setLabel(term, stream.captureBegin(3));
+  stream.call(id);
+  stream.call(ws);
+  stream.star([&](InsnStream &stream) {
+    stream.captureBegin(2);
+    stream.set("*/");
+    stream.captureEnd();
+    stream.call(ws);
+    stream.call(term);
+    stream.call(ws);
+  });
+  stream.captureEnd();
+  stream.ret();
+
+  // ID
+  stream.setLabel(id, stream.captureBegin(1));
+  stream.plus([&](InsnStream &stream) { stream.set("abcdefgh"); });
+  stream.captureEnd();
+  stream.ret();
+
+  // WS
+  stream.setLabel(ws,
+                  stream.star([&](InsnStream &stream) { stream.set(" "); }));
+  stream.ret();
+
+  auto program = stream.finalize();
+  print(std::cerr, program);
+  // const uint8_t sp[] = "1*2+3/4";
+  const uint8_t sp[] = "a * a * a + b / b / b - c * c * c";
+  auto *se = sp + sizeof(sp);
+  std::cerr << "sp=" << (void *)sp << ", se=" << (void *)se << "\n";
+  std::vector<Capture> captures;
+  std::vector<Diagnostic> diagnostics;
+  auto result = Machine::parse(program, sp, se, captures, diagnostics);
+  std::cerr << "test results" << std::endl;
+  print(std::cerr, captures);
+  std::cerr << std::endl;
+  EXPECT_TRUE(result);
 }
 
 TEST(Machine, Capture) {
@@ -237,16 +304,9 @@ TEST(Machine, Memoization) {
 
   std::vector<Capture> captures;
   MemoTable memoTable;
-  auto result = Machine::parse(program, memoTable, sp, se, captures);
-  std::cerr << "test results" << std::endl;
-  print(std::cerr, captures);
-  std::cerr << std::endl;
-
-  std::cerr << "**********\n";
-  result = Machine::parse(program, memoTable, sp, se, captures);
-  std::cerr << "test results" << std::endl;
-  print(std::cerr, captures);
-  std::cerr << std::endl;
+  std::vector<Diagnostic> diagnostics;
+  auto result =
+      Machine::parse(program, memoTable, sp, se, captures, diagnostics);
   EXPECT_TRUE(result);
 }
 
@@ -264,9 +324,8 @@ TEST(Machine, MemoFail) {
 
   MemoTable memoTable;
   std::vector<Capture> captures;
-  Machine::parse(program, memoTable, sp, se, captures);
-
-  Machine::parse(program, memoTable, sp, se, captures);
+  std::vector<Diagnostic> diagnostics;
+  Machine::parse(program, memoTable, sp, se, captures, diagnostics);
 }
 
 MemoNode *insert(MemoTable &tree, size_t offset, size_t length = 1,
@@ -337,7 +396,6 @@ TEST(MemoTable, RemoveLeft) {
   EXPECT_EQ(rr->rchild, nullptr);
 
   tree.invalidate(0, 0, 1);
-  tree.dump();
   verify(std::cout, tree);
 
   // R

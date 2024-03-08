@@ -22,7 +22,7 @@ public:
     store(0);
   }
 
-  LineInfo(StringRef content) {
+  LineInfo(StringRef content) : LineInfo() {
     for (auto i = content.begin(), e = content.end(); i != e; ++i) {
       if (*i == '\n')
         store(std::distance(content.begin(), i));

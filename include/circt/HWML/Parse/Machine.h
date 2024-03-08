@@ -4,6 +4,7 @@
 #include "circt/HWML/Parse/Capture.h"
 #include "circt/HWML/Parse/Insn.h"
 #include "circt/HWML/Parse/MemoTable.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/raw_ostream.h"
 #include <algorithm>
 #include <cassert>
@@ -210,10 +211,12 @@ struct Machine {
   /// Advances ip and comsumes one byte from the subject if it matches b, and
   /// goes to the failstate otherwise.
   bool match(uint8_t b) {
-    std::cerr << " match " << b << "\n";
+    std::cout << " @match " << b << "\n";
     // Check if we are at the end of the subject.
     if (sp == se)
       return fail();
+
+    std::cout << " @against " << *sp << "\n";
 
     // Check if we match the current byte.
     if (*sp != b)
@@ -357,12 +360,37 @@ struct Machine {
   void captureEnd() {
     auto entry = popEntry();
     assert(entry.isCapture() && "must be a capture frame");
-    if (stack.size()) {
+    if (!stack.empty()) {
       // Add to the parent frame's captures.
       stack.back().captures.emplace_back(entry.getID(), entry.getSP(), sp,
                                          std::move(entry.captures));
     } else {
       // Add to the global list of captures.
+      captures.emplace_back(entry.getID(), entry.getSP(), sp,
+                            std::move(entry.captures));
+    }
+    ++ip;
+  }
+
+  /// Pops a capture entry off of the stack, and creates a new capture object. A
+  /// captures in the parent become children of this capture.
+  void captureEndReduce() {
+    auto entry = popEntry();
+    assert(entry.isCapture() && "must be a capture frame");
+    if (!stack.empty()) {
+      // Add to the parent frame's captures.
+      // Move entry's child captures to the tail of the entry's parent captures.
+      auto &parent = stack.back();
+      entry.captures.insert(entry.captures.begin(), parent.captures.begin(),
+                            parent.captures.end());
+      parent.captures.clear();
+      parent.captures.emplace_back(entry.getID(), entry.getSP(), sp,
+                                   std::move(entry.captures));
+    } else {
+      // Add to the global list of captures.
+      entry.captures.insert(entry.captures.begin(), captures.begin(),
+                            captures.end());
+      captures.clear();
       captures.emplace_back(entry.getID(), entry.getSP(), sp,
                             std::move(entry.captures));
     }
@@ -410,13 +438,12 @@ struct Machine {
     ProgramPrinter printer(program);
 
     while (true) {
-#if 0
+#if 1
       dumpStack(printer);
       std::cerr << "Executing ";
       printer.print(std::cerr, *ip);
       std::cerr << std::endl;
 #endif
-
       switch (ip->getKind()) {
       case InsnBase::Kind::Match:
         if (match(ip->match.get()))
@@ -473,6 +500,9 @@ struct Machine {
         break;
       case InsnBase::Kind::CaptureEnd:
         captureEnd();
+        break;
+      case InsnBase::Kind::CaptureEndReduce:
+        captureEndReduce();
         break;
       case InsnBase::Kind::MemoOpen:
         if (memoOpen(ip->memoOpen.l, ip->memoOpen.id))

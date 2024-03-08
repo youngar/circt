@@ -34,6 +34,7 @@ struct InsnBase {
     Span,
     CaptureBegin,
     CaptureEnd,
+    CaptureEndReduce,
     MemoOpen,
     MemoClose,
     Error
@@ -134,6 +135,10 @@ struct CaptureEnd : InsnBase {
   CaptureEnd() : InsnBase(Kind::CaptureEnd) {}
 };
 
+struct CaptureEndReduce : InsnBase {
+  CaptureEndReduce() : InsnBase(Kind::CaptureEndReduce) {}
+};
+
 struct MemoOpen : InsnBase {
   MemoOpen(const Insn *l, uintptr_t id)
       : InsnBase(Kind::MemoOpen), l(l), id(id) {}
@@ -175,6 +180,7 @@ struct Insn {
     Span span;
     CaptureBegin captureBegin;
     CaptureEnd captureEnd;
+    CaptureEndReduce captureEndReduce;
     MemoOpen memoOpen;
     MemoClose memoClose;
     Error error;
@@ -197,6 +203,7 @@ struct Insn {
   Insn(Span x) : span(x) {}
   Insn(CaptureBegin x) : captureBegin(x) {}
   Insn(CaptureEnd x) : captureEnd(x) {}
+  Insn(CaptureEndReduce x) : captureEndReduce(x) {}
   Insn(MemoOpen x) : memoOpen(x) {}
   Insn(MemoClose x) : memoClose(x) {}
   Insn(Error x) : error(x) {}
@@ -343,6 +350,9 @@ struct ProgramPrinter {
     case InsnBase::Kind::CaptureEnd:
       os << "CaptureEnd";
       break;
+    case InsnBase::Kind::CaptureEndReduce:
+      os << "CaptureEndReduce";
+      break;
     case InsnBase::Kind::MemoOpen:
       os << "MemoOpen ";
       printLabel(os, insn.memoOpen.l);
@@ -471,6 +481,7 @@ public:
   Index span(std::bitset<256> set) { return push<Span>(getSetIndex(set)); }
   Index captureBegin(uintptr_t id) { return push<CaptureBegin>(id); }
   Index captureEnd() { return push<CaptureEnd>(); }
+  Index captureEndReduce() { return push<CaptureEndReduce>(); }
   Index memoOpen(Label l, uintptr_t id) {
     return push<MemoOpen>(l.placeholder(), id);
   }
