@@ -1,0 +1,79 @@
+
+; Comments
+;-  multiline comments -;
+;-  ;- nested -; comments -;
+
+;;;
+;;; HW Datatypes
+;;;
+
+; lowers to a verilog bit.
+datatype bit = 0 | 1;
+
+; lowers to a packed verilog bitvector.
+datatype bits =
+  | bnil: bits 0
+  | bapp: [n: Nat] bit -> bits n -> bits (succ n);
+
+; lowers to a verilog vector.
+datatype vector =
+  | vnil : vec
+
+; These datatypes can not be recursive.
+; datatype X = x: x -> x.
+
+;;;
+;;; HW Ops
+;;;
+
+wire v : bits 10;
+
+; HW is always generated in a module expresion.
+wire main = {
+
+
+}
+
+wire w := 4b100;
+
+b : bit
+v : vector bit 32
+
+comp f : [A: HW] -> A -> A;
+f
+
+wire w := 
+wire r := delay(w);
+prop p :=
+
+; Non-synthesizable Datatypes
+; Described using the recursive keyword. Recursive data types are by default
+; 
+recursive nat =
+  | zero: nat
+  | succ: nat -> nat;
+
+; Generators
+comp list =
+
+
+;;; Packages
+
+; Packages are second class.
+package Foo {
+  datatype Foo = bar | baz;
+};
+
+; Packages can have hidden members:
+package Hidden {
+  private datatype Foo = bar | baz;
+  private {
+    datatype Foo = bar | baz;
+  }
+}
+
+; Packages can be parameterized.
+package Foo (T : Type) {
+
+
+};
