@@ -15,6 +15,13 @@ namespace hwml {
 
 enum class Order { LT = -1, EQ = 0, GT = +1 };
 
+struct MemoEntry {
+  MemoEntry(size_t length, std::vector<Capture> &&captures)
+      : length(length), captures(std::move(captures)) {}
+  size_t length;
+  std::vector<Capture> captures;
+}
+
 struct MemoNode {
   MemoNode(uintptr_t id, const uint8_t *sp, size_t length, size_t examined,
            std::vector<Capture> &&captures)

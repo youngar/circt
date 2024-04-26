@@ -1,0 +1,2 @@
+
+fun append(n : Nat, v : Vector<String, n>, s : String) : Vector<Strings, n + 1> 
