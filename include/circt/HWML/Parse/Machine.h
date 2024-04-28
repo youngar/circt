@@ -112,8 +112,8 @@ struct Machine {
 
   Machine(const Program &program, MemoTable &memoTable, const uint8_t *sp,
           const uint8_t *se)
-      : program(program), ip(program.insns.data()), sp(sp), se(se), ep(sp),
-        sets(program.sets.data()), memoTable(memoTable) {}
+      : program(program), ip(program.insns.data()), bp(sp), sp(sp), se(se),
+        ep(sp), sets(program.sets.data()), memoTable(memoTable) {}
 
   void dumpStack(const ProgramPrinter &printer) {
     std::cerr << "stack dump\n";
@@ -146,10 +146,15 @@ struct Machine {
     std::cerr << std::endl;
   };
 
+  Position toPosition(const uint8_t *p) {
+    assert(bp <= p && p <= ep && "pointer outside of the buffer");
+    return (Position)(p - bp);
+  }
+
   /// Pops the top entry from the stack and returns it. Discards any current
   /// captures.
   Entry popEntry() {
-    assert(stack.size() && "stack cannot be empty");
+    assert(!stack.empty() && "stack cannot be empty");
     auto entry = std::move(stack.back());
     stack.pop_back();
     return entry;
@@ -186,7 +191,8 @@ struct Machine {
 
   void memoize(uintptr_t id, const uint8_t *sp, size_t spOff, size_t epOff,
                const std::vector<Capture> &captures) {
-    memoTable.insert(id, sp, spOff, epOff, std::vector<Capture>(captures));
+    memoTable.insert(id, toPosition(sp), spOff, epOff,
+                     std::vector<Capture>(captures));
   }
 
   void memoizeSuccess(uintptr_t id, const uint8_t *sp, const uint8_t *spEnd,
@@ -300,12 +306,16 @@ struct Machine {
 
   /// Match n characters.
   bool any(uintptr_t n) {
+    std::cerr << "!!! executing any, n=" << n << ", sp=" << (void *)sp
+              << ", se=" << (void *)se << ", remaining buffer is "
+              << (size_t)(se - sp) << "\n";
     if ((uintptr_t)(se - sp) < n) {
       sp = se;
       return fail();
     }
     sp += n;
     ep = std::max(sp, ep);
+    ++ip;
     return false;
   }
 
@@ -401,17 +411,17 @@ struct Machine {
   /// and advance the sp by the length of the memoization. If there is no
   /// corresponding memoization entry, a memoization stack entry is pushed.
   bool memoOpen(const Insn *l, uintptr_t id) {
-    auto *node = memoTable.lookup(id, sp);
+    auto *node = memoTable.lookup(id, toPosition(sp));
     if (node) {
-      if (node->length == std::numeric_limits<std::size_t>::max()) {
+      if (node->getLength() == std::numeric_limits<std::size_t>::max()) {
         return fail();
       }
       ip = l;
-      sp += node->length;
+      sp += node->getLength();
       ep = std::max(sp, ep);
       stack.back().captures.insert(stack.back().captures.end(),
-                                   node->captures.begin(),
-                                   node->captures.end());
+                                   node->getCaptures().begin(),
+                                   node->getCaptures().end());
       return false;
     }
     stack.emplace_back(Entry::memo(sp, id));
@@ -542,6 +552,8 @@ struct Machine {
   const Program &program;
   /// Instruction pointer.
   const Insn *ip;
+  /// Beginning pointer.
+  const uint8_t *bp;
   /// Subject pointer.
   const uint8_t *sp;
   /// Subject end.

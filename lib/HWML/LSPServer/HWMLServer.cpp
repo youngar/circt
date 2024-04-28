@@ -141,7 +141,7 @@ convertDiagnosticsToLSPDiagnostics(StringRef buffer,
     lspDiag.category = "Parse Error";
     auto offset = buffer.bytes_begin() - diag.sp;
     auto [line, column] = lineInfo.getLineAndColumnForOffset(offset);
-    lspDiag.range = Position(line, column);
+    lspDiag.range = {line, column};
     lspDiag.message = diag.message;
     lspDiag.severity = lsp::DiagnosticSeverity::Error;
     lspDiagnostics.emplace_back(std::move(lspDiag));
@@ -170,8 +170,16 @@ void HWMLDocument::update(const lsp::URIForFile &uri, int64_t version,
   }
 
   // for (const auto &change : changes) {
-  //   memoTable.invalidate()
-  // }
+  //   if (change.range) {
+  //     auto range = *change.range;
+  //     auto position = range.start;
+  //     auto inserted = change.text.size();
+  //     auto removed = range.end.
+  //     memoTable.invalidate(range.start, change.text.size(),
+  //                          range.end - range.start);
+  //   } else {
+  //     // TODO: the whole document changed, invalidate everything.
+  //   }
 }
 
 //===--------------------------------------------------------------------===//

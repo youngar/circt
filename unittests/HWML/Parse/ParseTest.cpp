@@ -9,29 +9,34 @@ using namespace circt::hwml;
 static size_t verify(std::ostream &out, MemoNode *node) {
   auto leftHeight = 0;
   auto rightHeight = 0;
-  auto examinedMax = node->examined;
-  if (auto *l = node->lchild) {
+  auto maxExamined = node->getExamined();
+  if (auto *l = node->getLeftChild()) {
     leftHeight = verify(out, l);
-    examinedMax = std::max(examinedMax, (l->sp - node->sp) + l->examined_max);
-    assert(l->sp <= node->sp);
-    if (l->sp == node->sp)
-      assert(l->id < node->id);
+    maxExamined = std::max(maxExamined, l->getMaxExamined());
+    assert(l->getStart() <= node->getStart());
+    if (l->getStart() == node->getStart())
+      assert(l->getId() < node->getId());
   }
 
-  if (auto *r = node->rchild) {
+  if (auto *r = node->getRightChild()) {
     rightHeight = verify(out, r);
-    examinedMax = std::max(examinedMax, (r->sp - node->sp) + r->examined_max);
-    assert(r->sp >= node->sp);
-    if (r->sp == node->sp)
-      assert(r->id > node->id);
+    maxExamined = std::max(maxExamined, r->getMaxExamined());
+    assert(r->getStart() >= node->getStart());
+    if (r->getStart() == node->getStart())
+      assert(r->getId() > node->getId());
   }
 
-  // out << "balance " << node->balance << " should be "
-  //     << (rightHeight - leftHeight);
-  // out << "examinedMax " << node->examined_max << " should be " <<
-  // examinedMax;
-  assert(node->balance == (rightHeight - leftHeight));
-  assert(node->examined_max == examinedMax);
+  if (node->getMaxExamined() != maxExamined) {
+    out << "balance " << node->getBalance() << " should be "
+        << (rightHeight - leftHeight) << "\n";
+    out << "maxExamined " << node->getMaxExamined() << " should be "
+        << maxExamined << "\n";
+    MemoTable().dump(std::cout, node);
+    out << *node << "\n";
+  }
+
+  assert(node->getBalance() == (rightHeight - leftHeight));
+  assert(node->getMaxExamined() == maxExamined);
   return std::max(leftHeight, rightHeight) + 1;
 }
 
@@ -328,15 +333,14 @@ TEST(Machine, MemoFail) {
   Machine::parse(program, memoTable, sp, se, captures, diagnostics);
 }
 
-MemoNode *insert(MemoTable &tree, size_t offset, size_t length = 1,
+MemoNode *insert(MemoTable &tree, Position offset, size_t length = 1,
                  size_t examined = 1) {
-  auto sp = (const uint8_t *)offset;
-  return tree.insert(123, sp, length, examined, {});
+  return tree.insert(123, offset, length, examined, {});
 }
 
 TEST(MemoTable, Tree) {
   const char *input = "foo bar baz";
-  auto sp = (const uint8_t *)input;
+  auto sp = (Position)input;
   MemoTable tree;
   verify(std::cout, tree);
   tree.insert(0, sp + 1, 1, 1, {});
@@ -386,24 +390,28 @@ TEST(MemoTable, RemoveLeft) {
   //
   // Delete L. R rotates to center, C becom
   EXPECT_EQ(tree.root, c);
-  EXPECT_EQ(c->lchild, l);
-  EXPECT_EQ(l->lchild, nullptr);
-  EXPECT_EQ(l->rchild, nullptr);
-  EXPECT_EQ(c->rchild, r);
-  EXPECT_EQ(r->lchild, nullptr);
-  EXPECT_EQ(r->rchild, rr);
-  EXPECT_EQ(rr->lchild, nullptr);
-  EXPECT_EQ(rr->rchild, nullptr);
+  EXPECT_EQ(c->getLeftChild(), l);
+  EXPECT_EQ(l->getLeftChild(), nullptr);
+  EXPECT_EQ(l->getRightChild(), nullptr);
+  EXPECT_EQ(c->getRightChild(), r);
+  EXPECT_EQ(r->getLeftChild(), nullptr);
+  EXPECT_EQ(r->getRightChild(), rr);
+  EXPECT_EQ(rr->getLeftChild(), nullptr);
+  EXPECT_EQ(rr->getRightChild(), nullptr);
+  std::cout << "!!! dumping tree before invalidate";
+  tree.dump(std::cout);
 
   tree.invalidate(0, 0, 1);
+  std::cout << "!!! dumping tree after invalidate";
+  tree.dump(std::cout);
   verify(std::cout, tree);
 
   // R
   // |-C
   // `-RR
   EXPECT_EQ(tree.root, r);
-  EXPECT_EQ(r->lchild, c);
-  EXPECT_EQ(r->rchild, rr);
+  EXPECT_EQ(r->getLeftChild(), c);
+  EXPECT_EQ(r->getRightChild(), rr);
 }
 
 TEST(MemoTable, RemoveRoot) {
@@ -451,21 +459,90 @@ TEST(MemoTable, RemoveRoot) {
   verify(std::cout, tree);
 
   EXPECT_EQ(tree.root, c);
-  EXPECT_EQ(c->lchild, l);
-  EXPECT_EQ(l->lchild, ll);
-  EXPECT_EQ(ll->lchild, nullptr);
-  EXPECT_EQ(ll->rchild, nullptr);
-  EXPECT_EQ(l->rchild, nullptr);
-  EXPECT_EQ(c->rchild, r);
-  EXPECT_EQ(r->lchild, rl);
-  EXPECT_EQ(rl->lchild, nullptr);
-  EXPECT_EQ(rl->rchild, nullptr);
-  EXPECT_EQ(r->rchild, rr);
-  EXPECT_EQ(rr->lchild, nullptr);
-  EXPECT_EQ(rr->rchild, rrr);
-  EXPECT_EQ(rrr->lchild, nullptr);
-  EXPECT_EQ(rrr->rchild, nullptr);
+  EXPECT_EQ(c->getLeftChild(), l);
+  EXPECT_EQ(l->getLeftChild(), ll);
+  EXPECT_EQ(ll->getLeftChild(), nullptr);
+  EXPECT_EQ(ll->getRightChild(), nullptr);
+  EXPECT_EQ(l->getRightChild(), nullptr);
+  EXPECT_EQ(c->getRightChild(), r);
+  EXPECT_EQ(r->getLeftChild(), rl);
+  EXPECT_EQ(rl->getLeftChild(), nullptr);
+  EXPECT_EQ(rl->getRightChild(), nullptr);
+  EXPECT_EQ(r->getRightChild(), rr);
+  EXPECT_EQ(rr->getLeftChild(), nullptr);
+  EXPECT_EQ(rr->getRightChild(), rrr);
+  EXPECT_EQ(rrr->getLeftChild(), nullptr);
+  EXPECT_EQ(rrr->getRightChild(), nullptr);
 
-  tree.invalidate((uint8_t *)1, 0, 1);
+  tree.dump(std::cout);
+  tree.invalidate(1, 0, 1);
+  tree.dump(std::cout);
   verify(std::cout, tree);
+}
+
+#include "circt/HWML/Parse/Insn.h"
+TEST(Parser, MyGrammar) {
+  InsnStream s;
+
+  auto ws = s.label();
+  auto num = s.label();
+  auto id = s.label();
+  auto atom = s.label();
+  auto expression = s.label();
+  auto group = s.label();
+  auto declaration = s.label();
+  auto definition = s.label();
+  auto statement = s.label();
+  auto file = s.label();
+
+  enum CaptureId {
+    IdId,
+    NumId,
+    ExprId,
+    DeclId,
+    DefId,
+    StmtId,
+    TrailingId,
+  };
+  using namespace circt::hwml::p;
+  // clang-format off
+  p::program(file,
+    rule(ws, star(p::set(" \n\t"))),
+    rule(id, capture(IdId, p::plus(p::set("abcdefghijklmnopqrstuvwxyz")))),
+    rule(num, capture(NumId, p::plus(p::set("1234567890")))),
+    rule(atom, alt(id, num, group)),
+    rule(expression, capture(ExprId, atom, star(ws, atom))),
+    rule(group,
+      "(",
+      require("require expression inside group", expression),
+      require("missing closing parenthesis", ")")),
+    rule(declaration, capture(DeclId, 
+      id, ws, ":", ws,
+      require("missing type expression", expression), ws)),
+    rule(definition, capture(DefId,
+      p::plus(id), ws, "=", ws, expression)),
+    rule (statement, capture(StmtId,
+      alt(definition, declaration),
+      ws,
+      require("missing semicolon", ";"))),
+    rule(file, star(ws, statement), ws, require("expected declaration or definition", p::failIf(p::any())))
+  )(s);
+
+  // clang-format on
+  p::program(file, rule(file, p::any(1)))(s);
+  auto program = s.finalize();
+
+  //const uint8_t sp[] = "a : foo bar baz; dah : dah;";
+  const uint8_t sp[] = "";
+  auto *se = sp + sizeof(sp);
+  std::vector<Capture> captures;
+  std::vector<Diagnostic> diagnostics;
+  auto result = Machine::parse(program, sp, se, captures, diagnostics);
+  print(std::cerr, captures);
+  std::cerr << "\n";
+  for (auto &d : diagnostics) {
+    std::cerr << (d.sp - sp) << ": " << d.message << "\n";
+  }
+  EXPECT_TRUE(result);
+  print(std::cout, program);
 }

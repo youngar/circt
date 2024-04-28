@@ -94,6 +94,7 @@ struct HWMLParser {
              std::vector<Diagnostic> &diagnostics);
 
 private:
+  Program program;
   MemoTable memoTable;
 };
 

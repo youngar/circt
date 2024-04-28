@@ -25,9 +25,7 @@ class CSTNode {
   TypeID typeID;
 };
 
-class CSTFile : public CSTNode, public KindMixin<CSTFile> {
-
-};
+class CSTFile : public CSTNode, public KindMixin<CSTFile> {};
 
 ///
 /// CST
@@ -43,6 +41,7 @@ private:
   std::string contents;
 };
 
+class Ast;
 class ConcreteSyntaxDB {
 public:
 private:
@@ -80,7 +79,7 @@ class EvalParams {
 /// Stores the canonical forms of expressions?
 class EvalCacheEntry {
   Ast result;
-  Hash inputsHash;
+  // Hash inputsHash;
 };
 
 class EvalDB {
@@ -105,8 +104,8 @@ int main(int argc, char *argv[]) {
   }
 
   if (!filename) {
-    llvm::errs() << program << ": missing <filename>\n";
-    return EXIT_FAILURE();
+    // llvm::errs() << program << ": missing <filename>\n";
+    return EXIT_FAILURE;
   }
 
   return EXIT_SUCCESS;

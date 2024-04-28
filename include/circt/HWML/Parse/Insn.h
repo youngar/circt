@@ -13,6 +13,12 @@
 namespace circt {
 namespace hwml {
 
+/// An identifier for captured parses.
+using RuleId = size_t;
+
+/// A relative position in a buffer.
+using Position = size_t;
+
 struct Insn;
 
 struct InsnBase {
@@ -543,11 +549,22 @@ public:
 
   template <typename CallableT>
   Index failIf(CallableT p) {
+    auto index = getIndex();
     auto l1 = label();
     choice(l1);
     p(*this);
     failTwice();
     setLabel(l1, getIndex());
+    return index;
+  }
+
+  template <typename CallableT>
+  Index capture(uintptr_t id, CallableT p) {
+    auto index = getIndex();
+    captureBegin(id);
+    p(*this);
+    captureEnd();
+    return index;
   }
 
   template <typename CallableT>
@@ -710,6 +727,10 @@ auto rule(Label l, Args... p) {
   return label(l, seq(p..., ret));
 }
 
+inline auto any(size_t n = 1) {
+  return [=](InsnStream &s) -> Index { return s.any(n); };
+}
+
 template <typename T, typename U>
 auto alt(T p1, U p2) {
   return [=](InsnStream &s) -> Index { return s.alt(coerce(p1), coerce(p2)); };
@@ -733,6 +754,11 @@ auto plus(Args... args) {
 template <typename... Args>
 auto failIf(Args... args) {
   return [=](InsnStream &s) -> Index { return s.failIf(seq(args...)); };
+}
+
+template <typename... Args>
+auto capture(uintptr_t id, Args... args) {
+  return [=](InsnStream &s) -> Index { return s.capture(id, seq(args...)); };
 }
 
 template <typename... Args>
