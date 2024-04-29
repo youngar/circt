@@ -1,111 +1,56 @@
 #include "circt/HWML/HWMLAst.h"
 #include "circt/HWML/HWMLIncremental.h"
+#include "circt/HWML/HWMLParser.h"
+#include "mlir/Support/FileUtilities.h"
+#include "mlir/Support/Timing.h"
+#include "mlir/Support/ToolUtilities.h"
 #include "llvm/ADT/StringMap.h"
+#include "llvm/Support/Chrono.h"
+#include "llvm/Support/CommandLine.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/InitLLVM.h"
+#include "llvm/Support/Path.h"
+#include "llvm/Support/PrettyStackTrace.h"
+#include "llvm/Support/SourceMgr.h"
+#include "llvm/Support/ToolOutputFile.h"
+#include "llvm/Support/raw_ostream.h"
 #include <iostream>
 
+using namespace mlir;
 using namespace circt;
 using namespace hwml;
-
-///
-/// Helper
-///
-
-template <typename ConcreteType>
-class KindMixin {
-  static bool classof(const KindMixin *base) {
-    return base->typeID == TypeID::get<ConcreteType>();
-  }
-};
-
-///
-/// CST
-///
-
-class CSTNode {
-  TypeID typeID;
-};
-
-class CSTFile : public CSTNode, public KindMixin<CSTFile> {};
-
-///
-/// CST
-///
-
-class ConcreteSyntax {};
-
-class File {
-public:
-  explicit File(std::string contents) : contents(contents) {}
-
-private:
-  std::string contents;
-};
-
-class Ast;
-class ConcreteSyntaxDB {
-public:
-private:
-  llvm::StringMap<Ast> files;
-};
-
-///
-/// Ast
-///
-
-class Ast {
-  Expr *expr;
-  bool valid = false;
-};
-
-class AstDB {
-public:
-  File openFile(std::string filename, std::string contents) {}
-
-  Ast query(const File &file) const {}
-
-  void update(File &file) const {}
-
-private:
-};
-
-///
-/// Eval
-///
-
-class EvalParams {
-  Ast ast;
-};
-
-/// Stores the canonical forms of expressions?
-class EvalCacheEntry {
-  Ast result;
-  // Hash inputsHash;
-};
-
-class EvalDB {
-  DenseMap<EvalParams, EvalCacheEntry> evals;
-};
+using namespace llvm;
 
 int main(int argc, char *argv[]) {
-  const char *program = "hwl";
-  const char *filename = nullptr;
-  switch (argc) {
-  case 0:
-    break;
-  case 1:
-    program = argv[0];
-    break;
-  case 2:
-    program = argv[0];
-    filename = argv[1];
-    break;
-  default:
-    break;
+  cl::OptionCategory mainCategory("HWML Options");
+  cl::opt<std::string> inputFilename(cl::Positional, cl::desc("<input file>"),
+                                     cl::init("-"), cl::cat(mainCategory));
+
+  cl::ParseCommandLineOptions(argc, argv, "HWML");
+
+  // Set up the input file.
+  std::string errorMessage;
+  auto input = openInputFile(inputFilename, &errorMessage);
+  if (!input) {
+    llvm::errs() << errorMessage << "\n";
+    return EXIT_FAILURE;
   }
 
-  if (!filename) {
-    // llvm::errs() << program << ": missing <filename>\n";
-    return EXIT_FAILURE;
+  llvm::SourceMgr sourceMgr;
+  sourceMgr.AddNewSourceBuffer(std::move(input), llvm::SMLoc());
+  // SourceMgrDiagnosticHandler sourceMgrHandler(sourceMgr,
+  //                                             &context /*, shouldShow */);
+  // FileLineColLocsAsNotesDiagnosticHandler addLocs(&context);
+  auto buffer =
+      sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID())->getBuffer();
+  hwml::HWMLParser parser;
+  std::vector<hwml::Capture> captures;
+  std::vector<hwml::Diagnostic> diagnostics;
+  parser.parse(buffer, captures, diagnostics);
+
+  for (auto &diag : diagnostics) {
+    sourceMgr.PrintMessage(llvm::SMLoc::getFromPointer((const char *)diag.sp),
+                           SourceMgr::DK_Error, diag.message);
   }
 
   return EXIT_SUCCESS;

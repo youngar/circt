@@ -8,20 +8,10 @@ add_circt_tool(hwml
   DEPENDS
   SUPPORT_PLUGINS
 )
-llvm_update_compile_flags(firtool)
-target_link_libraries(firtool PRIVATE
-  CIRCTExportVerilog
-  CIRCTImportFIRFile
-  CIRCTFIRRTLTransforms
-  CIRCTHWTransforms
-  CIRCTOMTransforms
-  CIRCTSeq
-  CIRCTSim
-  CIRCTSVTransforms
-  CIRCTTransforms
-  CIRCTFirtool
-  CIRCTTargetDebugInfo
-
+llvm_update_compile_flags(hwml)
+target_link_libraries(hwml PRIVATE
+  CIRCTHWML
+  
   MLIRBytecodeReader
   MLIRBytecodeWriter
   MLIRParser
