@@ -1,4 +1,5 @@
 add_circt_unittest(CIRCTHWMLParseTests
+  MemoTableTest.cpp
   ParseTest.cpp
 )
 

@@ -382,31 +382,6 @@ struct Machine {
     ++ip;
   }
 
-  /// Pops a capture entry off of the stack, and creates a new capture object. A
-  /// captures in the parent become children of this capture.
-  void captureEndReduce() {
-    auto entry = popEntry();
-    assert(entry.isCapture() && "must be a capture frame");
-    if (!stack.empty()) {
-      // Add to the parent frame's captures.
-      // Move entry's child captures to the tail of the entry's parent captures.
-      auto &parent = stack.back();
-      entry.captures.insert(entry.captures.begin(), parent.captures.begin(),
-                            parent.captures.end());
-      parent.captures.clear();
-      parent.captures.emplace_back(entry.getID(), entry.getSP(), sp,
-                                   std::move(entry.captures));
-    } else {
-      // Add to the global list of captures.
-      entry.captures.insert(entry.captures.begin(), captures.begin(),
-                            captures.end());
-      captures.clear();
-      captures.emplace_back(entry.getID(), entry.getSP(), sp,
-                            std::move(entry.captures));
-    }
-    ++ip;
-  }
-
   /// If there is a memoization entry corresponding to (id, sp), jump to l,
   /// and advance the sp by the length of the memoization. If there is no
   /// corresponding memoization entry, a memoization stack entry is pushed.
@@ -510,9 +485,6 @@ struct Machine {
         break;
       case InsnBase::Kind::CaptureEnd:
         captureEnd();
-        break;
-      case InsnBase::Kind::CaptureEndReduce:
-        captureEndReduce();
         break;
       case InsnBase::Kind::MemoOpen:
         if (memoOpen(ip->memoOpen.l, ip->memoOpen.id))

@@ -40,7 +40,6 @@ struct InsnBase {
     Span,
     CaptureBegin,
     CaptureEnd,
-    CaptureEndReduce,
     MemoOpen,
     MemoClose,
     Error
@@ -141,10 +140,6 @@ struct CaptureEnd : InsnBase {
   CaptureEnd() : InsnBase(Kind::CaptureEnd) {}
 };
 
-struct CaptureEndReduce : InsnBase {
-  CaptureEndReduce() : InsnBase(Kind::CaptureEndReduce) {}
-};
-
 struct MemoOpen : InsnBase {
   MemoOpen(const Insn *l, uintptr_t id)
       : InsnBase(Kind::MemoOpen), l(l), id(id) {}
@@ -186,7 +181,6 @@ struct Insn {
     Span span;
     CaptureBegin captureBegin;
     CaptureEnd captureEnd;
-    CaptureEndReduce captureEndReduce;
     MemoOpen memoOpen;
     MemoClose memoClose;
     Error error;
@@ -209,7 +203,6 @@ struct Insn {
   Insn(Span x) : span(x) {}
   Insn(CaptureBegin x) : captureBegin(x) {}
   Insn(CaptureEnd x) : captureEnd(x) {}
-  Insn(CaptureEndReduce x) : captureEndReduce(x) {}
   Insn(MemoOpen x) : memoOpen(x) {}
   Insn(MemoClose x) : memoClose(x) {}
   Insn(Error x) : error(x) {}
@@ -356,9 +349,6 @@ struct ProgramPrinter {
     case InsnBase::Kind::CaptureEnd:
       os << "CaptureEnd";
       break;
-    case InsnBase::Kind::CaptureEndReduce:
-      os << "CaptureEndReduce";
-      break;
     case InsnBase::Kind::MemoOpen:
       os << "MemoOpen ";
       printLabel(os, insn.memoOpen.l);
@@ -407,7 +397,8 @@ void print(std::ostream &os, const Program &program);
 /// Instruction Stream
 ///
 
-struct Label {
+class Label {
+  friend struct InsnStream;
   explicit Label(uintptr_t index) : index(index) {}
   uintptr_t index;
   Insn *placeholder() const { return (Insn *)index; }
@@ -428,9 +419,11 @@ constexpr Index INVALID_INDEX;
 
 struct InsnStream {
 
+  /// Get the current insertion index of the stream. The index corresponds to
+  /// the next instruction which is created.
   Index getIndex() { return Index(insns.size()); }
 
-private:
+  /// Helper to construct an opcode and insert it into the program.
   template <typename T, typename... Args>
   Index push(Args &&...args) {
     auto index = getIndex();
@@ -438,6 +431,8 @@ private:
     return index;
   };
 
+  /// Get the set index for a given set.  If this set has not been seen before,
+  /// it will be interned.
   uintptr_t getSetIndex(std::bitset<256> set) {
     auto [iter, inserted] = setMap.emplace(set, sets.size());
     if (inserted)
@@ -445,19 +440,15 @@ private:
     return iter->second;
   }
 
-public:
+  /// Create a label.  It must be assigned an index before the proggram is
+  /// finalized.
   Label label() {
     auto size = labels.size();
     labels.emplace_back();
     return Label(size);
   }
 
-  Label label(Index index) {
-    auto l = label();
-    setLabel(l, index);
-    return l;
-  }
-
+  /// Set the index of a label.
   Index setLabel(Label label, Index index) {
     assert(labels[label.index] == INVALID_INDEX);
     labels[label.index] = index;
@@ -473,13 +464,7 @@ public:
   Index fail() { return push<Fail>(); }
   Index end() { return push<End>(); }
   Index endFail() { return push<EndFail>(); }
-  Index set(std::bitset<256> set) { return push<Set>(getSetIndex(set)); }
-  Index set(const std::string &str) {
-    std::bitset<256> bitset;
-    for (auto c : str)
-      bitset.set(c);
-    return set(bitset);
-  }
+  Index set(uintptr_t setIndex) { return push<Set>(setIndex); }
   Index any(uintptr_t n) { return push<Any>(n); }
   Index partialCommit(Label l) { return push<PartialCommit>(l.placeholder()); }
   Index backCommit(Label l) { return push<BackCommit>(l.placeholder()); }
@@ -487,104 +472,12 @@ public:
   Index span(std::bitset<256> set) { return push<Span>(getSetIndex(set)); }
   Index captureBegin(uintptr_t id) { return push<CaptureBegin>(id); }
   Index captureEnd() { return push<CaptureEnd>(); }
-  Index captureEndReduce() { return push<CaptureEndReduce>(); }
   Index memoOpen(Label l, uintptr_t id) {
     return push<MemoOpen>(l.placeholder(), id);
   }
   Index memoClose() { return push<MemoClose>(); }
   Index error(const char *m, Label l) {
     return push<Error>(m, l.placeholder());
-  }
-
-  /// Match every character of the string sequentially.
-  Index string(const std::string &s) {
-    auto index = getIndex();
-    for (auto c : s)
-      match(c);
-    return index;
-  }
-
-  /// Attempt to match p1, and if that fails, match p2.
-  template <typename CallableT, typename CallableU>
-  Index alt(CallableT p1, CallableU p2) {
-    auto index = getIndex();
-    auto l1 = label();
-    auto l2 = label();
-    choice(l1);
-    p1(*this);
-    commit(l2);
-    setLabel(l1, getIndex());
-    p2(*this);
-    assert(index != getIndex());
-    setLabel(l2, getIndex());
-    return index;
-  }
-
-  template <typename CallableT>
-  Index star(CallableT p) {
-    auto index = getIndex();
-    auto l1 = label();
-    auto l2 = label();
-    choice(l2);
-    setLabel(l1, getIndex());
-    p(*this);
-    partialCommit(l1);
-    setLabel(l2, getIndex());
-    return index;
-  }
-
-  template <typename CallableT>
-  Index plus(CallableT p) {
-    auto index = getIndex();
-    auto l1 = label();
-    auto l2 = label();
-    p(*this);
-    choice(l2);
-    setLabel(l1, getIndex());
-    p(*this);
-    partialCommit(l1);
-    setLabel(l2, getIndex());
-    return index;
-  }
-
-  template <typename CallableT>
-  Index failIf(CallableT p) {
-    auto index = getIndex();
-    auto l1 = label();
-    choice(l1);
-    p(*this);
-    failTwice();
-    setLabel(l1, getIndex());
-    return index;
-  }
-
-  template <typename CallableT>
-  Index capture(uintptr_t id, CallableT p) {
-    auto index = getIndex();
-    captureBegin(id);
-    p(*this);
-    captureEnd();
-    return index;
-  }
-
-  template <typename CallableT>
-  Index memo(uintptr_t id, CallableT p) {
-    auto index = getIndex();
-    auto l1 = label();
-    memoOpen(l1, id);
-    p(*this);
-    memoClose();
-    setLabel(l1, getIndex());
-    return index;
-  }
-
-  template <typename CallableT>
-  Index require(const char *m, CallableT p) {
-    return alt(p, [=](InsnStream &s) {
-      auto l1 = label();
-      error(m, l1);
-      setLabel(l1, getIndex());
-    });
   }
 
   Program finalize() {
@@ -622,7 +515,6 @@ public:
         break;
       }
     }
-
     return {std::move(insns), std::move(sets)};
   }
 
@@ -643,14 +535,27 @@ struct Coerce {
 template <>
 struct Coerce<const char *> {
   auto operator()(const char *str) const {
-    return [=](InsnStream &s) -> Index { return s.string(str); };
+    return [=](InsnStream &s) -> Index {
+      /// Match every character of the string sequentially.
+      auto index = s.getIndex();
+      unsigned i = 0;
+      while (str[i])
+        s.match(str[i++]);
+      return index;
+    };
   }
 };
 
 template <>
 struct Coerce<std::string> {
   auto operator()(const std::string &str) const {
-    return [&](InsnStream &s) -> Index { return s.string(str); };
+    return [&](InsnStream &s) -> Index {
+      /// Match every character of the string sequentially.
+      auto index = s.getIndex();
+      for (auto c : str)
+        s.match(c);
+      return index;
+    };
   }
 };
 
@@ -661,35 +566,11 @@ struct Coerce<Label> {
   }
 };
 
-// template <typename T>
-// struct Coerce<const T> : Coerce<T> {};
-
 template <typename T>
 auto coerce(T &&t) {
   using U = std::remove_cv_t<std::remove_reference_t<T>>;
   return Coerce<U>()(std::forward<T>(t));
 }
-
-template <typename T>
-auto label(Label l, T p) {
-  return [=](InsnStream &s) -> Index { return s.setLabel(l, p(s)); };
-}
-
-inline auto set(const std::string &str) {
-  return [=](InsnStream &s) -> Index { return s.set(str); };
-}
-
-inline auto jmp(Label l) {
-  return [=](InsnStream &s) -> Index { return s.jump(l); };
-}
-
-inline auto call(Label l) {
-  return [=](InsnStream &s) -> Index { return s.call(l); };
-}
-
-inline Index ret(InsnStream &s) { return s.ret(); }
-
-inline Index end(InsnStream &s) { return s.end(); }
 
 template <typename T>
 auto seq(T p) {
@@ -710,12 +591,33 @@ auto seq(T p1, U p2, Args... args) {
   return seq(p1, seq(p2, args...));
 }
 
-// Program Builders
-
 template <typename T>
-auto program(T p) {
-  return seq(p, end);
+auto label(Label l, T p) {
+  return [=](InsnStream &s) -> Index { return s.setLabel(l, p(s)); };
 }
+
+inline auto set(const std::string &str) {
+  return [=](InsnStream &s) -> Index {
+    std::bitset<256> set;
+    for (auto c : str)
+      set.set(c);
+    return s.set(s.getSetIndex(set));
+  };
+}
+
+inline auto jmp(Label l) {
+  return [=](InsnStream &s) -> Index { return s.jump(l); };
+}
+
+inline auto call(Label l) {
+  return [=](InsnStream &s) -> Index { return s.call(l); };
+}
+
+inline Index ret(InsnStream &s) { return s.ret(); }
+
+inline Index end(InsnStream &s) { return s.end(); }
+
+// Program Builders
 
 template <typename... Args>
 auto program(Label l, Args... p) {
@@ -733,7 +635,18 @@ inline auto any(size_t n = 1) {
 
 template <typename T, typename U>
 auto alt(T p1, U p2) {
-  return [=](InsnStream &s) -> Index { return s.alt(coerce(p1), coerce(p2)); };
+  return [=](InsnStream &s) -> Index {
+    auto index = s.getIndex();
+    auto l1 = s.label();
+    auto l2 = s.label();
+    s.choice(l1);
+    coerce(p1)(s);
+    s.commit(l2);
+    s.setLabel(l1, s.getIndex());
+    coerce(p2)(s);
+    s.setLabel(l2, s.getIndex());
+    return index;
+  };
 }
 
 template <typename T, typename U, typename... Args>
@@ -743,38 +656,80 @@ auto alt(T p1, U p2, Args... args) {
 
 template <typename... Args>
 auto star(Args... args) {
-  return [=](InsnStream &s) -> Index { return s.star(seq(args...)); };
+  return [=](InsnStream &s) -> Index {
+    auto index = s.getIndex();
+    auto l1 = s.label();
+    auto l2 = s.label();
+    s.choice(l2);
+    s.setLabel(l1, s.getIndex());
+    seq(args...)(s);
+    s.partialCommit(l1);
+    s.setLabel(l2, s.getIndex());
+    return index;
+  };
 }
 
 template <typename... Args>
 auto plus(Args... args) {
-  return [=](InsnStream &s) -> Index { return s.plus(seq(args...)); };
+  return [=](InsnStream &s) -> Index {
+    auto index = s.getIndex();
+    auto l1 = s.label();
+    auto l2 = s.label();
+    seq(args...)(s);
+    s.choice(l2);
+    s.setLabel(l1, s.getIndex());
+    seq(args...)(s);
+    s.partialCommit(l1);
+    s.setLabel(l2, s.getIndex());
+    return index;
+  };
 }
 
 template <typename... Args>
 auto failIf(Args... args) {
-  return [=](InsnStream &s) -> Index { return s.failIf(seq(args...)); };
+  return [=](InsnStream &s) -> Index {
+    auto index = s.getIndex();
+    auto l1 = s.label();
+    s.choice(l1);
+    seq(args...)(s);
+    s.failTwice();
+    s.setLabel(l1, s.getIndex());
+    return index;
+  };
 }
 
 template <typename... Args>
 auto capture(uintptr_t id, Args... args) {
-  return [=](InsnStream &s) -> Index { return s.capture(id, seq(args...)); };
+  return [=](InsnStream &s) -> Index {
+    auto index = s.getIndex();
+    s.captureBegin(id);
+    seq(args...)(s);
+    s.captureEnd();
+    return index;
+  };
 }
 
 template <typename... Args>
 auto memo(uintptr_t id, Args... args) {
-  return [=](InsnStream &s) -> Index { return s.memo(id, seq(args...)); };
+  return [=](InsnStream &s) -> Index {
+    auto index = s.getIndex();
+    auto l1 = s.label();
+    s.memoOpen(l1, id);
+    seq(args...)(s);
+    s.memoClose();
+    s.setLabel(l1, s.getIndex());
+    return index;
+  };
 }
 
 template <typename... Args>
 auto require(const char *m, Args... args) {
-  return [=](InsnStream &s) -> Index { return s.require(m, seq(args...)); };
+  return alt(seq(args...), [=](InsnStream &s) {
+    auto l1 = s.label();
+    s.error(m, l1);
+    s.setLabel(l1, s.getIndex());
+  });
 }
-
-// template <typename T, typename U>
-// auto require(const char *m, T p1, U p2) {
-//   return [=](InsnStream &s) -> Index { return alt(require(m, p1), p2); };
-// }
 
 } // namespace p
 
