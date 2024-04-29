@@ -217,12 +217,10 @@ struct Machine {
   /// Advances ip and comsumes one byte from the subject if it matches b, and
   /// goes to the failstate otherwise.
   bool match(uint8_t b) {
-    std::cout << " @match " << b << "\n";
     // Check if we are at the end of the subject.
     if (sp == se)
       return fail();
 
-    std::cout << " @against " << *sp << "\n";
 
     // Check if we match the current byte.
     if (*sp != b)
@@ -306,9 +304,6 @@ struct Machine {
 
   /// Match n characters.
   bool any(uintptr_t n) {
-    std::cerr << "!!! executing any, n=" << n << ", sp=" << (void *)sp
-              << ", se=" << (void *)se << ", remaining buffer is "
-              << (size_t)(se - sp) << "\n";
     if ((uintptr_t)(se - sp) < n) {
       sp = se;
       return fail();
@@ -423,7 +418,7 @@ struct Machine {
     ProgramPrinter printer(program);
 
     while (true) {
-#if 1
+#if 0
       dumpStack(printer);
       std::cerr << "Executing ";
       printer.print(std::cerr, *ip);

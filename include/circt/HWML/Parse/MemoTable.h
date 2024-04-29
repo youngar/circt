@@ -21,7 +21,7 @@ struct MemoEntry {
             std::vector<Capture> &&captures)
       : length(length), examinedLength(examinedLength),
         captures(std::move(captures)) {
-    std::cout << "length=" << length << " examinedLength=" << examinedLength
+    std::cerr << "length=" << length << " examinedLength=" << examinedLength
               << "\n";
   }
 
@@ -337,7 +337,6 @@ struct MemoTable {
   /// ┌─┴─┐
   /// LL  LR
   MemoNode *rotateL(MemoNode *root) {
-    std::cout << "!!!rotateL\n";
     auto *node = root->getRightChild();
     root->getRightChild() = node->getLeftChild();
     node->getLeftChild() = root;
@@ -350,8 +349,6 @@ struct MemoTable {
     }
     propMaxExamined(root);
     propMaxExamined(node);
-    MemoTable().dump(std::cout, root);
-    std::cout << "!!!rotateL finish\n";
     return node;
   }
 
@@ -590,9 +587,6 @@ struct MemoTable {
   /// - The first element of path should be a slot in the grandparent which
   //    contains.
   void rebalanceRemoval(MemoNode **slot, const std::vector<MemoNode **> &path) {
-    std::cout << "@@@rebalance removal path:";
-    dump(std::cout, path);
-    std::cout << "\n";
     auto i = path.rbegin();
     auto e = path.rend();
 
