@@ -16,9 +16,6 @@ namespace hwml {
 /// An identifier for captured parses.
 using RuleId = size_t;
 
-/// A relative position in a buffer.
-using Position = size_t;
-
 struct Insn;
 
 struct InsnBase {

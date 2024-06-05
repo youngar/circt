@@ -25,6 +25,14 @@ namespace hwml {
 /// Machine
 ///
 
+/// This represents a activation frame for the interpreter.  There are four
+/// different kinds of frames: Return frames are the most basic type of frame,
+/// and allow us to return from calls. Backtracking frame represent choice
+/// points.  In the case of failure while matching, the stack is unwound until a
+/// backtrack frame is found, which contains the address for the failure
+/// handler. Capture and memoization frames allow indicate the start of a
+/// capture or memoization and are popped off when the capture or memoization is
+/// completed.
 struct Entry {
 
   enum class Kind { Ret, Backtrack, Capture, Memo };
@@ -42,7 +50,6 @@ public:
 
   /// Create a backtracking stack entry.
   static Entry backtrack(const Insn *ip, const uint8_t *sp) {
-    std::cerr << "#### ip=" << (void *)ip << ", sp=" << (void *)sp << std::endl;
     assert(ip && "instruction pointer cannot be null");
     assert(sp && "subject pointer cannot be null");
     return Entry(Kind::Backtrack, ip, sp, invalidId);
@@ -76,12 +83,28 @@ public:
   uintptr_t getID() const { return id; }
 
   template <typename... Args>
-  Capture &capture(Args &&...args) {
-    return captures.emplace_back(args...);
+  Capture *capture(Args &&...args) {
+    // Allocate the capture in storage.
+    // TODO: memory leak.
+    auto *capture = new Capture(args...);
+    // Place the capture in the top level captures.
+    captures.emplace_back(capture);
+    // Return the capture.
+    return capture;
   }
 
-  /// The list of children captures.
-  std::vector<Capture> captures;
+  std::vector<Node *> &getCaptures() { return captures; }
+
+  template <typename... Args>
+  Diagnostic *error(Args &&...args) {
+    auto *diagnostic = new Diagnostic(args...);
+    // Place the diagnostic in the diagnostic list.
+    diagnostics.emplace_back(diagnostic);
+    // Return the diagnostic.
+    return diagnostic;
+  }
+
+  std::vector<Node *> &getDiagnostics() { return diagnostics; }
 
 private:
   static constexpr uintptr_t invalidId = std::numeric_limits<uintptr_t>::max();
@@ -96,16 +119,15 @@ private:
   /// return to. Otherwise, it will contain nullptr.
   const uint8_t *sp;
 
-  /// If this is a capture frame, then this will contain the id of the
-  /// capture. Otherwise it will be set to -1.
+  /// If this is a capture or memoization frame, then this will contain the id,
+  /// otherwise it will be set to -1.
   uintptr_t id;
-};
 
-struct Diagnostic {
-  Diagnostic(const std::string &message, const uint8_t *sp)
-      : message(message), sp(sp) {}
-  std::string message;
-  const uint8_t *sp;
+  /// The list of top level captures.
+  std::vector<Node *> captures;
+
+  /// The list of diagnostics.
+  std::vector<Node *> diagnostics;
 };
 
 struct Machine {
@@ -133,15 +155,7 @@ struct Machine {
         std::cerr << "memo id" << (void *)entry.getID()
                   << ", sp=" << (void *)entry.getSP();
       }
-      if (!entry.captures.empty()) {
-        std::cerr << std::endl;
-        print(std::cerr, 4, entry.captures);
-      }
       std::cerr << std::endl;
-    }
-    if (!captures.empty()) {
-      std::cerr << std::endl << "top level captures" << std::endl;
-      print(std::cerr, 4, captures);
     }
     std::cerr << std::endl;
   };
@@ -164,8 +178,7 @@ struct Machine {
   /// captures.  If there is no parent frame, propagate the captures to the
   /// global capture list.
   void propagateEntry() {
-    assert(stack.size() && "stack cannot be empty");
-    std::cerr << "!!propagateEntry:\n";
+    assert(!stack.empty() && "stack cannot be empty");
     auto moveCaptures = [](auto &from, auto &to) {
       std::move(from.begin(), from.end(), std::back_inserter(to));
       from.clear();
@@ -174,11 +187,12 @@ struct Machine {
     if (stack.size() > 1) {
       // If there is a parent stack element, append the current captures to
       // it.
-      moveCaptures(stack.back().captures, stack[stack.size() - 2].captures);
+      moveCaptures(stack.back().getCaptures(),
+                   stack[stack.size() - 2].getCaptures());
     } else {
       // If the stack is empty, add these captures to the global list of
       // captures.
-      moveCaptures(stack.back().captures, captures);
+      moveCaptures(stack.back().getCaptures(), captures);
     }
   }
 
@@ -190,22 +204,21 @@ struct Machine {
   }
 
   void memoize(uintptr_t id, const uint8_t *sp, size_t spOff, size_t epOff,
-               const std::vector<Capture> &captures) {
-    memoTable.insert(id, toPosition(sp), spOff, epOff,
-                     std::vector<Capture>(captures));
+               std::vector<Node *> &&captures,
+               std::vector<Node *> &&diagnostics) {
+    memoTable.insert(id, toPosition(sp), spOff, epOff, std::move(captures),
+                     std::move(diagnostics));
   }
 
   void memoizeSuccess(uintptr_t id, const uint8_t *sp, const uint8_t *spEnd,
-                      const uint8_t *epEnd,
-                      const std::vector<Capture> &captures) {
+                      const uint8_t *epEnd, const std::vector<Node *> &captures,
+                      const std::vector<Node *> &diagnostics) {
     size_t spOff = spEnd - sp;
     size_t epOff = epEnd - sp;
-    memoize(id, sp, spOff, epOff, captures);
+    memoize(id, sp, spOff, epOff, captures, diagnostics);
   }
 
   void memoizeFailure(uintptr_t id, const uint8_t *sp, const uint8_t *epEnd) {
-    llvm::errs() << "!!!! memoizeFailure id=" << id << ", sp=" << sp
-                 << ", epEnd=" << epEnd << "\n";
     // Ensure the length is -1.
     size_t spOff = -1;
     // Number of examined bytes needs to be accurate.
@@ -220,7 +233,6 @@ struct Machine {
     // Check if we are at the end of the subject.
     if (sp == se)
       return fail();
-
 
     // Check if we match the current byte.
     if (*sp != b)
@@ -281,6 +293,7 @@ struct Machine {
 
       if (entry.isMemo()) {
         memoizeFailure(entry.getID(), sp, ep);
+        // TODO: deallocate the stored captures and diagnostics.
       }
     }
     return true;
@@ -389,9 +402,15 @@ struct Machine {
       ip = l;
       sp += node->getLength();
       ep = std::max(sp, ep);
-      stack.back().captures.insert(stack.back().captures.end(),
-                                   node->getCaptures().begin(),
-                                   node->getCaptures().end());
+      // Copy the memoized captures.
+      auto &captures = stack.back().getCaptures();
+      captures.insert(captures.end(), node->getCaptures().begin(),
+                      node->getCaptures().end());
+      // Copy the memoized diagnostics.
+      auto &diagnostics = stack.back().getDiagnostics();
+      diagnostics.insert(diagnostics.end(), node->getDiagnostics().begin(),
+                         node->getDiagnostics().end());
+      //
       return false;
     }
     stack.emplace_back(Entry::memo(sp, id));
@@ -409,21 +428,12 @@ struct Machine {
   }
 
   void error(const std::string &m, const Insn *l) {
-    diagnostics.emplace_back(m, sp);
+    diagnostics.emplace_back(m, toPosition(sp));
     ip = l;
   }
 
   bool run() {
-
-    ProgramPrinter printer(program);
-
     while (true) {
-#if 0
-      dumpStack(printer);
-      std::cerr << "Executing ";
-      printer.print(std::cerr, *ip);
-      std::cerr << std::endl;
-#endif
       switch (ip->getKind()) {
       case InsnBase::Kind::Match:
         if (match(ip->match.get()))
@@ -498,8 +508,8 @@ struct Machine {
 
   static bool parse(const Program &program, MemoTable &memoTable,
                     const uint8_t *sp, const uint8_t *se,
-                    std::vector<Capture> &captures,
-                    std::vector<Diagnostic> &diagnostics) {
+                    std::vector<Node *> &captures,
+                    std::vector<Node *> &diagnostics) {
     Machine machine(program, memoTable, sp, se);
     auto result = machine.run();
     captures = std::move(machine.captures);
@@ -509,8 +519,8 @@ struct Machine {
   }
 
   static bool parse(const Program &program, const uint8_t *sp,
-                    const uint8_t *se, std::vector<Capture> &captures,
-                    std::vector<Diagnostic> &diagnostics) {
+                    const uint8_t *se, std::vector<Node *> &captures,
+                    std::vector<Node *> &diagnostics) {
     MemoTable memoTable;
     return Machine::parse(program, memoTable, sp, se, captures, diagnostics);
   }
@@ -534,9 +544,11 @@ struct Machine {
   /// The run time activation frame stack.
   std::vector<Entry> stack;
   /// The top level captures.
-  std::vector<Capture> captures;
+  std::vector<Node *> captures;
+  /// The top level diagnostics.
+  std::vector<Node *> diagnostics;
+  /// Memoization table for faster reparsing.
   MemoTable &memoTable;
-  std::vector<Diagnostic> diagnostics;
 };
 
 } // namespace hwml

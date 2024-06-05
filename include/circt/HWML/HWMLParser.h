@@ -78,9 +78,8 @@ private:
 };
 
 class Definition : Kind<Definition, Statement> {
-  public:
-
-  private:
+public:
+private:
 };
 
 class CompUnit {
@@ -90,12 +89,11 @@ class CompUnit {
 struct HWMLParser {
   HWMLParser();
 
-  bool parse(StringRef contents, std::vector<Capture> &captures,
-             std::vector<Diagnostic> &diagnostics);
+  bool parse(StringRef contents, MemoTable &memoTable,
+             std::vector<Node *> &captures, std::vector<Node *> &diagnostics);
 
 private:
   Program program;
-  MemoTable memoTable;
 };
 
 } // namespace hwml

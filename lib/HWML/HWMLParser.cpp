@@ -35,7 +35,7 @@ HWMLParser::HWMLParser() {
     StmtId,
     TrailingId,
   };
-  using namespace circt::hwml::p;
+
   using namespace circt::hwml::p;
 
   // clang-format off
@@ -61,14 +61,15 @@ HWMLParser::HWMLParser() {
     rule(file, star(ws, statement), ws, require("expected declaration or definition", p::failIf(p::any()))))(s);
   // clang-format on
   program = s.finalize();
-  // clang-format on
 }
 
-bool HWMLParser::parse(StringRef contents, std::vector<Capture> &captures,
-                       std::vector<Diagnostic> &diagnostics) {
+bool HWMLParser::parse(StringRef contents, MemoTable &memoTable,
+                       std::vector<Node *> &captures,
+                       std::vector<Node *> &diagnostics) {
   const uint8_t *sp = contents.bytes_begin();
   const uint8_t *se = contents.bytes_end();
-  auto result = Machine::parse(program, sp, se, captures, diagnostics);
+  auto result =
+      Machine::parse(program, memoTable, sp, se, captures, diagnostics);
   print(std::cerr, captures);
   return result;
 }

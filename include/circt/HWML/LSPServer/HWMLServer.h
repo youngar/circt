@@ -2,6 +2,7 @@
 #define CIRCT_HWML_SERVER_SERVER_H
 
 #include "circt/HWML/HWMLParser.h"
+#include "circt/HWML/Parse/LineInfoTable.h"
 #include "circt/HWML/Parse/MemoTable.h"
 #include "circt/Support/LLVM.h"
 #include "llvm/ADT/StringMap.h"
@@ -55,6 +56,8 @@ private:
   int64_t version;
   /// Memoization of the AST.
   MemoTable memoTable;
+  /// Mapping of file offsets to their (line, coloumn) information.
+  LineInfoTable lineInfoTable;
 };
 
 struct HWMLServer {

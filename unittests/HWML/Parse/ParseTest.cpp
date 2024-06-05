@@ -15,8 +15,8 @@ TEST(Machine, Match) {
 
   const uint8_t sp[] = "a";
   auto *se = sp + sizeof(sp);
-  std::vector<Capture> captures;
-  std::vector<Diagnostic> diagnostics;
+  std::vector<Node *> captures;
+  std::vector<Node *> diagnostics;
   auto result = Machine::parse(program, sp, se, captures, diagnostics);
   EXPECT_TRUE(result);
 }
@@ -40,8 +40,8 @@ TEST(Machine, Choice) {
   const uint8_t sp[] = "abc";
   auto *se = sp + sizeof(sp);
   std::cerr << "sp=" << (void *)sp << ", se=" << (void *)se << "\n";
-  std::vector<Capture> captures;
-  std::vector<Diagnostic> diagnostics;
+  std::vector<Node *> captures;
+  std::vector<Node *> diagnostics;
   auto result = Machine::parse(program, sp, se, captures, diagnostics);
   print(std::cerr, captures);
   EXPECT_TRUE(result);
@@ -122,8 +122,8 @@ TEST(Machine, Capture) {
   const uint8_t sp[] = "(1+2)*(3-4)/(5+6)";
   auto *se = sp + sizeof(sp);
   std::cerr << "sp=" << (void *)sp << ", se=" << (void *)se << "\n";
-  std::vector<Capture> captures;
-  std::vector<Diagnostic> diagnostics;
+  std::vector<Node *> captures;
+  std::vector<Node *> diagnostics;
   auto result = Machine::parse(program, sp, se, captures, diagnostics);
   std::cerr << "test results" << std::endl;
   print(std::cerr, captures);
@@ -202,9 +202,9 @@ TEST(Machine, Memoization) {
   auto *se = sp + sizeof(sp);
   std::cerr << "sp=" << (void *)sp << ", se=" << (void *)se << "\n";
 
-  std::vector<Capture> captures;
+  std::vector<Node *> captures;
   MemoTable memoTable;
-  std::vector<Diagnostic> diagnostics;
+  std::vector<Node *> diagnostics;
   auto result =
       Machine::parse(program, memoTable, sp, se, captures, diagnostics);
   EXPECT_TRUE(result);
@@ -223,8 +223,8 @@ TEST(Machine, MemoFail) {
   auto *se = sp + sizeof(sp);
 
   MemoTable memoTable;
-  std::vector<Capture> captures;
-  std::vector<Diagnostic> diagnostics;
+  std::vector<Node *> captures;
+  std::vector<Node *> diagnostics;
   Machine::parse(program, memoTable, sp, se, captures, diagnostics);
 }
 #endif
@@ -282,8 +282,8 @@ TEST(Parser, MyGrammar) {
   const uint8_t sp[] = "";
   auto *se = sp + sizeof(sp);
 
-  std::vector<Capture> captures;
-  std::vector<Diagnostic> diagnostics;
+  std::vector<Node *> captures;
+  std::vector<Node *> diagnostics;
   auto result = Machine::parse(program, sp, se, captures, diagnostics);
   print(std::cerr, captures);
   std::cerr << "\n";

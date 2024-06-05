@@ -2,8 +2,9 @@
 #define CIRCT_HWML_PARSE_MEMOTABLE_H
 
 #include "circt/HWML/Parse/Capture.h"
+#include "circt/HWML/Parse/Diagnostic.h"
 #include "circt/HWML/Parse/Insn.h"
-
+#include "circt/Support/LLVM.h"
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
@@ -16,29 +17,108 @@ namespace hwml {
 
 enum class Order { LT = -1, EQ = 0, GT = +1 };
 
-struct MemoEntry {
-  MemoEntry(size_t length, size_t examinedLength,
-            std::vector<Capture> &&captures)
-      : length(length), examinedLength(examinedLength),
-        captures(std::move(captures)) {
-    std::cerr << "length=" << length << " examinedLength=" << examinedLength
-              << "\n";
-  }
+struct Capture;
+struct Diagnostic;
+struct MemoEntry;
 
-  /// The number of characters matched by this entry.
+/// Base class for the parser's captures, diagnostics, and memoization entries.
+struct Node {
+  Node(mlir::TypeID typeID) : typeID(typeID) {}
+
+  mlir::TypeID getTypeID() const { return typeID; }
+
+protected:
+  mlir::TypeID typeID;
+};
+
+template <typename Derived>
+struct NodeMixin : public Node {
+  NodeMixin() : Node(mlir::TypeID::get<Derived>()) {}
+  static bool classof(const Node *node) {
+    return node->getTypeID() == mlir::TypeID::get<Derived>();
+  }
+};
+
+/// A diagnostic message produced by the parser.
+struct Diagnostic : public NodeMixin<Diagnostic> {
+  Diagnostic(const std::string &message, Position position)
+      : NodeMixin(), message(message), position(position) {}
+
+  /// Get the message of this diagnostic.
+  std::string getMessage() const { return message; }
+
+  /// Get this position of this diagnostic.
+  Position getPosition() const { return position; }
+
+  /// Set this position of this diagnostic.
+  void setPosition(Position position) { this->position = position; }
+
+private:
+  std::string message;
+  Position position;
+};
+
+/// Text captured by the parser.  A capture may have subcaptures.
+struct Capture : public NodeMixin<Capture> {
+  Capture(std::uintptr_t id, Position position, std::size_t size,
+          std::vector<Node *> &&children)
+      : NodeMixin() {}
+
+  /// Get the capture ID.
+  std::uintptr_t getId() const { return id; }
+
+  /// Get the size of this capture.
+  std::size_t getSize() const { return size; }
+
+  /// Get this position of this diagnostic.
+  Position getPosition() const { return position; }
+
+  /// Set this position of this diagnostic.
+  void setPosition(Position position) { this->position = position; }
+
+  /// Get the list of subcaptures.
+  std::vector<Node *> getChildren() { return children; }
+
+private:
+  std::uintptr_t id;
+  Position position;
+  std::size_t size;
+  std::vector<Node *> children;
+};
+
+/// An entry in the memoization table. A memoization entry contains the any
+/// captures and diagnostics
+struct MemoEntry : public NodeMixin<MemoEntry> {
+  MemoEntry(size_t length, size_t examinedLength,
+            std::vector<Node *> &&captures, std::vector<Node *> &&diagnostics)
+      : NodeMixin(), length(length), examinedLength(examinedLength),
+        captures(std::move(captures)), diagnostics(std::move(diagnostics)) {}
+
+  /// Get the number of characters matched by this entry.
   size_t getLength() const { return length; }
 
   /// The number of bytes examined by this entry. This can be larger than the
   /// length if the entry was constructed by a pattern that utilized lookahead.
   size_t getExaminedLength() const { return examinedLength; }
 
-  /// Get the captures under this entry.
-  const std::vector<Capture> &getCaptures() const { return captures; }
+  /// Get the top-level captures under this entry.
+  const std::vector<Node *> &getCaptures() const { return captures; }
+
+  /// Get the diagnostics created under this entry.
+  const std::vector<Node *> &getDiagnostics() const { return diagnostics; }
 
 private:
+  /// The number of character matched by this entry.
   size_t length;
+
+  /// The number of character examined to match this entry.
   size_t examinedLength;
-  std::vector<Capture> captures;
+
+  /// The top-level captures for this memoization node.
+  std::vector<Node *> captures;
+
+  /// A list of all diagnostics create under this memoization.
+  std::vector<Node *> diagnostics;
 };
 
 template <typename T>
@@ -50,10 +130,34 @@ T &operator<<(T &os, const MemoEntry &entry) {
   return os;
 }
 
+/// A node in the memoization tree.  Each node in the tree should have a unique
+/// (capture id, start position) pair which is their key.  It contains a list of
+/// entries which all share the same start point as the node. The memo entries
+/// are assumed to be added or stored from smallest to largest, which should be
+/// properly enforced by the parser.
 struct MemoNode {
-  MemoNode(RuleId id, Position start)
-      : id(id), start(start), maxExaminedLength(0), balance(0), lchild(nullptr),
-        rchild(nullptr) {}
+  MemoNode(RuleId id, Position start) : id(id), start(start) {}
+
+  ~MemoNode() {
+    // Helper toree all capture recursively, until we hit another
+    // memo entry.
+    std::function<void(Node *)> free = [&](Node *node) {
+      if (auto *capture = dyn_cast<Capture>(node)) {
+        for (auto *child : capture->getChildren())
+          free(child);
+        delete capture;
+      }
+    };
+
+    // Update the positions of captures and diagnostics.
+    for (auto &entry : entries) {
+      for (auto &node : entry.getCaptures())
+        free(node);
+      for (auto &node : entry.getDiagnostics())
+        if (auto *diag = dyn_cast<Diagnostic>(node))
+          delete diag;
+    }
+  }
 
   /// Get the identifier of the current memoization entry.
   RuleId getId() const { return id; }
@@ -75,12 +179,17 @@ struct MemoNode {
     return entries.back().getExaminedLength();
   }
 
-  /// Get the examined length of the current memoization entry.
+  /// Get the examined  of the current memoization entry.
   size_t getExamined() const { return getStart() + getExaminedLength(); }
 
   /// Get the captures of the current memoization entry.
-  const std::vector<Capture> &getCaptures() const {
+  const std::vector<Node *> &getCaptures() const {
     return entries.back().getCaptures();
+  }
+
+  /// Get the diagnostics of the current memoization entry.
+  const std::vector<Node *> &getDiagnostics() const {
+    return entries.back().getDiagnostics();
   }
 
   /// Get the maximum examined length of this node and all children nodes.  This
@@ -122,15 +231,52 @@ struct MemoNode {
   /// that if the larger memo entry is invalidated by an edit, then we can
   /// revert to a smaller entry at the same position.
   void update(size_t length, size_t examinedLength,
-              std::vector<Capture> &&captures) {
+              std::vector<Node *> &&captures,
+              std::vector<Node *> &&diagnostics) {
+#ifndef NDEBUG
     if (!entries.empty()) {
       const auto &e = entries.back();
       assert(e.getLength() < length);
       assert(e.getExaminedLength() < examinedLength);
     }
-    entries.emplace_back(length, examinedLength, std::move(captures));
+#endif
+    entries.emplace_back(length, examinedLength, std::move(captures),
+                         std::move(diagnostics));
     if (maxExaminedLength < examinedLength)
       maxExaminedLength = examinedLength;
+  }
+
+  /// Shift the position of any memoized data, including captures and
+  /// diagnostics by delta. This is used when text is inserted or deleted before
+  /// this node in the buffer so that we can reuse the memoized results.
+
+  /// Shift the position of any memoized data, including captures and
+  /// diagnostics by delta. This is used when text is inserted or deleted before
+  /// this node in the buffer so that we can reuse the memoized results.
+  void shift(signed delta) {
+    // Update the start position of this node.
+    setStart(getStart() + delta);
+
+    // Helper to recursively shift captures.
+    std::function<void(Node *, signed)> shift = [&](Node *node, signed delta) {
+      if (auto *capture = dyn_cast<Capture>(node)) {
+        capture->setPosition(capture->getPosition() + delta);
+        for (auto *child : capture->getChildren())
+          shift(child, delta);
+      }
+    };
+
+    for (auto &entry : entries) {
+
+      // Update the position of captures.
+      for (auto &node : entry.getCaptures())
+        shift(node, delta);
+
+      // Update the positions of diagnostics.
+      for (auto &node : entry.getDiagnostics())
+        if (auto *diag = dyn_cast<Diagnostic>(node))
+          diag->setPosition(diag->getPosition() + delta);
+    }
   }
 
   /// Discard any memo entries which are longer than or equal to the length.
@@ -180,10 +326,10 @@ private:
   std::vector<MemoEntry> entries;
 
   // Tree metadata.
-  size_t maxExaminedLength;
-  signed balance;
-  MemoNode *lchild;
-  MemoNode *rchild;
+  size_t maxExaminedLength = 0;
+  signed balance = 0;
+  MemoNode *lchild = nullptr;
+  MemoNode *rchild = nullptr;
 };
 
 template <typename T>
@@ -542,7 +688,8 @@ struct MemoTable {
   }
 
   MemoNode *insert(RuleId id, Position start, size_t length, size_t examined,
-                   std::vector<Capture> &&captures) {
+                   std::vector<Node *> &&captures,
+                   std::vector<Node *> &&diagnostics) {
     std::vector<MemoNode **> ancestorSlots;
     auto **slot = &root;
     // ancestorSlots.push_back(slot);
@@ -564,15 +711,17 @@ struct MemoTable {
         continue;
       }
       // Otherwise the memo node already exists.
-      node->update(length, examined, std::move(captures));
+      node->update(length, examined, std::move(captures),
+                   std::move(diagnostics));
       return node;
     }
 
-    auto *result = new MemoNode(id, start);
-    result->update(length, examined, std::move(captures));
-    *slot = result;
+    // Create a new node and insert it into the tree.
+    node = new MemoNode(id, start);
+    node->update(length, examined, std::move(captures), std::move(diagnostics));
+    *slot = node;
     rebalanceInsertion(slot, ancestorSlots);
-    return result;
+    return node;
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -580,12 +729,12 @@ struct MemoTable {
   //////////////////////////////////////////////////////////////////////////////
 
   /// The tree rooted at `node` has changed height due to a deletion.
-  /// `node` is already in AVL shape. Rebalance the ancestors by retracing.
-  /// At the point of calling:
+  /// `node` is already in AVL shape. Rebalance the ancestors by retracing
+  /// through the `path` to the current node. At the point of calling:
   /// - We are rebalancing the parent of node.
   /// - We get the parent by looking at the first element of path.
-  /// - The first element of path should be a slot in the grandparent which
-  //    contains.
+  /// - The last element of path should be a slot in the grandparent which
+  ///    points to the MemoNode which contains `slot`.
   void rebalanceRemoval(MemoNode **slot, const std::vector<MemoNode **> &path) {
     auto i = path.rbegin();
     auto e = path.rend();
@@ -718,7 +867,7 @@ struct MemoTable {
       return;
 
     if (node->getStart() >= start) {
-      node->setStart(node->getStart() + delta);
+      node->shift(delta);
       // If the current node is after the start, then the node to the left might
       // also be after the start.
       shift(&node->getLeftChild(), start, delta);
@@ -759,7 +908,6 @@ struct MemoTable {
     // child, we can guarantee that we only have to shift it if the current node
     // starts after the invalid range, but we potentially have to invalidate it
     // for the rest of the cases.
-    //
     //          |-invalid-|
     //    [1]  [2]  [3]  [4]  [5]
     // C:  n    d    d    d    s
@@ -767,8 +915,8 @@ struct MemoTable {
     // R:  i    i    i    i    s
 
     // The left child must always be visited, as although they will start before
-    // the current node, they may have a larger examined max that causes them
-    // to overlap with the invalid range.
+    // the current node, they may have a larger examined max that causes them to
+    // overlap with the invalid range.
     path.push_back(slot);
     invalidate(&node->getLeftChild(), low, high, delta, path);
     path.pop_back();
