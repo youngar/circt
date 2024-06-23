@@ -283,13 +283,13 @@ TEST(Parser, MyGrammar) {
   auto *se = sp + sizeof(sp);
 
   std::vector<Node *> captures;
-  std::vector<Node *> diagnostics;
+  std::vector<Diagnostic> diagnostics;
   auto result = Machine::parse(program, sp, se, captures, diagnostics);
-  print(std::cerr, captures);
-  std::cerr << "\n";
-  for (auto &d : diagnostics) {
-    std::cerr << (d.sp - sp) << ": " << d.message << "\n";
-  }
+  // print(std::cerr, captures);
+  //  std::cerr << "\n";
+  //  for (auto &d : diagnostics) {
+  //    std::cerr << (d.sp - sp) << ": " << d.message << "\n";
+  //  }
   EXPECT_TRUE(result);
   print(std::cout, program);
 }

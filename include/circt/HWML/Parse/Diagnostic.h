@@ -7,14 +7,6 @@
 namespace circt {
 namespace hwml {
 
-/*
-
-   node -> [entries       ]
-            > captures  diagnostics
-
-
-*/
-
 } // namespace hwml
 } // namespace circt
 

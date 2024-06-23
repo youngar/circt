@@ -65,11 +65,10 @@ HWMLParser::HWMLParser() {
 
 bool HWMLParser::parse(StringRef contents, MemoTable &memoTable,
                        std::vector<Node *> &captures,
-                       std::vector<Node *> &diagnostics) {
+                       std::vector<Diagnostic> &diagnostics) {
   const uint8_t *sp = contents.bytes_begin();
   const uint8_t *se = contents.bytes_end();
   auto result =
       Machine::parse(program, memoTable, sp, se, captures, diagnostics);
-  print(std::cerr, captures);
   return result;
 }

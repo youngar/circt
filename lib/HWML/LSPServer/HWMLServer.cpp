@@ -20,14 +20,13 @@ convertDiagnosticsToLSPDiagnostics(const LineInfoTable &lineInfoTable,
   std::vector<lsp::Diagnostic> lspDiagnostics;
   lspDiagnostics.reserve(diagnostics.size());
   for (const auto &diag : diagnostics) {
-    llvm::errs() << "!!creating diagnostic ";
     lsp::Diagnostic lspDiag;
     lspDiag.source = "hwml";
     lspDiag.category = "Parse Error";
-    auto [line, column] = lineInfoTable.getLineAndColumnForOffset(diag.offset);
-    llvm::errs() << "line=" << line << " col=" << column << "\n";
+    auto [line, column] =
+        lineInfoTable.getLineAndColumnForOffset(diag.getPosition());
     lspDiag.range = lsp::Range(lsp::Position(line, column));
-    lspDiag.message = diag.message;
+    lspDiag.message = diag.getMessage();
     lspDiag.severity = lsp::DiagnosticSeverity::Error;
     lspDiagnostics.emplace_back(std::move(lspDiag));
   }
@@ -39,10 +38,11 @@ HWMLDocument::HWMLDocument(const lsp::URIForFile &uri, int64_t version,
                            std::vector<lsp::Diagnostic> &diagnostics)
     : contents(contents.str()), version(version), lineInfoTable(contents) {
 
-  std::vector<Capture> caps;
-  std::vector<Node *> diags;
+  std::vector<Node *> caps;
+  std::vector<Diagnostic> diags;
   parser.parse(contents, memoTable, caps, diags);
-  diagnostics = convertDiagnosticsToLSPDiagnostics(contents, diags);
+  lineInfoTable.update(0, contents, 0);
+  diagnostics = convertDiagnosticsToLSPDiagnostics(lineInfoTable, diags);
 }
 
 void HWMLDocument::update(const lsp::URIForFile &uri, int64_t version,
@@ -56,17 +56,33 @@ void HWMLDocument::update(const lsp::URIForFile &uri, int64_t version,
 
   for (const auto &change : changes) {
     if (change.range) {
-      // LineInfo lineInfo(contents);
-      // auto range = *change.range;
-      // auto position = range.end - range.start;
-      // auto inserted = change.text.size();
-      // auto removed = range.end;
-      // memoTable.invalidate(range.start, change.text.size(),
-      //                      range.end - range.start);
+      auto &range = *change.range;
+      auto &startPos = range.start;
+      // Get the offset of the start of the change.
+      auto start =
+          lineInfoTable.getOffsetForLineCol(startPos.line, startPos.character);
+      // Get the amount of text inserted.
+      auto inserted = change.text.size();
+      // Get the amount of text removed or replaced.
+      auto removed = *change.rangeLength;
+      // Invalidate all parses which intersect the updated section of text.
+      memoTable.invalidate(start, inserted, removed);
+      // Update the line information.
+      lineInfoTable.update(start, change.text, removed);
     } else {
-      // TODO: the whole document changed, invalidate everything.
+      // If there is no position, then that indicates the whole document
+      // changed. We invalidate all parses and recompute all line information.
+      memoTable.invalidateAll();
+      lineInfoTable.update(contents);
     }
   }
+
+  std::vector<Node *> caps;
+  std::vector<Diagnostic> diags;
+  // Repase the file.
+  parser.parse(contents, memoTable, caps, diags);
+  // Return the new list of diagnostics.
+  diagnostics = convertDiagnosticsToLSPDiagnostics(lineInfoTable, diags);
 }
 
 //===--------------------------------------------------------------------===//

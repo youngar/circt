@@ -2,6 +2,7 @@
 #define CIRCT_HWML_PARSE_LINEINFOTABLE_H
 
 #include "circt/Support/LLVM.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/ErrorHandling.h"
 
@@ -12,21 +13,27 @@ namespace hwml {
 ///
 class LineInfoTable {
 public:
-  LineInfoTable() {
-    // The start of the first line is implicit.
-    store(0);
+  LineInfoTable() { update(""); }
+
+  explicit LineInfoTable(StringRef content) : LineInfoTable() {
+    update(content);
   }
 
-  LineInfoTable(StringRef content) : LineInfoTable() {
+  void update(StringRef content) {
+    breaks.clear();
+    // The start of the first line is implicit.
+    store(0);
     for (auto i = content.begin(), e = content.end(); i != e; ++i) {
       if (*i == '\n')
         store(std::distance(content.begin(), i));
     }
   }
 
+  void update(std::size_t line, std::size_t column, StringRef content) {}
+
   void update(std::size_t offset, StringRef content, std::size_t removed) {
     // Create a list of all the new lines inserted.
-    std::vector<std::size_t> inserted;
+    SmallVector<std::size_t> inserted;
     for (auto i = content.begin(), e = content.end(); i != e; ++i) {
       if (*i == '\n')
         inserted.push_back(offset + std::distance(content.begin(), i));
@@ -69,6 +76,10 @@ public:
   /// Get the start offset of a line.
   std::size_t getOffsetForLine(std::size_t n) const { return breaks[n]; }
 
+  std::size_t getOffsetForLineCol(std::size_t line, std::size_t col) const {
+    return getOffsetForLine(line) + col;
+  }
+
   /// Get the end offset of a line.
   std::size_t getOffsetForLineEnd(std::size_t n) const { return breaks[n + 1]; }
 
@@ -103,6 +114,13 @@ public:
     }
     llvm_unreachable("should not reach here");
     return 0;
+  }
+
+  std::pair<std::size_t, std::size_t>
+  getLineAndColForOffset(std::size_t offset) const {
+    auto line = getLineForOffset(offset);
+    auto col = offset - getOffsetForLine(line);
+    return {line, col};
   }
 
   /// Find the column number of a position. Columns are 0-indexed.

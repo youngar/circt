@@ -44,14 +44,15 @@ int main(int argc, char *argv[]) {
   auto buffer =
       sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID())->getBuffer();
   hwml::HWMLParser parser;
-  std::vector<hwml::Capture> captures;
+  std::vector<Node *> captures;
   std::vector<hwml::Diagnostic> diagnostics;
-  parser.parse(buffer, captures, diagnostics);
+  MemoTable memoTable;
+  parser.parse(buffer, memoTable, captures, diagnostics);
 
-  for (auto &diag : diagnostics) {
-    sourceMgr.PrintMessage(llvm::SMLoc::getFromPointer((const char *)diag.sp),
-                           SourceMgr::DK_Error, diag.message);
-  }
+  // for (auto &diag : diagnostics) {
+  //   sourceMgr.PrintMessage(llvm::SMLoc::getFromPointer((const char *)diag.sp),
+  //                          SourceMgr::DK_Error, diag.getMessage());
+  // }
 
   return EXIT_SUCCESS;
 }

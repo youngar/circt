@@ -17,9 +17,27 @@ namespace hwml {
 
 enum class Order { LT = -1, EQ = 0, GT = +1 };
 
-struct Capture;
-struct Diagnostic;
-struct MemoEntry;
+/// A diagnostic message produced by the parser.
+struct Diagnostic {
+  Diagnostic(const std::string &message, Position position)
+      : message(message), position(position) {}
+
+  /// Get the message of this diagnostic.
+  std::string getMessage() const { return message; }
+
+  /// Get this position of this diagnostic.
+  Position getPosition() const { return position; }
+
+  /// Set this position of this diagnostic.
+  void setPosition(Position position) { this->position = position; }
+
+  /// Shift the position of this diagnostic.
+  void shift(signed delta) { setPosition(getPosition() + delta); }
+
+private:
+  std::string message;
+  Position position;
+};
 
 /// Base class for the parser's captures, diagnostics, and memoization entries.
 struct Node {
@@ -31,31 +49,15 @@ protected:
   mlir::TypeID typeID;
 };
 
+struct Capture;
+struct MemoEntry;
+
 template <typename Derived>
 struct NodeMixin : public Node {
   NodeMixin() : Node(mlir::TypeID::get<Derived>()) {}
   static bool classof(const Node *node) {
     return node->getTypeID() == mlir::TypeID::get<Derived>();
   }
-};
-
-/// A diagnostic message produced by the parser.
-struct Diagnostic : public NodeMixin<Diagnostic> {
-  Diagnostic(const std::string &message, Position position)
-      : NodeMixin(), message(message), position(position) {}
-
-  /// Get the message of this diagnostic.
-  std::string getMessage() const { return message; }
-
-  /// Get this position of this diagnostic.
-  Position getPosition() const { return position; }
-
-  /// Set this position of this diagnostic.
-  void setPosition(Position position) { this->position = position; }
-
-private:
-  std::string message;
-  Position position;
 };
 
 /// Text captured by the parser.  A capture may have subcaptures.
@@ -90,9 +92,23 @@ private:
 /// captures and diagnostics
 struct MemoEntry : public NodeMixin<MemoEntry> {
   MemoEntry(size_t length, size_t examinedLength,
-            std::vector<Node *> &&captures, std::vector<Node *> &&diagnostics)
+            std::vector<Node *> &&captures,
+            std::vector<Diagnostic> &&diagnostics)
       : NodeMixin(), length(length), examinedLength(examinedLength),
         captures(std::move(captures)), diagnostics(std::move(diagnostics)) {}
+
+  ~MemoEntry() {
+    // Helper to free all capture recursively, until we hit another memo entry.
+    std::function<void(Node *)> free = [&](Node *node) {
+      if (auto *capture = dyn_cast<Capture>(node)) {
+        for (auto *child : capture->getChildren())
+          free(child);
+        delete capture;
+      }
+    };
+    for (auto *capture : captures)
+      free(capture);
+  }
 
   /// Get the number of characters matched by this entry.
   size_t getLength() const { return length; }
@@ -105,7 +121,26 @@ struct MemoEntry : public NodeMixin<MemoEntry> {
   const std::vector<Node *> &getCaptures() const { return captures; }
 
   /// Get the diagnostics created under this entry.
-  const std::vector<Node *> &getDiagnostics() const { return diagnostics; }
+  const std::vector<Diagnostic> &getDiagnostics() const { return diagnostics; }
+
+  /// Shift the position of any memoized data, including captures and
+  /// diagnostics by delta. This is used when text is inserted or deleted before
+  /// this node in the buffer so that we can reuse the memoized results.
+  void shift(signed delta) {
+    // Helper to recursively shift MemoEntry's.
+    std::function<void(Node *, signed)> shift = [&](Node *node, signed delta) {
+      if (auto *capture = dyn_cast<Capture>(node)) {
+        capture->setPosition(capture->getPosition() + delta);
+        for (auto *child : capture->getChildren())
+          shift(child, delta);
+      }
+    };
+
+    for (auto *capture : captures)
+      shift(capture, delta);
+    for (auto diagnostic : diagnostics)
+      diagnostic.shift(delta);
+  }
 
 private:
   /// The number of character matched by this entry.
@@ -118,7 +153,7 @@ private:
   std::vector<Node *> captures;
 
   /// A list of all diagnostics create under this memoization.
-  std::vector<Node *> diagnostics;
+  std::vector<Diagnostic> diagnostics;
 };
 
 template <typename T>
@@ -137,27 +172,6 @@ T &operator<<(T &os, const MemoEntry &entry) {
 /// properly enforced by the parser.
 struct MemoNode {
   MemoNode(RuleId id, Position start) : id(id), start(start) {}
-
-  ~MemoNode() {
-    // Helper toree all capture recursively, until we hit another
-    // memo entry.
-    std::function<void(Node *)> free = [&](Node *node) {
-      if (auto *capture = dyn_cast<Capture>(node)) {
-        for (auto *child : capture->getChildren())
-          free(child);
-        delete capture;
-      }
-    };
-
-    // Update the positions of captures and diagnostics.
-    for (auto &entry : entries) {
-      for (auto &node : entry.getCaptures())
-        free(node);
-      for (auto &node : entry.getDiagnostics())
-        if (auto *diag = dyn_cast<Diagnostic>(node))
-          delete diag;
-    }
-  }
 
   /// Get the identifier of the current memoization entry.
   RuleId getId() const { return id; }
@@ -188,7 +202,7 @@ struct MemoNode {
   }
 
   /// Get the diagnostics of the current memoization entry.
-  const std::vector<Node *> &getDiagnostics() const {
+  const std::vector<Diagnostic> &getDiagnostics() const {
     return entries.back().getDiagnostics();
   }
 
@@ -232,7 +246,7 @@ struct MemoNode {
   /// revert to a smaller entry at the same position.
   void update(size_t length, size_t examinedLength,
               std::vector<Node *> &&captures,
-              std::vector<Node *> &&diagnostics) {
+              std::vector<Diagnostic> &&diagnostics) {
 #ifndef NDEBUG
     if (!entries.empty()) {
       const auto &e = entries.back();
@@ -249,34 +263,12 @@ struct MemoNode {
   /// Shift the position of any memoized data, including captures and
   /// diagnostics by delta. This is used when text is inserted or deleted before
   /// this node in the buffer so that we can reuse the memoized results.
-
-  /// Shift the position of any memoized data, including captures and
-  /// diagnostics by delta. This is used when text is inserted or deleted before
-  /// this node in the buffer so that we can reuse the memoized results.
   void shift(signed delta) {
     // Update the start position of this node.
     setStart(getStart() + delta);
 
-    // Helper to recursively shift captures.
-    std::function<void(Node *, signed)> shift = [&](Node *node, signed delta) {
-      if (auto *capture = dyn_cast<Capture>(node)) {
-        capture->setPosition(capture->getPosition() + delta);
-        for (auto *child : capture->getChildren())
-          shift(child, delta);
-      }
-    };
-
-    for (auto &entry : entries) {
-
-      // Update the position of captures.
-      for (auto &node : entry.getCaptures())
-        shift(node, delta);
-
-      // Update the positions of diagnostics.
-      for (auto &node : entry.getDiagnostics())
-        if (auto *diag = dyn_cast<Diagnostic>(node))
-          diag->setPosition(diag->getPosition() + delta);
-    }
+    for (auto &entry : entries)
+      entry.shift(delta);
   }
 
   /// Discard any memo entries which are longer than or equal to the length.
@@ -378,7 +370,7 @@ struct MemoTable {
   MemoNode **find(RuleId id, Position start) { return find(&root, id, start); }
 
   MemoNode *lookup(RuleId id, Position sp) {
-    auto slot = find(id, sp);
+    auto *slot = find(id, sp);
     if (!slot)
       return nullptr;
     return *slot;
@@ -689,7 +681,7 @@ struct MemoTable {
 
   MemoNode *insert(RuleId id, Position start, size_t length, size_t examined,
                    std::vector<Node *> &&captures,
-                   std::vector<Node *> &&diagnostics) {
+                   std::vector<Diagnostic> &&diagnostics) {
     std::vector<MemoNode **> ancestorSlots;
     auto **slot = &root;
     // ancestorSlots.push_back(slot);
@@ -814,10 +806,6 @@ struct MemoTable {
     // Deletion is done by replacing our target with the smallest
     // child on the right. This effectively shrinks the tree on the right,
     // which needs to be rebalanced.
-    std::cerr << "!!! remove start\n";
-    std::cerr << "path = \n";
-    dump(std::cerr, path);
-    std::cerr << "slot @" << slot << "=" << *slot << std::endl;
     PathGuard guard(path);
     auto *node = *slot;
     assert(node->empty() && "MemoNode must be empty to be removed");
@@ -835,8 +823,6 @@ struct MemoTable {
       node->assignMemoEntries(std::move(*succ));
       delete succ;
       // Removing the successor could require a rotation.
-      std::cerr << "!!! remove rebalance subtree \n";
-      dump(std::cerr);
       rebalanceRemoval(succSlot, succPath);
     } else if (!node->getRightChild()) {
       *slot = node->getLeftChild();
@@ -847,12 +833,7 @@ struct MemoTable {
       *slot = nullptr;
     }
 
-    std::cerr << "!!! remove rebalance\n";
-    dump(std::cerr);
-
     rebalanceRemoval(slot, path);
-    std::cerr << "!!! remove end\n";
-    dump(std::cerr);
   }
 
   void shift(MemoNode **slot, Position start, signed delta) {
@@ -889,11 +870,6 @@ struct MemoTable {
     auto *node = *slot;
     if (!node)
       return;
-    std::cerr << "! invalidate begin.n slot @" << slot << "=" << *slot
-              << ", low=" << (void *)low << ", high=" << (void *)high
-              << std::endl;
-    std::cerr << "path = \n";
-    dump(std::cerr, path);
 
     // If this is true, than this node and its entire subtree occur before
     // the insertion point and can be skipped.
@@ -959,6 +935,10 @@ struct MemoTable {
     std::vector<MemoNode **> path;
     invalidate(&root, position, position + removed, delta, path);
   }
+
+   void invalidateAll() {
+     // TODO.
+   }
 
   //////////////////////////////////////////////////////////////////////////////
   // Printing

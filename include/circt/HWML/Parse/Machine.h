@@ -96,15 +96,12 @@ public:
   std::vector<Node *> &getCaptures() { return captures; }
 
   template <typename... Args>
-  Diagnostic *error(Args &&...args) {
-    auto *diagnostic = new Diagnostic(args...);
+  void error(Args &&...args) {
     // Place the diagnostic in the diagnostic list.
-    diagnostics.emplace_back(diagnostic);
-    // Return the diagnostic.
-    return diagnostic;
+    diagnostics.emplace_back(args...);
   }
 
-  std::vector<Node *> &getDiagnostics() { return diagnostics; }
+  std::vector<Diagnostic> &getDiagnostics() { return diagnostics; }
 
 private:
   static constexpr uintptr_t invalidId = std::numeric_limits<uintptr_t>::max();
@@ -127,7 +124,7 @@ private:
   std::vector<Node *> captures;
 
   /// The list of diagnostics.
-  std::vector<Node *> diagnostics;
+  std::vector<Diagnostic> diagnostics;
 };
 
 struct Machine {
@@ -205,17 +202,17 @@ struct Machine {
 
   void memoize(uintptr_t id, const uint8_t *sp, size_t spOff, size_t epOff,
                std::vector<Node *> &&captures,
-               std::vector<Node *> &&diagnostics) {
+               std::vector<Diagnostic> &&diagnostics) {
     memoTable.insert(id, toPosition(sp), spOff, epOff, std::move(captures),
                      std::move(diagnostics));
   }
 
   void memoizeSuccess(uintptr_t id, const uint8_t *sp, const uint8_t *spEnd,
-                      const uint8_t *epEnd, const std::vector<Node *> &captures,
-                      const std::vector<Node *> &diagnostics) {
+                      const uint8_t *epEnd, std::vector<Node *> &&captures,
+                      std::vector<Diagnostic> &&diagnostics) {
     size_t spOff = spEnd - sp;
     size_t epOff = epEnd - sp;
-    memoize(id, sp, spOff, epOff, captures, diagnostics);
+    memoize(id, sp, spOff, epOff, std::move(captures), std::move(diagnostics));
   }
 
   void memoizeFailure(uintptr_t id, const uint8_t *sp, const uint8_t *epEnd) {
@@ -224,7 +221,7 @@ struct Machine {
     // Number of examined bytes needs to be accurate.
     size_t epOff = epEnd - sp;
     assert(epEnd >= sp);
-    memoize(id, sp, spOff, epOff, {});
+    memoize(id, sp, spOff, epOff, {}, {});
   }
 
   /// Advances ip and comsumes one byte from the subject if it matches b, and
@@ -378,15 +375,17 @@ struct Machine {
   void captureEnd() {
     auto entry = popEntry();
     assert(entry.isCapture() && "must be a capture frame");
-    if (!stack.empty()) {
+    auto id = entry.getID();
+    auto position = toPosition(entry.getSP());
+    auto size = sp - entry.getSP();
+    auto children = std::move(entry.getCaptures());
+    auto *capture = new Capture(id, position, size, std::move(children));
+    if (!stack.empty())
       // Add to the parent frame's captures.
-      stack.back().captures.emplace_back(entry.getID(), entry.getSP(), sp,
-                                         std::move(entry.captures));
-    } else {
+      stack.back().getCaptures().push_back(capture);
+    else
       // Add to the global list of captures.
-      captures.emplace_back(entry.getID(), entry.getSP(), sp,
-                            std::move(entry.captures));
-    }
+      captures.push_back(capture);
     ++ip;
   }
 
@@ -410,7 +409,6 @@ struct Machine {
       auto &diagnostics = stack.back().getDiagnostics();
       diagnostics.insert(diagnostics.end(), node->getDiagnostics().begin(),
                          node->getDiagnostics().end());
-      //
       return false;
     }
     stack.emplace_back(Entry::memo(sp, id));
@@ -421,7 +419,9 @@ struct Machine {
   void memoClose() {
     auto &entry = stack.back();
     assert(entry.isMemo() && "must be memoframe");
-    memoizeSuccess(entry.getID(), entry.getSP(), sp, ep, entry.captures);
+    memoizeSuccess(entry.getID(), entry.getSP(), sp, ep,
+                   std::move(entry.getCaptures()),
+                   std::move(entry.getDiagnostics()));
     // Return the captures.
     propAndPop();
     ++ip;
@@ -509,7 +509,7 @@ struct Machine {
   static bool parse(const Program &program, MemoTable &memoTable,
                     const uint8_t *sp, const uint8_t *se,
                     std::vector<Node *> &captures,
-                    std::vector<Node *> &diagnostics) {
+                    std::vector<Diagnostic> &diagnostics) {
     Machine machine(program, memoTable, sp, se);
     auto result = machine.run();
     captures = std::move(machine.captures);
@@ -520,12 +520,12 @@ struct Machine {
 
   static bool parse(const Program &program, const uint8_t *sp,
                     const uint8_t *se, std::vector<Node *> &captures,
-                    std::vector<Node *> &diagnostics) {
+                    std::vector<Diagnostic> &diagnostics) {
     MemoTable memoTable;
     return Machine::parse(program, memoTable, sp, se, captures, diagnostics);
   }
 
-  /// The program.
+  /// The program
   const Program &program;
   /// Instruction pointer.
   const Insn *ip;
@@ -546,7 +546,7 @@ struct Machine {
   /// The top level captures.
   std::vector<Node *> captures;
   /// The top level diagnostics.
-  std::vector<Node *> diagnostics;
+  std::vector<Diagnostic> diagnostics;
   /// Memoization table for faster reparsing.
   MemoTable &memoTable;
 };

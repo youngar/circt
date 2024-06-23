@@ -90,7 +90,8 @@ struct HWMLParser {
   HWMLParser();
 
   bool parse(StringRef contents, MemoTable &memoTable,
-             std::vector<Node *> &captures, std::vector<Node *> &diagnostics);
+             std::vector<Node *> &captures,
+             std::vector<Diagnostic> &diagnostics);
 
 private:
   Program program;

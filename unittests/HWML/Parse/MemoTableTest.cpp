@@ -46,7 +46,7 @@ void verify(std::ostream &out, MemoTable &tree) {
 
 MemoNode *insert(MemoTable &tree, Position offset, size_t length = 1,
                  size_t examined = 1) {
-  return tree.insert(123, offset, length, examined, {});
+  return tree.insert(123, offset, length, examined, {}, {});
 }
 
 TEST(MemoTable, Tree) {
@@ -54,11 +54,11 @@ TEST(MemoTable, Tree) {
   auto sp = (Position)input;
   MemoTable tree;
   verify(std::cout, tree);
-  tree.insert(0, sp + 1, 1, 1, {});
+  tree.insert(0, sp + 1, 1, 1, {}, {});
   verify(std::cout, tree);
-  tree.insert(0, sp + 2, 1, 1, {});
+  tree.insert(0, sp + 2, 1, 1, {}, {});
   verify(std::cout, tree);
-  tree.insert(0, sp + 0, 1, 1, {});
+  tree.insert(0, sp + 0, 1, 1, {}, {});
   verify(std::cout, tree);
 }
 
@@ -72,7 +72,7 @@ TEST(MemoTable, Empty) {
 TEST(MemoTable, Root) {
   MemoTable tree;
   verify(std::cout, tree);
-  auto c = insert(tree, 0);
+  auto *c = insert(tree, 0);
   EXPECT_EQ(tree.root, c);
   verify(std::cout, tree);
   tree.invalidate(0, 0, 1);
@@ -84,13 +84,13 @@ TEST(MemoTable, Root) {
 /// the right side to rotate leftward into root.
 TEST(MemoTable, RemoveLeft) {
   MemoTable tree;
-  auto c = insert(tree, 1);
+  auto *c = insert(tree, 1);
   verify(std::cout, tree);
-  auto l = insert(tree, 0);
+  auto *l = insert(tree, 0);
   verify(std::cout, tree);
-  auto r = insert(tree, 2);
+  auto *r = insert(tree, 2);
   verify(std::cout, tree);
-  auto rr = insert(tree, 3);
+  auto *rr = insert(tree, 3);
   verify(std::cout, tree);
 
   //     C=1
@@ -154,7 +154,7 @@ TEST(MemoTable, RemoveRoot) {
   //         /   |
   //       R=4   RRR=6
   MemoTable tree;
-  auto c = insert(tree, 2);
+  auto *c = insert(tree, 2);
   verify(std::cout, tree);
   auto l = insert(tree, 1);
   verify(std::cout, tree);
