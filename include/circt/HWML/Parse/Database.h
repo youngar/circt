@@ -1,9 +1,12 @@
 #ifndef CIRCT_HWML_PARSE_DATABASE_H
 #define CIRCT_HWML_PARSE_DATABASE_H
 
+#include "circt/Support/LLVM.h"
+#include "llvm/ADT/DenseMap.h"
 #include <cstdint>
 
-namespace inc {
+namespace circt {
+namespace hwml {
 
 //// Underlying
 
@@ -20,6 +23,12 @@ private:
   std::uintptr_t revision;
 };
 
+template <typename K, typename V>
+struct DatabaseStorage {
+  DenseMap<K, V> underlying;
+};
+
+template <typename K, typename V>
 struct Database {
   Context *getContext();
 
@@ -29,14 +38,17 @@ struct Database {
   ReturnT get() {}
 
 private:
-  Revision revision;
+  static DatabaseStorage<K, V> storage;
 };
 
 struct Context {
-  Database *getDatabase();
+
+  template <typename K, typename V>
+  V getValue(K key) {
+    return DatabaseStorage<K, V>::get();
+  }
 
 private:
-  Database *database;
 };
 
 struct Input {
@@ -54,19 +66,17 @@ private:
   Revision verifiedAt;
 };
 
+template <typename T>
 struct Query {};
 
-/// Task
+struct GetAST {
+  void operator()(Context *context) {}
+};
 
-/// Implementation
-Revision::Revision() : revision(0) {}
-Revision::operator uintptr_t() { return revision; }
+static DatabaseStorage<GetAST>();
 
-Context *Database::getContext() { return new Context(); }
 
-Revision Database::getRevision() { return revision; }
+} // namespace hwml
+} // namespace circt
 
-Database *Context::getDatabase() { return database; }
-
-} // namespace inc
 #endif
