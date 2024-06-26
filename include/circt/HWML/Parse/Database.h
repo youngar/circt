@@ -73,8 +73,7 @@ struct GetAST {
   void operator()(Context *context) {}
 };
 
-static DatabaseStorage<GetAST>();
-
+static DatabaseStorage<GetAST>;
 
 } // namespace hwml
 } // namespace circt
