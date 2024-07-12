@@ -9,11 +9,6 @@ namespace circt {
 
 namespace hwml {
 
-struct Revision {
-private:
-  uintptr_t num;
-};
-
 class Database {
 public:
   template <typename T, typename... Args>

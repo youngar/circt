@@ -1,6 +1,7 @@
 add_circt_library(CIRCTHWML
   HWML.cpp
   HWMLAst.cpp
+  HWMLDatabase.cpp
   HWMLParser.cpp
 
   LINK_LIBS PUBLIC
@@ -15,5 +16,6 @@ add_circt_library(CIRCTHWML
   MLIRTransforms
 )
 
+add_subdirectory(Incremental)
 add_subdirectory(Parse)
 add_subdirectory(LSPServer)
