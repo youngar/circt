@@ -8,32 +8,6 @@
 namespace circt {
 namespace hwml {
 
-struct HWMLDatabase;
-
-struct CST {};
-
-struct FileContents {
-  std::string contents;
-};
-
-CST parseFile(const std::string &contents) { return {}; }
-
-struct GetCST : public QueryFamily<GetCST, HWMLDatabase> {
-  static CST compute(HWMLDatabase &database, const FileContents &contents) {
-    return parseFile(contents.contents);
-  }
-};
-
-struct HWMLDatabase {
-  // Inputs.
-  Input<HWMLDatabase, FileContents> fileContents;
-
-  // Queries.
-  GetCST getCST;
-  
-
-  // Functions
-};
 
 } // namespace hwml
 } // namespace circt

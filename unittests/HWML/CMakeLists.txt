@@ -1,1 +1,2 @@
+add_subdirectory(Incremental)
 add_subdirectory(Parse)
