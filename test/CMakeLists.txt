@@ -32,8 +32,8 @@ set(CIRCT_TEST_DEPENDS
   hlstool
   ibistool
   om-linker
-  hwml
-  hwml-lsp-server
+  hwl
+  hwl-lsp-server
   )
 
 if (CIRCT_GTEST_AVAILABLE)

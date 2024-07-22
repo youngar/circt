@@ -1,0 +1,84 @@
+
+type Bit {
+    0, 1
+};
+
+type Nat {
+  Zero;
+  Succ: Nat -> Nat.
+};
+
+type Vector(t : Type): Nat -> Type {
+ 
+};
+
+def foo(x : nat, y : nat, z : string) : string =
+  def helper(x y : nat) : nat = 
+    match x with
+    | Z => y
+    | S x' => S (helper x y)
+    end
+  end
+  def local : nat =
+    helper(x, y)
+  end
+  String.concat (helper x y) z
+end
+
+type bit = zero | one
+
+onehot Bit {
+    zero, one
+}
+
+tyep Bit {
+
+}
+
+def foo(x: nat, y: nat, z: string): string =
+  let helper(x: nat, y: nat): nat = 
+    match x with
+    | Z => y
+    | S x' => S (helper x y)
+    end
+  in
+  let local: nat = helper(x, y) in
+  String.concat(helper(x, y), z)
+  
+{a: uint(1)}
+
+def myfun(x: nat) = x + 1
+
+def myfun: (nat) -> nat =
+  fun (x : nat) => x + 1
+
+def mymod: nat -> { v: nat; } =
+  fun(x) => {
+    v = x;
+  }
+
+def mymod(x: nat): { v: nat; } = {
+    v = x ;
+}
+
+mod mymod(x: nat) {
+  def v: nat = x
+}
+
+mymod(123).v ====> 123
+
+def myfun(x: int(8), y: int(8)) =
+  x + y
+
+module myfun(in [7: 0] x, y)
+endmodule();
+
+def myclient(f: (nat, nat) -> nat, x: int(8), y: int(8), z: int(8)): int(8) =
+  let f = f(x) in
+  myfun(f(y), y(z))
+
+module myclient(in x, y, z, out result)
+  mymodule(x, y, tmp1)
+  mymodule(x, z, tmp2)
+  mymodule(tmp1, tmp2, result)
+endmodule();
