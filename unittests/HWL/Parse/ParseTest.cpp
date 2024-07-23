@@ -73,7 +73,7 @@ TEST(Machine, Capture) {
   stream.setLabel(exp, stream.captureBegin(10));
   stream.call(factor);
   stream.choice(e1);
-  stream.setLabel(e0, stream.set("+-"));
+  stream.setLabel(e0, stream.anyOf("+-"));
   stream.call(factor);
   stream.partialCommit(e0);
   stream.setLabel(e1, stream.captureEnd());
@@ -85,7 +85,7 @@ TEST(Machine, Capture) {
   stream.setLabel(factor, stream.captureBegin(11));
   stream.call(term);
   stream.choice(f1);
-  stream.setLabel(f0, stream.set("*/"));
+  stream.setLabel(f0, stream.anyOf("*/"));
   stream.call(term);
   stream.partialCommit(f0);
   stream.setLabel(f1, stream.captureEnd());
@@ -108,10 +108,10 @@ TEST(Machine, Capture) {
   auto n0 = stream.label();
   auto n1 = stream.label();
   stream.setLabel(number, stream.captureBegin(13));
-  stream.set("1234567890");
+  stream.anyOf("1234567890");
 
   stream.choice(n1);
-  stream.setLabel(n0, stream.set("1234567890"));
+  stream.setLabel(n0, stream.anyOf("1234567890"));
   stream.partialCommit(n0);
   stream.setLabel(n1, stream.captureEnd());
   stream.ret();
@@ -151,7 +151,7 @@ TEST(Machine, Memoization) {
   stream.captureBegin(10);
   stream.call(factor);
   stream.choice(e1);
-  stream.setLabel(e0, stream.set("+-"));
+  stream.setLabel(e0, stream.anyOf("+-"));
   stream.call(factor);
   stream.partialCommit(e0);
   stream.setLabel(e1, stream.captureEnd());
@@ -164,7 +164,7 @@ TEST(Machine, Memoization) {
   stream.setLabel(factor, stream.captureBegin(11));
   stream.call(term);
   stream.choice(f1);
-  stream.setLabel(f0, stream.set("*/"));
+  stream.setLabel(f0, stream.anyOf("*/"));
   stream.call(term);
   stream.partialCommit(f0);
   stream.setLabel(f1, stream.captureEnd());
@@ -187,10 +187,10 @@ TEST(Machine, Memoization) {
   auto n0 = stream.label();
   auto n1 = stream.label();
   stream.setLabel(number, stream.captureBegin(13));
-  stream.set("1234567890");
+  stream.anyOf("1234567890");
 
   stream.choice(n1);
-  stream.setLabel(n0, stream.set("1234567890"));
+  stream.setLabel(n0, stream.anyOf("1234567890"));
   stream.partialCommit(n0);
   stream.setLabel(n1, stream.captureEnd());
   stream.ret();
@@ -256,9 +256,9 @@ TEST(Parser, MyGrammar) {
 
   // clang-format off
   program(file,
-    rule(ws, star(p::set(" \n\t"))),
-    rule(id, capture(IdId, p::plus(p::set("abcdefghijklmnopqrstuvwxyz")))),
-    rule(num, capture(NumId, p::plus(p::set("1234567890")))),
+    rule(ws, star(p::anyOf(" \n\t"))),
+    rule(id, capture(IdId, p::plus(p::anyOf("abcdefghijklmnopqrstuvwxyz")))),
+    rule(num, capture(NumId, p::plus(p::anyOf("1234567890")))),
     rule(atom, alt(id, num, group)),
     rule(expression, capture(ExprId, atom, star(ws, atom))),
     rule(group,

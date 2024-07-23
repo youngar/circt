@@ -46,11 +46,12 @@ int main(int argc, char *argv[]) {
   hwl::HWLParser parser;
   std::vector<Node *> captures;
   std::vector<hwl::Diagnostic> diagnostics;
-  MemoTable memoTable;
-  parser.parse(buffer, memoTable, captures, diagnostics);
+  HWLDocument document(buffer.str());
+  parser.parse(document);
 
   // for (auto &diag : diagnostics) {
-  //   sourceMgr.PrintMessage(llvm::SMLoc::getFromPointer((const char *)diag.sp),
+  //   sourceMgr.PrintMessage(llvm::SMLoc::getFromPointer((const char
+  //   *)diag.sp),
   //                          SourceMgr::DK_Error, diag.getMessage());
   // }
 

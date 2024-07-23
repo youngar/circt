@@ -1,4 +1,5 @@
 #include "circt/HWL/HWLAst.h"
+#include "circt/HWL/HWLTypeCheck.h"
 #include <iostream>
 #include <vector>
 
@@ -11,13 +12,13 @@ namespace hwl {
 
 void print(Type *type) {
   if (auto *tconst = dyn_cast<TConst>(type)) {
-    std::cerr << tconst->value;
+    std::cerr << tconst->getValue();
     return;
   }
   if (auto *tarrow = dyn_cast<TArrow>(type)) {
-    print(tarrow->left);
+    print(tarrow->getLeft());
     std::cerr << " -> ";
-    print(tarrow->right);
+    print(tarrow->getRight());
     return;
   }
 
@@ -26,32 +27,32 @@ void print(Type *type) {
 
 void print(Expr *expr) {
   if (auto *anno = dyn_cast<Anno>(expr)) {
-    print(anno->expr);
+    print(anno->getExpr());
     std::cerr << " : ";
-    print(anno->type);
+    print(anno->getType());
     return;
   }
 
   if (auto *c = dyn_cast<Const>(expr)) {
-    std::cerr << c->value;
+    std::cerr << c->getValue();
     return;
   }
 
   if (auto *var = dyn_cast<Var>(expr)) {
-    std::cerr << "\\" << var->index;
+    std::cerr << "\\" << var->getIndex();
     return;
   }
 
   if (auto *app = dyn_cast<App>(expr)) {
-    print(app->fun);
+    print(app->getFun());
     std::cerr << " ";
-    print(app->arg);
+    print(app->getArg());
     return;
   }
 
   if (auto *abs = dyn_cast<Abs>(expr)) {
     std::cerr << "(λ ";
-    print(abs->body);
+    print(abs->getBody());
     std::cerr << ")";
     return;
   }
@@ -64,36 +65,35 @@ void print(Expr *expr) {
 ///
 
 Expr *eval(std::vector<Expr *> ctxt, Expr *expr, uint64_t binderDepth) {
-  if (auto *anno = dyn_cast<Anno>(expr)) {
-    return eval(ctxt, anno->expr, binderDepth);
-  }
+  if (auto *anno = dyn_cast<Anno>(expr))
+    return eval(ctxt, anno->getExpr(), binderDepth);
 
-  if (auto *c = dyn_cast<Const>(expr)) {
+  if (auto *c = dyn_cast<Const>(expr))
     return c;
-  }
 
-  if (auto *var = dyn_cast<Var>(expr)) {
-    return ctxt[ctxt.size() - 1 - var->index];
-  }
+  if (auto *var = dyn_cast<Var>(expr))
+    return ctxt[ctxt.size() - 1 - var->getIndex()];
 
   if (auto *app = dyn_cast<App>(expr)) {
-    auto fun = dyn_cast<Abs>(eval(ctxt, app->fun, binderDepth));
+    auto *fun = dyn_cast<Abs>(eval(ctxt, app->getFun(), binderDepth));
     if (!fun)
       return nullptr;
 
-    auto arg = eval(ctxt, app->arg, binderDepth);
+    auto *arg = eval(ctxt, app->getArg(), binderDepth);
     if (!arg)
       return nullptr;
 
     ctxt.push_back(arg);
-    auto result = eval(ctxt, fun->body, binderDepth);
+    auto *result = eval(ctxt, fun->getBody(), binderDepth);
     ctxt.pop_back();
     return result;
   }
 
   if (auto *abs = dyn_cast<Abs>(expr)) {
+    // no idea lol
   }
 
+  abort();
   return expr;
 }
 
@@ -104,15 +104,15 @@ bool typeEq(Type *lhs, Type *rhs) {
     auto rarrow = dyn_cast<TArrow>(rhs);
     if (!rarrow)
       return false;
-    return typeEq(larrow->left, rarrow->left) &&
-           typeEq(larrow->right, rarrow->right);
+    return typeEq(larrow->getLeft(), rarrow->getLeft()) &&
+           typeEq(larrow->getRight(), rarrow->getRight());
   }
 
   if (auto ltconst = dyn_cast<TConst>(lhs)) {
     auto rtconst = dyn_cast<TConst>(rhs);
     if (!rtconst)
       return false;
-    return ltconst->value == rtconst->value;
+    return ltconst->getValue() == rtconst->getValue();
   }
 
   return false;
@@ -134,14 +134,14 @@ bool typeCheck(std::vector<Type *> ctxt, Expr *expr, Type *expected) {
     if (!tarrow)
       return false;
 
-    ctxt.push_back(tarrow->left);
-    auto result = typeCheck(ctxt, abs->body, tarrow->right);
+    ctxt.push_back(tarrow->getLeft());
+    auto result = typeCheck(ctxt, abs->getBody(), tarrow->getRight());
     ctxt.pop_back();
     return result;
   }
 
   if (auto *app = dyn_cast<App>(expr)) {
-    auto tfun = typeSynth(ctxt, app->fun);
+    auto tfun = typeSynth(ctxt, app->getFun());
     if (!tfun)
       return false;
     auto tarrow = dyn_cast<TArrow>(tfun);
@@ -156,13 +156,13 @@ bool typeCheck(std::vector<Type *> ctxt, Expr *expr, Type *expected) {
 Type *typeSynth(std::vector<Type *> ctxt, Expr *expr) {
 
   if (auto *anno = dyn_cast<Anno>(expr)) {
-    if (!typeCheck(ctxt, anno->expr, anno->type))
+    if (!typeCheck(ctxt, anno->getExpr(), anno->getType()))
       return nullptr;
-    return anno->type;
+    return anno->getType();
   }
 
   if (auto *var = dyn_cast<Var>(expr)) {
-    auto index = var->index;
+    auto index = var->getIndex();
     auto size = ctxt.size();
     if (index >= size)
       return nullptr;

@@ -16,27 +16,25 @@ struct HWLParser;
 
 struct HWLDatabase : public inc::Database {
 
-  void addDocument(const std::string &filename, const std::string &contents) {
-    auto [_, inserted] = fileTable.try_emplace(filename, contents);
+  void addDocument(StringRef filename, StringRef contents) {
+    auto [_, inserted] = fileTable.try_emplace(
+        filename, std::make_unique<inc::Input<HWLDocument>>(contents.str()));
     assert(inserted && "file was already added");
   }
 
-  bool removeDocument(const std::string &filename) {
-    return fileTable.erase(filename);
-  }
+  bool removeDocument(StringRef filename) { return fileTable.erase(filename); }
 
-  inc::Input<HWLDocument> &getDocument(const std::string &filename) {
+  inc::Input<HWLDocument> &getDocument(StringRef filename) {
     return *fileTable.at(filename);
   }
 
-  const inc::Input<HWLDocument> &
-  getDocument(const std::string &filename) const {
+  const inc::Input<HWLDocument> &getDocument(StringRef filename) const {
     return *fileTable.at(filename);
   }
 
 private:
   HWLParser parser;
-  DenseMap<std::string, std::unique_ptr<inc::Input<HWLDocument>>> fileTable;
+  DenseMap<StringRef, std::unique_ptr<inc::Input<HWLDocument>>> fileTable;
 };
 
 using Context = inc::Context<HWLDatabase>;

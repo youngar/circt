@@ -16,9 +16,13 @@ namespace hwl {
 struct HWLParser;
 struct HWLDocument;
 
+struct HWLSyntaxTree {
+
+};
+
 struct HWLParseResult {
   bool success;
-  std::vector<Node *> captures;
+  HWLSyntaxTree tree;
   std::vector<Diagnostic> diagnostics;
 };
 
@@ -49,17 +53,13 @@ struct HWLDocument {
   HWLDocument &operator=(const HWLDocument &) = delete;
 
   std::string getContents() const { return contents; }
-  void replaceContents(std::string contents);
-  LogicalResult updateContents(const std::string &contents, Position start,
-                               std::size_t removed);
+  void replaceContents(const std::string &contents);
 
 private:
   friend HWLParser;
 
   /// The full string contents of the file.
   std::string contents;
-  /// Memoization of the CST.
-  mutable MemoTable memoTable;
 };
 
 } // namespace hwl

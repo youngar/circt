@@ -9,6 +9,7 @@
 #include "llvm/Support/Error.h"
 #include "llvm/Support/SourceMgr.h"
 #include <memory>
+#include "circt/HWL/HWLDatabase.h"
 #include <optional>
 
 namespace mlir {
@@ -34,11 +35,6 @@ class URIForFile;
 
 namespace circt {
 namespace hwl {
-
-struct LSPDocument {
-  HWLDocument *document;
-  LineInfoTable lineInfoTable;
-};
 
 struct HWLServer {
 
@@ -68,7 +64,8 @@ private:
   /// The registry containing dialects that can be recognized in parsed .mlir
   /// files.
   mlir::DialectRegistry &registry;
-
+  
+  HWLDatabase database;
 
   void run();
 };

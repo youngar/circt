@@ -9,6 +9,7 @@
 #include "llvm/Support/ErrorHandling.h"
 #include <cassert>
 #include <string>
+#include <vector>
 
 namespace circt {
 namespace hwl {
@@ -155,8 +156,11 @@ private:
 };
 
 struct Declaration : public Stmt {
+  static Kind kind() { return Kind::Declaration; }
   Declaration(StringRef name, Type *type)
-      : Stmt(Kind::Declaration), name(name), type(type) {}
+      : Stmt(kind()), name(name), type(type) {}
+  static bool classof(const Stmt *stmt) { return stmt->getKind() == kind(); }
+
   const std::string &getName() const { return name; }
   Type *getType() const { return type; }
 
@@ -166,8 +170,10 @@ private:
 };
 
 struct Definition : public Stmt {
+  static Kind kind() { return Kind::Definition; }
   Definition(StringRef name, Expr *value)
-      : Stmt(Kind::Definition), name(name), value(value) {}
+      : Stmt(kind()), name(name), value(value) {}
+  static bool classof(const Stmt *stmt) { return stmt->getKind() == kind(); }
 
   StringRef getName() const { return name; }
   Expr *getValue() const { return value; }
@@ -343,7 +349,7 @@ struct ASTEquivalence {
     llvm_unreachable("forgot to handle a case");
   }
 
-  inline llvm::hash_code hashValue(const Stmt *stmt) {
+  static inline llvm::hash_code hashValue(const Stmt *stmt) {
     if (auto *decl = dyn_cast<Declaration>(stmt))
       return hashValue(decl);
     if (auto *def = dyn_cast<Definition>(stmt))
@@ -360,12 +366,16 @@ struct ASTEquivalence {
     auto &rs = rhs->getStatements();
     if (ls.size() != rs.size())
       return false;
-    return llvm::all_of(
-        llvm::zip(ls, rs), [](auto l, auto r); { return equal(l, r); });
+    return llvm::all_of(llvm::zip(ls, rs), [](const auto &pair) {
+      return equal(std::get<0>(pair), std::get<1>(pair));
+    });
   }
 
   static llvm::hash_code hasValue(const CompUnit *compUnit) {
-    return llvm::hash_combine(compUnit->getStatements());
+    llvm::hash_code hash;
+    for (auto *stmt : compUnit->getStatements())
+      llvm::hash_combine(hash, hashValue(stmt));
+    return hash;
   }
 };
 

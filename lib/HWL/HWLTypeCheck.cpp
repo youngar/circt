@@ -3,8 +3,3 @@
 
 using namespace circt::hwl;
 
-std::vector<Diagnostic> GetDiagnostics::operator()(QueryContext ctx) {}
-struct DiagnosticManager =
-    std::void private : std::vector<Diagnostic> diagnostics;
-}
-;
