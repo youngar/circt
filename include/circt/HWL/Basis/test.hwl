@@ -1,11 +1,10 @@
-
 type Bit {
-    0, 1
-};
+    0 | 1
+}
 
 type Nat {
   Zero;
-  Succ: Nat -> Nat.
+  Succ: Nat -> Nat
 };
 
 type Vector(t : Type): Nat -> Type {

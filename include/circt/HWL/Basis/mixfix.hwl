@@ -1,0 +1,36 @@
+
+
+
+ (_)
+op add(_,_,) none 
+
+keyword INFIX +
+keyword prefix keyword 50
+keyword infix then nonassociative 50
+keyword infix else nonassociative 50
+
+
+notation ["if" cond "then" then "else" else] 
+
+(x)
+(_)
+
+"(" expr ")"
+v ":" t
+"(" v ":" t ")"
+
+
+(x : a)
+(x : a) -> p x
+((x : a)) -> p x
+
+notation if (x: bool) then (x: a) else (y: a): a =....
+
+def add(x: nat, y: nat): nat = .....
+
+def add: (x: nat, y: nat) -> nat = .....
+
+group := open_paren, seq binders, close_paren
+
+pi := group '->' expr
+
