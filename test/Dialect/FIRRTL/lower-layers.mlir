@@ -39,8 +39,8 @@ firrtl.circuit "Test" {
 
     // CHECK-LABEL: @ColoredThingUnderWhen
   firrtl.module @ColoredThingUnderWhen(in %b : !firrtl.uint<1>) {
-    // CHECK: firrtl.when %b : !firrtl.uint<1>
-    firrtl.when %b : !firrtl.uint<1> {
+    // CHECK: firrtl.when %b
+    firrtl.when %b {
       // CHECK: %0 = firrtl.wire : !firrtl.probe<bundle<f: uint<1>>>
       %0 = firrtl.wire : !firrtl.probe<bundle<f: uint<1>>, @A>
     }
@@ -175,7 +175,7 @@ firrtl.circuit "Test" {
   // CHECK-NEXT: firrtl.module private @WhenUnderLayer_A()
   // CHECK-NEXT:   %0 = firrtl.xmr.deref @[[WhenUnderLayer_x_path]] : !firrtl.uint<1>
   // CHECK-NEXT:   %c1_ui1 = firrtl.constant 1 : !firrtl.uint<1>
-  // CHECK-NEXT:   firrtl.when %0 : !firrtl.uint<1> {
+  // CHECK-NEXT:   firrtl.when %0 {
   // CHECK-NEXT:     %1 = firrtl.add %0, %c1_ui1 : (!firrtl.uint<1>, !firrtl.uint<1>) -> !firrtl.uint<2>
   // CHECK-NEXT:   }
   // CHECK-NEXT: }
@@ -188,7 +188,7 @@ firrtl.circuit "Test" {
     %x = firrtl.wire : !firrtl.uint<1>
     firrtl.layerblock @A {
       %c1_ui1 = firrtl.constant 1 : !firrtl.uint<1>
-      firrtl.when %x : !firrtl.uint<1> {
+      firrtl.when %x {
         %0 = firrtl.add %x, %c1_ui1 : (!firrtl.uint<1>, !firrtl.uint<1>) -> !firrtl.uint<2>
       }
     }
@@ -274,7 +274,7 @@ firrtl.circuit "Test" {
   // CHECK-NEXT: firrtl.module private @CaptureWhen2_A() {
   // CHECK-NEXT:   %0 = firrtl.xmr.deref @[[CaptureWhen2_cond_path]]
   // CHECK-NEXT:   %1 = firrtl.xmr.deref @[[CaptureWhen2_a_path]]
-  // CHECK-NEXT:   firrtl.when %0 {{.*}} {
+  // CHECK-NEXT:   firrtl.when %0 {
   // CHECK-NEXT:     %b = firrtl.node %1
 
   // CHECK:      firrtl.module @CaptureWhen2(
@@ -284,7 +284,7 @@ firrtl.circuit "Test" {
   firrtl.module @CaptureWhen2(in %cond: !firrtl.uint<1>) {
     %a = firrtl.wire : !firrtl.uint<1>
     firrtl.layerblock @A {
-      firrtl.when %cond : !firrtl.uint<1> {
+      firrtl.when %cond {
         %b = firrtl.node %a : !firrtl.uint<1>
       }
     }
@@ -497,7 +497,7 @@ firrtl.circuit "Test" {
     firrtl.layerblock @A {
        %clock = firrtl.wire : !firrtl.clock
       %c1_ui1 = firrtl.constant 1 : !firrtl.uint<1>
-      firrtl.printf %clock, %c1_ui1, "{{}}" (%time) : !firrtl.clock, !firrtl.uint<1>, !firrtl.fstring
+      firrtl.printf %clock, %c1_ui1, "{{}}" (%time) : !firrtl.fstring
     }
   }
 

@@ -26,8 +26,8 @@ firrtl.circuit "ForwardThroughRegs" {
   firrtl.module @ForwardThroughRegs(in %clock: !firrtl.clock, in %reset: !firrtl.uint<1>, in %input: !firrtl.uint<42>) {
     // CHECK-NOT: %reg0 = firrtl.reg
     // CHECK-NOT: %reg1 = firrtl.regreset
-    %reg0 = firrtl.reg %clock : !firrtl.clock, !firrtl.uint<42>
-    %reg1 = firrtl.regreset %clock, %reset, %input : !firrtl.clock, !firrtl.uint<1>, !firrtl.uint<42>, !firrtl.uint<42>
+    %reg0 = firrtl.reg %clock  : !firrtl.uint<42>
+    %reg1 = firrtl.regreset %clock, %reset, %input  : !firrtl.uint<1>, !firrtl.uint<42>, !firrtl.uint<42>
     // CHECK-NOT: firrtl.connect
     firrtl.connect %reg0, %input : !firrtl.uint<42>, !firrtl.uint<42>
     firrtl.connect %reg1, %input : !firrtl.uint<42>, !firrtl.uint<42>

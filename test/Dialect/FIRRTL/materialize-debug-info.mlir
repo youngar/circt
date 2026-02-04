@@ -56,11 +56,11 @@ firrtl.module @Decls() {
 
   // CHECK-NEXT: firrtl.reg
   // CHECK-NEXT: dbg.variable "someReg1", %someReg1
-  %someReg1 = firrtl.reg %c0_clock : !firrtl.clock, !firrtl.uint<17>
+  %someReg1 = firrtl.reg %c0_clock  : !firrtl.uint<17>
 
   // CHECK-NEXT: firrtl.regreset
   // CHECK-NEXT: dbg.variable "someReg2", %someReg2
-  %someReg2 = firrtl.regreset %c0_clock, %c0_ui1, %c0_ui17 : !firrtl.clock, !firrtl.uint<1>, !firrtl.uint<17>, !firrtl.uint<17>
+  %someReg2 = firrtl.regreset %c0_clock, %c0_ui1, %c0_ui17  : !firrtl.uint<1>, !firrtl.uint<17>, !firrtl.uint<17>
 
   // CHECK-NEXT: firrtl.matchingconnect
   firrtl.matchingconnect %someWire, %c0_ui17 : !firrtl.uint<17>

@@ -360,12 +360,12 @@ firrtl.circuit "NoBlockEmptyBlock" attributes {annotations = [{
     }]} {
   firrtl.module private @A(in %x: !firrtl.uint<1>) {
     // expected-note @below {{operation regions have different number of blocks}}
-    firrtl.when %x : !firrtl.uint<1> {
+    firrtl.when %x {
     }
   }
   firrtl.module private @B(in %x: !firrtl.uint<1>) {
     // expected-note @below {{second operation here}}
-    firrtl.when %x : !firrtl.uint<1> {
+    firrtl.when %x {
     } else {
     }
   }

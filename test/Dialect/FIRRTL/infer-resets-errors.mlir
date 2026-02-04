@@ -40,7 +40,7 @@ firrtl.circuit "top" {
     // expected-note @+1 {{sync drive here:}}
     firrtl.connect %w2, %reset2 : !firrtl.reset, !firrtl.uint<1>
     firrtl.connect %out, %w2 : !firrtl.reset, !firrtl.reset
-    firrtl.when %en : !firrtl.uint<1>  {
+    firrtl.when %en {
       firrtl.connect %out, %w0 : !firrtl.reset, !firrtl.reset
     } else  {
       firrtl.connect %out, %w1 : !firrtl.reset, !firrtl.reset
@@ -60,7 +60,7 @@ firrtl.circuit "top" {
     // expected-note @+1 {{sync drive here:}}
     firrtl.connect %w2, %reset1 : !firrtl.reset, !firrtl.uint<1>
     firrtl.connect %out, %w1 : !firrtl.reset, !firrtl.reset
-    firrtl.when %en : !firrtl.uint<1>  {
+    firrtl.when %en {
       firrtl.connect %out, %w2 : !firrtl.reset, !firrtl.reset
     }
   }
@@ -234,7 +234,7 @@ firrtl.circuit "top" {
 firrtl.circuit "Top" {
   // expected-error @below {{module 'Child' is in reset domain requiring port 'reset' to have type '!firrtl.asyncreset', but has type '!firrtl.uint<1>'}}
   firrtl.module @Child(in %clock: !firrtl.clock, in %reset : !firrtl.uint<1>) {
-    %reg = firrtl.reg %clock : !firrtl.clock, !firrtl.uint<8>
+    %reg = firrtl.reg %clock  : !firrtl.uint<8>
   }
   // expected-note @below {{reset domain rooted here}}
   firrtl.module @Top(in %clock: !firrtl.clock, in %reset: !firrtl.asyncreset [{class = "circt.FullResetAnnotation", resetType = "async"}]) {
@@ -248,7 +248,7 @@ firrtl.circuit "Top" {
 firrtl.circuit "Top" {
   // expected-error @+1 {{module 'Foo' instantiated in different reset domains}}
   firrtl.module @Foo(in %clock: !firrtl.clock) {
-    %reg = firrtl.reg %clock : !firrtl.clock, !firrtl.uint<8>
+    %reg = firrtl.reg %clock  : !firrtl.uint<8>
   }
   // expected-note @+1 {{reset domain 'otherReset' of module 'Child' declared here:}}
   firrtl.module @Child(in %clock: !firrtl.clock, in %otherReset: !firrtl.asyncreset) attributes {portAnnotations = [[],[{class = "circt.FullResetAnnotation", resetType = "async"}]]} {

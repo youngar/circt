@@ -24,12 +24,12 @@ firrtl.module @OneVariant(in %enum : !firrtl.enum<a: uint<8>>, out %out : !firrt
 firrtl.module @LowerMatches(in %enum : !firrtl.enum<a: uint<8>, b: uint<8>, c: uint<8>>, out %out : !firrtl.uint<8>) {
 
    // CHECK-NEXT: %0 = firrtl.istag %enum a : !firrtl.enum<a: uint<8>, b: uint<8>, c: uint<8>>
-   // CHECK-NEXT: firrtl.when %0 : !firrtl.uint<1> {
+   // CHECK-NEXT: firrtl.when %0 {
    // CHECK-NEXT:   %1 = firrtl.subtag %enum[a] : !firrtl.enum<a: uint<8>, b: uint<8>, c: uint<8>>
    // CHECK-NEXT:   firrtl.matchingconnect %out, %1 : !firrtl.uint<8>
    // CHECK-NEXT: } else {
    // CHECK-NEXT:   %1 = firrtl.istag %enum b : !firrtl.enum<a: uint<8>, b: uint<8>, c: uint<8>>
-   // CHECK-NEXT:   firrtl.when %1 : !firrtl.uint<1> {
+   // CHECK-NEXT:   firrtl.when %1 {
    // CHECK-NEXT:     %2 = firrtl.subtag %enum[b] : !firrtl.enum<a: uint<8>, b: uint<8>, c: uint<8>>
    // CHECK-NEXT:     firrtl.matchingconnect %out, %2 : !firrtl.uint<8>
    // CHECK-NEXT:   } else {

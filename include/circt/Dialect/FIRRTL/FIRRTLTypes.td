@@ -53,7 +53,8 @@ def FIRRTLBaseType : FIRRTLDialectType<
 def ForeignType : FIRRTLDialectType<CPred<"!isa<FIRRTLType>($_self)">,
                                     "foreign type", "::mlir::Type">;
 
-def ClockType : FIRRTLDialectAliasTypeHelper<"ClockType", "clock">;
+def ClockType : FIRRTLDialectAliasTypeHelper<"ClockType", "clock">,
+  BuildableType<"::circt::firrtl::ClockType::get($_builder.getContext())">;
 
 def NonConstClockType :
   FIRRTLDialectAliasTypeHelper<"ClockType", "clock">,
@@ -99,9 +100,11 @@ def SizedPassiveType : FIRRTLDialectType<And<[SizedType.predicate,PassiveType.pr
     "::circt::firrtl::FIRRTLBaseType">;
 def SizedPassiveOrForeignType : AnyTypeOf<[SizedPassiveType, ForeignType]>;
 
-def AsyncResetType : FIRRTLDialectAliasTypeHelper<"AsyncResetType", "async reset type">;
+def AsyncResetType : FIRRTLDialectAliasTypeHelper<"AsyncResetType", "async reset type">,
+  BuildableType<"::circt::firrtl::AsyncResetType::get($_builder.getContext())">;
 
-def ResetType : FIRRTLDialectAliasTypeHelper<"ResetType", "reset type">;
+def ResetType : FIRRTLDialectAliasTypeHelper<"ResetType", "reset type">,
+  BuildableType<"::circt::firrtl::ResetType::get($_builder.getContext())">;
 
 def RefType : FIRRTLDialectTypeHelper<"RefType", "reference type">;
 
@@ -141,9 +144,11 @@ class NonConstSizedUIntType<int width> :
   BuildableType<
     "::circt::firrtl::UIntType::get($_builder.getContext(), " # width # ")">;
 
-def UInt1Type : SizedUIntType<1>;
+def UInt1Type : SizedUIntType<1>,
+  BuildableType<"::circt::firrtl::UIntType::get($_builder.getContext(), 1)">;
 def UInt2Type : SizedUIntType<2>;
-def UInt32Type : SizedUIntType<32>;
+def UInt32Type : SizedUIntType<32>,
+  BuildableType<"::circt::firrtl::UIntType::get($_builder.getContext(), 32)">;
 def NonConstUInt1Type : NonConstSizedUIntType<1>;
 
 def UIntLTE1OrUnsizedType : AnyTypeOf<[SizedUIntTypeLTE<1>, UnsizedUIntType]>;

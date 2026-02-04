@@ -4811,9 +4811,7 @@ void FEnumCreateOp::print(OpAsmPrinter &printer) {
   printer << '(' << getInput() << ')';
   SmallVector<StringRef> elidedAttrs = {"fieldIndex"};
   printer.printOptionalAttrDictWithKeyword((*this)->getAttrs(), elidedAttrs);
-  printer << " : ";
-  printer.printFunctionalType(ArrayRef<Type>{getInput().getType()},
-                              ArrayRef<Type>{getResult().getType()});
+  printer << " : " << getResult().getType();
 }
 
 ParseResult FEnumCreateOp::parse(OpAsmParser &parser, OperationState &result) {
@@ -4822,23 +4820,13 @@ ParseResult FEnumCreateOp::parse(OpAsmParser &parser, OperationState &result) {
 
   OpAsmParser::UnresolvedOperand input;
   std::string fieldName;
-  mlir::FunctionType functionType;
+  Type outputType;
   if (parser.parseKeywordOrString(&fieldName) || parser.parseLParen() ||
       parser.parseOperand(input) || parser.parseRParen() ||
       parser.parseOptionalAttrDict(result.attributes) || parser.parseColon() ||
-      parser.parseType(functionType))
+      parser.parseType(outputType))
     return failure();
 
-  if (functionType.getNumInputs() != 1)
-    return parser.emitError(parser.getNameLoc(), "single input type required");
-  if (functionType.getNumResults() != 1)
-    return parser.emitError(parser.getNameLoc(), "single result type required");
-
-  auto inputType = functionType.getInput(0);
-  if (parser.resolveOperand(input, inputType, result.operands))
-    return failure();
-
-  auto outputType = functionType.getResult(0);
   auto enumType = type_dyn_cast<FEnumType>(outputType);
   if (!enumType)
     return parser.emitError(parser.getNameLoc(),
@@ -4849,6 +4837,10 @@ ParseResult FEnumCreateOp::parse(OpAsmParser &parser, OperationState &result) {
     return parser.emitError(parser.getNameLoc(),
                             "unknown field " + fieldName + " in enum type ")
            << enumType;
+
+  Type inputType = enumType.getElementType(*fieldIndex);
+  if (parser.resolveOperand(input, inputType, result.operands))
+    return failure();
 
   properties.setFieldIndex(
       IntegerAttr::get(IntegerType::get(context, 32), *fieldIndex));

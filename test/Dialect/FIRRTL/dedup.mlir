@@ -98,16 +98,16 @@ firrtl.circuit "PrimOps" {
 firrtl.circuit "WhenOps" {
   // CHECK: firrtl.module private @WhenOps0
   firrtl.module private @WhenOps0(in %p : !firrtl.uint<1>) {
-    // CHECK: firrtl.when %p : !firrtl.uint<1> {
+    // CHECK: firrtl.when %p {
     // CHECK:  %w = firrtl.wire : !firrtl.uint<8>
     // CHECK: }
-    firrtl.when %p : !firrtl.uint<1> {
+    firrtl.when %p {
       %w = firrtl.wire : !firrtl.uint<8>
     }
   }
   // CHECK-NOT: firrtl.module private @WhenOps1
   firrtl.module private @WhenOps1(in %p : !firrtl.uint<1>) {
-    firrtl.when %p : !firrtl.uint<1> {
+    firrtl.when %p {
       %w = firrtl.wire : !firrtl.uint<8>
     }
   }

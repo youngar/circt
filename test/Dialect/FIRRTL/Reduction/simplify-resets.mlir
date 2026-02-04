@@ -7,8 +7,8 @@
 firrtl.circuit "ResetTypeInPorts" {
   // CHECK: firrtl.module @ResetTypeInPorts(in %clock: !firrtl.clock, in %reset: !firrtl.uint<1>, in %value: !firrtl.uint<8>)
   firrtl.module @ResetTypeInPorts(in %clock: !firrtl.clock, in %reset: !firrtl.reset, in %value: !firrtl.uint<8>) {
-    // CHECK-NEXT: %reg = firrtl.regreset %clock, %reset, %value : !firrtl.clock, !firrtl.uint<1>, !firrtl.uint<8>, !firrtl.uint<8>
-    %reg = firrtl.regreset %clock, %reset, %value : !firrtl.clock, !firrtl.reset, !firrtl.uint<8>, !firrtl.uint<8>
+    // CHECK-NEXT: %reg = firrtl.regreset %clock, %reset, %value  : !firrtl.uint<1>, !firrtl.uint<8>, !firrtl.uint<8>
+    %reg = firrtl.regreset %clock, %reset, %value  : !firrtl.reset, !firrtl.uint<8>, !firrtl.uint<8>
   }
 }
 
@@ -27,8 +27,8 @@ firrtl.circuit "ResetTypeInResults" {
 firrtl.circuit "ResetTypeInBlockArgs" {
   // CHECK: firrtl.module @ResetTypeInBlockArgs(in %cond: !firrtl.uint<1>, in %reset: !firrtl.uint<1>)
   firrtl.module @ResetTypeInBlockArgs(in %cond: !firrtl.uint<1>, in %reset: !firrtl.reset) {
-    // CHECK-NEXT: firrtl.when %cond : !firrtl.uint<1> {
-    firrtl.when %cond : !firrtl.uint<1> {
+    // CHECK-NEXT: firrtl.when %cond {
+    firrtl.when %cond {
       // CHECK-NEXT: %wire = firrtl.wire : !firrtl.uint<1>
       %wire = firrtl.wire : !firrtl.reset
     }

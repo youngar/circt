@@ -35,12 +35,12 @@ firrtl.module @InferRead(in %cond: !firrtl.uint<1>, in %clock: !firrtl.clock, in
   %ram = chirrtl.combmem  sym @s1 : !chirrtl.cmemory<uint<1>, 256>
   %ramport_data, %ramport_port = chirrtl.memoryport Infer %ram {name = "ramport"} : (!chirrtl.cmemory<uint<1>, 256>) -> (!firrtl.uint<1>, !chirrtl.cmemoryport)
 
-  // CHECK: firrtl.when %cond : !firrtl.uint<1> {
+  // CHECK: firrtl.when %cond {
   // CHECK:   firrtl.matchingconnect [[ADDR]], %addr
   // CHECK:   firrtl.matchingconnect [[EN]], %c1_ui1
   // CHECK:   firrtl.matchingconnect [[CLOCK]], %clock
   // CHECK: }
-  firrtl.when %cond : !firrtl.uint<1> {
+  firrtl.when %cond {
     chirrtl.memoryport.access %ramport_port[%addr], %clock : !chirrtl.cmemoryport, !firrtl.uint<8>, !firrtl.clock
   }
 
@@ -70,13 +70,13 @@ firrtl.module @InferWrite(in %cond: !firrtl.uint<1>, in %clock: !firrtl.clock, i
   %ram = chirrtl.combmem : !chirrtl.cmemory<uint<1>, 256>
   %ramport_data, %ramport_port = chirrtl.memoryport Infer %ram {name = "ramport"} : (!chirrtl.cmemory<uint<1>, 256>) -> (!firrtl.uint<1>, !chirrtl.cmemoryport)
 
-  // CHECK: firrtl.when %cond : !firrtl.uint<1> {
+  // CHECK: firrtl.when %cond {
   // CHECK:   firrtl.matchingconnect [[ADDR]], %addr
   // CHECK:   firrtl.matchingconnect [[EN]], %c1_ui1
   // CHECK:   firrtl.matchingconnect [[CLOCK]], %clock
   // CHECK:   firrtl.matchingconnect [[MASK]], %c0_ui1
   // CHECK: }
-  firrtl.when %cond : !firrtl.uint<1> {
+  firrtl.when %cond {
     chirrtl.memoryport.access %ramport_port[%addr], %clock : !chirrtl.cmemoryport, !firrtl.uint<8>, !firrtl.clock
   }
 
@@ -220,7 +220,7 @@ firrtl.module @Attributes(in %clock: !firrtl.clock, in %addr : !firrtl.uint<8>) 
 // When the address is a wire, the enable should be inferred where the address
 // is driven.
 firrtl.module @EnableInference0(in %p: !firrtl.uint<1>, in %addr: !firrtl.uint<4>, in %clock: !firrtl.clock, out %v: !firrtl.uint<32>) {
-  %w = firrtl.wire  : !firrtl.uint<4>
+  %w = firrtl.wire : !firrtl.uint<4>
   // This connect should not count as "driving" a value.  If it accidentally
   // inserts an enable here, we will get a use-before-def error, so it is
   // enough of a check that this compiles.
@@ -229,12 +229,12 @@ firrtl.module @EnableInference0(in %p: !firrtl.uint<1>, in %addr: !firrtl.uint<4
 
   // CHECK: [[ADDR:%.*]] = firrtl.subfield %ram_ramport[addr]
   // CHECK: [[EN:%.*]] = firrtl.subfield %ram_ramport[en]
-  %ram = chirrtl.seqmem Undefined  : !chirrtl.cmemory<uint<32>, 16>
+  %ram = chirrtl.seqmem Undefined : !chirrtl.cmemory<uint<32>, 16>
   %ramport_data, %ramport_port = chirrtl.memoryport Read %ram  {name = "ramport"}: (!chirrtl.cmemory<uint<32>, 16>) -> (!firrtl.uint<32>, !chirrtl.cmemoryport)
   chirrtl.memoryport.access %ramport_port[%w], %clock : !chirrtl.cmemoryport, !firrtl.uint<4>, !firrtl.clock
 
-  // CHECK: firrtl.when %p : !firrtl.uint<1> {
-  firrtl.when %p : !firrtl.uint<1> {
+  // CHECK: firrtl.when %p {
+  firrtl.when %p {
     // CHECK-NEXT: firrtl.matchingconnect [[EN]], %c1_ui1
     // CHECK-NEXT: firrtl.connect %w, %addr
     firrtl.connect %w, %addr : !firrtl.uint<4>, !firrtl.uint<4>
@@ -244,13 +244,13 @@ firrtl.module @EnableInference0(in %p: !firrtl.uint<1>, in %addr: !firrtl.uint<4
 
 // When the address is a node, the enable should be inferred where the address is declared.
 firrtl.module @EnableInference1(in %p: !firrtl.uint<1>, in %addr: !firrtl.uint<4>, in %clock: !firrtl.clock, out %v: !firrtl.uint<32>) {
-  %ram = chirrtl.seqmem Undefined  : !chirrtl.cmemory<uint<32>, 16>
+  %ram = chirrtl.seqmem Undefined : !chirrtl.cmemory<uint<32>, 16>
   %invalid_ui32 = firrtl.invalidvalue : !firrtl.uint<32>
   firrtl.connect %v, %invalid_ui32 : !firrtl.uint<32>, !firrtl.uint<32>
   // CHECK: [[ADDR:%.*]] = firrtl.subfield %ram_ramport[addr]
   // CHECK: [[EN:%.*]] = firrtl.subfield %ram_ramport[en]
-  // CHECK: firrtl.when %p : !firrtl.uint<1>
-  firrtl.when %p : !firrtl.uint<1> {
+  // CHECK: firrtl.when %p
+  firrtl.when %p {
    // CHECK-NEXT: firrtl.matchingconnect [[EN]], %c1_ui1
    // CHECK-NEXT: %n = firrtl.node %addr
    // CHECK-NEXT: firrtl.matchingconnect [[ADDR]], %n
@@ -268,7 +268,7 @@ firrtl.module @EnableInference1(in %p: !firrtl.uint<1>, in %addr: !firrtl.uint<4
 // CHECK-LABEL: firrtl.module @EnableInference2
 firrtl.module @EnableInference2(in %clock: !firrtl.clock, in %io: !firrtl.bundle<addr: uint<3>>, out %out: !firrtl.uint<8>) {
   %0 = firrtl.subfield %io[addr] : !firrtl.bundle<addr: uint<3>>
-  %mem = chirrtl.seqmem Undefined  : !chirrtl.cmemory<uint<8>, 8>
+  %mem = chirrtl.seqmem Undefined : !chirrtl.cmemory<uint<8>, 8>
   %read_data, %read_port = chirrtl.memoryport Infer %mem  {name = "read"} : (!chirrtl.cmemory<uint<8>, 8>) -> (!firrtl.uint<8>, !chirrtl.cmemoryport)
   chirrtl.memoryport.access %read_port[%0], %clock : !chirrtl.cmemoryport, !firrtl.uint<3>, !firrtl.clock
   firrtl.connect %out, %read_data : !firrtl.uint<8>, !firrtl.uint<8>
@@ -281,10 +281,10 @@ firrtl.module @EnableInference2(in %clock: !firrtl.clock, in %io: !firrtl.bundle
 // connection should be made using a truncation and connect.
 firrtl.module @AddressLargerThanPort(in %clock: !firrtl.clock, in %addr: !firrtl.uint<3>, out %out: !firrtl.uint<1>) {
   // CHECK-LABEL: @AddressLargerThanPort
-  %mem = chirrtl.seqmem Undefined  : !chirrtl.cmemory<uint<1>, 4>
+  %mem = chirrtl.seqmem Undefined : !chirrtl.cmemory<uint<1>, 4>
   %r_data, %r_port = chirrtl.memoryport Infer %mem  {name = "r"} : (!chirrtl.cmemory<uint<1>, 4>) -> (!firrtl.uint<1>, !chirrtl.cmemoryport)
   // CHECK: [[ADDR:%.+]] = firrtl.subfield %mem_r[addr]
-  %addr_node = firrtl.node %addr  : !firrtl.uint<3>
+  %addr_node = firrtl.node %addr : !firrtl.uint<3>
   // CHECK: [[TRUNC:%.+]] = firrtl.tail %addr_node, 1
   // CHECK: firrtl.matchingconnect [[ADDR]], [[TRUNC]]
   chirrtl.memoryport.access %r_port[%addr_node], %clock : !chirrtl.cmemoryport, !firrtl.uint<3>, !firrtl.clock
@@ -295,10 +295,10 @@ firrtl.module @AddressLargerThanPort(in %clock: !firrtl.clock, in %addr: !firrtl
 // Ensure that larger than 32-bit memories work
 firrtl.module @LargeMem(in %clock: !firrtl.clock, in %addr: !firrtl.uint<35>, out %out: !firrtl.uint<1>) {
   // CHECK-LABEL: @LargeMem
-  %testharness = chirrtl.seqmem Undefined  : !chirrtl.cmemory<uint<1>, 34359738368>
+  %testharness = chirrtl.seqmem Undefined : !chirrtl.cmemory<uint<1>, 34359738368>
   // CHECK: %testharness_r = firrtl.mem Undefined  {depth = 34359738368 : i64, name = "testharness"
   %r_data, %r_port = chirrtl.memoryport Infer %testharness  {name = "r"} : (!chirrtl.cmemory<uint<1>, 34359738368>) -> (!firrtl.uint<1>, !chirrtl.cmemoryport)
-  %addr_node = firrtl.node %addr  : !firrtl.uint<35>
+  %addr_node = firrtl.node %addr : !firrtl.uint<35>
   chirrtl.memoryport.access %r_port[%addr_node], %clock : !chirrtl.cmemoryport, !firrtl.uint<35>, !firrtl.clock
   firrtl.connect %out, %r_data : !firrtl.uint<1>, !firrtl.uint<1>
 }
@@ -309,7 +309,7 @@ firrtl.module @DbgsMemPort(in %clock: !firrtl.clock, in %addr : !firrtl.uint<1>,
   %port0_data = chirrtl.debugport %ram {name = "port0"} : (!chirrtl.cmemory<uint<1>, 2>) -> !firrtl.probe<vector<uint<1>, 2>>
   %ramport_data, %ramport_port = chirrtl.memoryport Read %ram {name = "ramport"} : (!chirrtl.cmemory<uint<1>, 2>) -> (!firrtl.uint<1>, !chirrtl.cmemoryport)
 
-  firrtl.when %cond : !firrtl.uint<1> {
+  firrtl.when %cond {
     chirrtl.memoryport.access %ramport_port[%addr], %clock : !chirrtl.cmemoryport, !firrtl.uint<1>, !firrtl.clock
   }
   firrtl.ref.define %_a, %port0_data : !firrtl.probe<vector<uint<1>, 2>>

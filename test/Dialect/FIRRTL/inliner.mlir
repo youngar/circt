@@ -265,15 +265,15 @@ firrtl.module @declarations(in %clock : !firrtl.clock, in %u8 : !firrtl.uint<8>,
   chirrtl.memoryport.access %memoryport_port[%u8], %clock : !chirrtl.cmemoryport, !firrtl.uint<8>, !firrtl.clock
   // CHECK: %myinst_node = firrtl.node %myinst_u8  : !firrtl.uint<8>
   %node = firrtl.node %u8 {name = "node"} : !firrtl.uint<8>
-  // CHECK: %myinst_reg = firrtl.reg %myinst_clock : !firrtl.clock, !firrtl.uint<8>
-  %reg = firrtl.reg %clock {name = "reg"} : !firrtl.clock, !firrtl.uint<8>
-  // CHECK: %myinst_regreset = firrtl.regreset %myinst_clock, %myinst_reset, %c0_ui8 : !firrtl.clock, !firrtl.asyncreset, !firrtl.uint<8>, !firrtl.uint<8>
-  %regreset = firrtl.regreset %clock, %reset, %c0_ui8 : !firrtl.clock, !firrtl.asyncreset, !firrtl.uint<8>, !firrtl.uint<8>
+  // CHECK: %myinst_reg = firrtl.reg %myinst_clock  : !firrtl.uint<8>
+  %reg = firrtl.reg %clock {name = "reg"}  : !firrtl.uint<8>
+  // CHECK: %myinst_regreset = firrtl.regreset %myinst_clock, %myinst_reset, %c0_ui8  : !firrtl.asyncreset, !firrtl.uint<8>, !firrtl.uint<8>
+  %regreset = firrtl.regreset %clock, %reset, %c0_ui8  : !firrtl.asyncreset, !firrtl.uint<8>, !firrtl.uint<8>
   // CHECK: %myinst_smem = chirrtl.seqmem Undefined : !chirrtl.cmemory<uint<8>, 8>
   %smem = chirrtl.seqmem Undefined : !chirrtl.cmemory<uint<8>, 8>
   // CHECK: %myinst_wire = firrtl.wire  : !firrtl.uint<1>
   %wire = firrtl.wire : !firrtl.uint<1>
-  firrtl.when %wire : !firrtl.uint<1> {
+  firrtl.when %wire {
     // CHECK:  %myinst_inwhen = firrtl.wire  : !firrtl.uint<1>
     %inwhen = firrtl.wire : !firrtl.uint<1>
   }
@@ -843,7 +843,7 @@ firrtl.circuit "TrackInliningInDebugInfo" {
   firrtl.module private @Bar() attributes {annotations = [{class = "firrtl.passes.InlineAnnotation"}]} {
     %wire = firrtl.wire : !firrtl.uint<1>
     dbg.variable "a", %wire : !firrtl.uint<1>
-    firrtl.when %wire : !firrtl.uint<1> {
+    firrtl.when %wire {
       %0 = dbg.scope "impl", "Bugu"
       dbg.variable "b", %wire scope %0 : !firrtl.uint<1>
     }
@@ -869,7 +869,7 @@ firrtl.circuit "TrackFlatteningInDebugInfo" {
   firrtl.module private @Bar() {
     %wire = firrtl.wire : !firrtl.uint<1>
     dbg.variable "a", %wire : !firrtl.uint<1>
-    firrtl.when %wire : !firrtl.uint<1> {
+    firrtl.when %wire {
       %0 = dbg.scope "impl", "Bugu"
       dbg.variable "b", %wire scope %0 : !firrtl.uint<1>
     }
@@ -1190,7 +1190,7 @@ firrtl.circuit "Top" {
 firrtl.circuit "InlinerRefs" {
   firrtl.module private @ChildOut(in %in: !firrtl.bundle<a: uint<1>, b: uint<2>>, out %out: !firrtl.probe<bundle<a: uint<1>, b: uint<2>>>) attributes {annotations = [{class = "firrtl.passes.InlineAnnotation"}]} {
     %0 = firrtl.subfield %in[a] : !firrtl.bundle<a: uint<1>, b: uint<2>>
-    firrtl.when %0 : !firrtl.uint<1> {
+    firrtl.when %0 {
       %1 = firrtl.ref.send %in : !firrtl.bundle<a: uint<1>, b: uint<2>>
       firrtl.ref.define %out, %1 : !firrtl.probe<bundle<a: uint<1>, b: uint<2>>>
     }
@@ -1200,7 +1200,7 @@ firrtl.circuit "InlinerRefs" {
     %co_in, %co_out = firrtl.instance co interesting_name @ChildOut(in in: !firrtl.bundle<a: uint<1>, b: uint<2>>, out out: !firrtl.probe<bundle<a: uint<1>, b: uint<2>>>)
     %1 = firrtl.ref.sub %co_out[0] : !firrtl.probe<bundle<a: uint<1>, b: uint<2>>>
     firrtl.matchingconnect %co_in, %in : !firrtl.bundle<a: uint<1>, b: uint<2>>
-    firrtl.when %0 : !firrtl.uint<1> {
+    firrtl.when %0 {
       %2 = firrtl.ref.resolve %1 : !firrtl.probe<uint<1>>
       firrtl.matchingconnect %out, %2 : !firrtl.uint<1>
     }
@@ -1369,7 +1369,7 @@ firrtl.circuit "InlineBlocks" {
                                    in %cond: !firrtl.uint<1>,
                                    out %p: !firrtl.probe<uint<8>, @I::@J>) attributes {annotations = [{class = "firrtl.passes.InlineAnnotation"}]} {
     firrtl.layerblock @I {
-      firrtl.when %cond : !firrtl.uint<1> {
+      firrtl.when %cond {
         firrtl.layerblock @I::@J {
           %o = firrtl.wire interesting_name : !firrtl.uint<8>
           %0 = firrtl.ref.send %o : !firrtl.uint<8>

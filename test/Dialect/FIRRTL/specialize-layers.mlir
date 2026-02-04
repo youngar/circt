@@ -344,8 +344,8 @@ firrtl.circuit "ProbeOpsEnableA" attributes {
     // CHECK: firrtl.ref.define %out, %0 : !firrtl.probe<uint<1>>
     firrtl.ref.define %out, %1 : !firrtl.probe<uint<1>, @A>
     %c0_ui1 = firrtl.constant 0 : !firrtl.uint<1>
-    // CHECK: firrtl.when %c0_ui1 : !firrtl.uint<1> {
-    firrtl.when %c0_ui1 : !firrtl.uint<1> {
+    // CHECK: firrtl.when %c0_ui1 {
+    firrtl.when %c0_ui1 {
       // CHECK: %w2 = firrtl.wire : !firrtl.probe<uint<1>>
       %w2 = firrtl.wire : !firrtl.probe<uint<1>, @A>
     } else {
@@ -393,8 +393,8 @@ firrtl.circuit "ProbeOpsDisableA" attributes {
     // CHECK-NOT: firrtl.ref.define
     firrtl.ref.define %out, %1 : !firrtl.probe<uint<1>, @A>
     %c0_ui1 = firrtl.constant 0 : !firrtl.uint<1>
-    // CHECK: firrtl.when %c0_ui1 : !firrtl.uint<1> {
-    firrtl.when %c0_ui1 : !firrtl.uint<1> {
+    // CHECK: firrtl.when %c0_ui1 {
+    firrtl.when %c0_ui1 {
       // CHECK-NOT: %w2 = firrtl.wire
       %w2 = firrtl.wire : !firrtl.probe<uint<1>, @A>
     } else {

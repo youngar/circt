@@ -124,7 +124,7 @@ firrtl.circuit "Foo" {
   firrtl.module @ChiselVerif(in %clock: !firrtl.clock,
                              in %cond: !firrtl.uint<1>,
                              in %enable: !firrtl.uint<1>) {
-    // CHECK: firrtl.assert %{{.+}}, %{{.+}}, %{{.+}}, "testing" :
+    // CHECK: firrtl.assert %{{.+}}, %{{.+}}, %{{.+}}, "testing"
     // CHECK-SAME: isConcurrent = true
     firrtl.int.generic "circt_chisel_assert" <format: none = "testing"> %clock, %cond, %enable : (!firrtl.clock, !firrtl.uint<1>, !firrtl.uint<1>) -> ()
     // CHECK: firrtl.assert %{{.+}}, %{{.+}}, %{{.+}}, "message: %d"(
@@ -142,7 +142,7 @@ firrtl.circuit "Foo" {
     // CHECK-SAME: isConcurrent = true
     // CHECK-SAME: name = "label for assume"
     firrtl.int.generic "circt_chisel_assume" <format: none = "text: %d", label: none = "label for assume"> %clock, %cond, %enable, %enable : (!firrtl.clock, !firrtl.uint<1>, !firrtl.uint<1>, !firrtl.uint<1>) -> ()
-    // CHECK: firrtl.cover %{{.+}}, %{{.+}}, %{{.+}}, "" :
+    // CHECK: firrtl.cover %{{.+}}, %{{.+}}, %{{.+}}, ""
     // CHECK-SAME: isConcurrent = true
     // CHECK-SAME: name = "label for cover"
     firrtl.int.generic "circt_chisel_cover" <label: none = "label for cover"> %clock, %cond, %enable : (!firrtl.clock, !firrtl.uint<1>, !firrtl.uint<1>) -> ()
@@ -160,13 +160,13 @@ firrtl.circuit "Foo" {
     // CHECK: %[[TIME:.+]] = firrtl.fstring.time
     // CHECK: firrtl.assert
     // CHECK-SAME{LITERAL}: "Time: {{}}"
-    // CHECK-SAME: (%[[TIME]])
+    // CHECK-SAME: (%[[TIME]] : !firrtl.fstring)
     firrtl.int.generic "circt_chisel_assert" <format: none = "Time: {{SimulationTime}}"> %clock, %cond, %enable : (!firrtl.clock, !firrtl.uint<1>, !firrtl.uint<1>) -> ()
 
     // CHECK: %[[HIER:.+]] = firrtl.fstring.hierarchicalmodulename
     // CHECK: firrtl.assume
     // CHECK-SAME{LITERAL}: "Module: {{}}"
-    // CHECK-SAME: (%[[HIER]])
+    // CHECK-SAME: (%[[HIER]] : !firrtl.fstring)
     firrtl.int.generic "circt_chisel_assume" <format: none = "Module: {{HierarchicalModuleName}}"> %clock, %cond, %enable : (!firrtl.clock, !firrtl.uint<1>, !firrtl.uint<1>) -> ()
 
     // CHECK: %[[HIER2:.+]] = firrtl.fstring.hierarchicalmodulename

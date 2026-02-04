@@ -134,7 +134,7 @@ firrtl.circuit "NestedLayers" {
 firrtl.circuit "RegionOps" {
   firrtl.layer @A bind {}
   firrtl.module @RegionOps(in %in : !firrtl.uint<1>) {
-    firrtl.when %in : !firrtl.uint<1> {
+    firrtl.when %in {
       firrtl.layerblock @A {
         // expected-note @below {{illegal instantiation under a layerblock here}}
         %layers_in = firrtl.instance layers @Layers(in in : !firrtl.enum<a: uint<1>>)

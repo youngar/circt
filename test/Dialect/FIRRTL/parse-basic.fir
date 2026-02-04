@@ -203,7 +203,7 @@ circuit MyModule :     ; CHECK: firrtl.circuit "MyModule"
     ; CHECK: %c-85_si8 = firrtl.constant -85 : !firrtl.sint<8>
     connect sauto, add(s8, SInt<8>(-85))
 
-    ; CHECK: firrtl.when %reset : !firrtl.uint<1> {
+    ; CHECK: firrtl.when %reset {
     ; CHECK:   firrtl.matchingconnect %_t, %_t_2
     ; CHECK: } else {
     ; CHECK:   firrtl.matchingconnect %_t, %_t_2
@@ -212,18 +212,18 @@ circuit MyModule :     ; CHECK: firrtl.circuit "MyModule"
 
     ; CHECK: [[TMP:%.+]] = firrtl.constant 4
     ; CHECK: [[COND:%.+]] = firrtl.lt %reset, [[TMP]]
-    ; CHECK: firrtl.when [[COND]] : !firrtl.uint<1> {
+    ; CHECK: firrtl.when [[COND]] {
     ; CHECK:   firrtl.matchingconnect %_t, %_t_2
     ; CHECK: }
     ; CHECK-NOT: else
     when lt(reset, UInt(4)) :   ;; When with no else.
       connect _t, _t_2
 
-    ; CHECK: firrtl.when %reset : !firrtl.uint<1> {
+    ; CHECK: firrtl.when %reset {
     ; CHECK:   firrtl.matchingconnect %_t, %_t_2
     ; CHECK: } else  {
     ; CHECK:   [[COND:%.+]] = firrtl.not %reset
-    ; CHECK:   firrtl.when [[COND]] : !firrtl.uint<1> {
+    ; CHECK:   firrtl.when [[COND]] {
     ; CHECK:     firrtl.matchingconnect %_t, %_t_2
     ; CHECK:   }
     ; CHECK: }
@@ -232,11 +232,11 @@ circuit MyModule :     ; CHECK: firrtl.circuit "MyModule"
     else when not(reset) :
       connect _t, _t_2
 
-    ; CHECK: firrtl.when %reset : !firrtl.uint<1> {
+    ; CHECK: firrtl.when %reset {
     ; CHECK:   firrtl.matchingconnect %_t, %_t
     ; CHECK: } else  {
     ; CHECK:   [[COND:%.+]] = firrtl.not %reset
-    ; CHECK:   firrtl.when [[COND]] : !firrtl.uint<1> {
+    ; CHECK:   firrtl.when [[COND]] {
     ; CHECK:     firrtl.matchingconnect %_t, %_t_2
     ; CHECK:   } else  {
     ; CHECK:     firrtl.matchingconnect %_t, %_t_2
@@ -249,16 +249,16 @@ circuit MyModule :     ; CHECK: firrtl.circuit "MyModule"
     else :
       connect _t, _t_2
 
-    ; CHECK: firrtl.printf %clock, %reset, "Something interesting!\0A %x %x" (%_t, %_t_2) : !firrtl.clock, !firrtl.uint<1>, !firrtl.vector<uint<1>, 12>, !firrtl.vector<uint<1>, 12>
+    ; CHECK: firrtl.printf %clock, %reset, "Something interesting!\0A %x %x" (%_t, %_t_2) : !firrtl.vector<uint<1>, 12>, !firrtl.vector<uint<1>, 12>
     printf(clock, reset, "Something interesting!\n %x %x", _t, _t_2)
 
-    ; CHECK: firrtl.printf %clock, %reset, "Something interesting!\0A %x %x" {name = "printf_0"} (%_t, %_t_2) : !firrtl.clock, !firrtl.uint<1>, !firrtl.vector<uint<1>, 12>, !firrtl.vector<uint<1>, 12>
+    ; CHECK: firrtl.printf %clock, %reset, "Something interesting!\0A %x %x" {name = "printf_0"} (%_t, %_t_2) : !firrtl.vector<uint<1>, 12>, !firrtl.vector<uint<1>, 12>
     printf(clock, reset, "Something interesting!\n %x %x", _t, _t_2) : printf_0
 
-    ; CHECK: firrtl.stop %clock, %reset, 42 : !firrtl.clock, !firrtl.uint<1>
+    ; CHECK: firrtl.stop %clock, %reset, 42
     stop(clock, reset, 42)
 
-    ; CHECK: firrtl.stop %clock, %reset, 42 {name = "stop_0"} : !firrtl.clock, !firrtl.uint<1>
+    ; CHECK: firrtl.stop %clock, %reset, 42 {name = "stop_0"}
     stop(clock, reset, 42) : stop_0
 
     ; CHECK: firrtl.bits %i8 4 to 2 : (!firrtl.uint<8>) -> !firrtl.uint<3>
@@ -279,10 +279,10 @@ circuit MyModule :     ; CHECK: firrtl.circuit "MyModule"
     ; CHECK: firrtl.mux(%reset, %i8, %{{.*}}) : (!firrtl.uint<1>, !firrtl.uint<8>, !firrtl.uint) -> !firrtl.uint
     node n8 = mux(reset, i8, UInt(4))
 
-    ; CHECK: %_t_2621 = firrtl.regreset interesting_name %clock, %reset, %{{.*}} : !firrtl.clock, !firrtl.uint<1>, !firrtl.uint<4>, !firrtl.uint<4>
+    ; CHECK: %_t_2621 = firrtl.regreset interesting_name %clock, %reset, %{{.*}} : !firrtl.uint<1>, !firrtl.uint<4>, !firrtl.uint<4>
     regreset _t_2621 : UInt<4>, clock, reset, UInt<4>(0h0) @[Edges.scala 230:27]
 
-    ; CHECK: %_t_1601 = firrtl.regreset interesting_name %clock, %reset, %{{.*}} : !firrtl.clock, !firrtl.uint<1>, !firrtl.uint<2>, !firrtl.uint<2>
+    ; CHECK: %_t_1601 = firrtl.regreset interesting_name %clock, %reset, %{{.*}} : !firrtl.uint<1>, !firrtl.uint<2>, !firrtl.uint<2>
     regreset _t_1601 : UInt<2>, clock, reset, UInt<2>(0h00) @[Edges.scala 230:27]
 
     ; CHECK: firrtl.div %i8, %{{.*}} : (!firrtl.uint<8>, !firrtl.uint<4>) -> !firrtl.uint<8>
@@ -296,7 +296,7 @@ circuit MyModule :     ; CHECK: firrtl.circuit "MyModule"
     ; CHECK: firrtl.tail %{{.*}}, 3 : (!firrtl.sint<8>) -> !firrtl.uint<5>
     node n10s = tail(asSInt(i8), 3)
 
-    ; CHECK: %_t_2622 = firrtl.reg interesting_name %clock : !firrtl.clock, !firrtl.uint<4>
+    ; CHECK: %_t_2622 = firrtl.reg interesting_name %clock : !firrtl.uint<4>
     reg _t_2622 : UInt<4>, clock
 
     ; CHECK: %xyz_in = firrtl.instance xyz interesting_name @circuit(in in: !firrtl.uint<80>)
@@ -310,7 +310,7 @@ circuit MyModule :     ; CHECK: firrtl.circuit "MyModule"
     connect myext.in, i8
     printf(clock, reset, "Something interesting! %x", myext.out)
 
-    ; CHECK: firrtl.when %reset : !firrtl.uint<1> {
+    ; CHECK: firrtl.when %reset {
     when reset :
       ; CHECK: %reset_myext_in, %reset_myext_out = firrtl.instance reset_myext interesting_name @MyExtModule(in in: !firrtl.uint<8>, out out: !firrtl.uint<8>)
       inst reset_myext of MyExtModule
@@ -383,21 +383,21 @@ circuit MyModule :     ; CHECK: firrtl.circuit "MyModule"
     wire en: UInt <1>
     connect pred, eq(i8, i8)
     connect en, not(reset)
-    ; CHECK: firrtl.assert %clock, %pred, %en, "X equals Y when Z is valid" : !firrtl.clock, !firrtl.uint<1>, !firrtl.uint<1> {eventControl = 0 : i32, isConcurrent = false}
+    ; CHECK: firrtl.assert %clock, %pred, %en, "X equals Y when Z is valid" {eventControl = 0 : i32, isConcurrent = false}
     assert(clock, pred, en, "X equals Y when Z is valid")
-    ; CHECK: firrtl.assert %clock, %pred, %en, "X equals Y when Z is valid" : !firrtl.clock, !firrtl.uint<1>, !firrtl.uint<1> {eventControl = 0 : i32, isConcurrent = false, name = "assert_0"}
+    ; CHECK: firrtl.assert %clock, %pred, %en, "X equals Y when Z is valid" {eventControl = 0 : i32, isConcurrent = false, name = "assert_0"}
     assert(clock, pred, en, "X equals Y when Z is valid") : assert_0
-    ; CHECK: firrtl.assert %clock, %pred, %en, "pred=%d, en=%d"(%pred, %en) : !firrtl.clock, !firrtl.uint<1>, !firrtl.uint<1>, !firrtl.uint<1>, !firrtl.uint<1> {eventControl = 0 : i32, isConcurrent = false, name = "assert_1"}
+    ; CHECK: firrtl.assert %clock, %pred, %en, "pred=%d, en=%d"(%pred, %en : !firrtl.uint<1>, !firrtl.uint<1>) {eventControl = 0 : i32, isConcurrent = false, name = "assert_1"}
     assert(clock, pred, en, "pred=%d, en=%d", pred, en) : assert_1
-    ; CHECK: firrtl.assume %clock, %pred, %en, "X equals Y when Z is valid" : !firrtl.clock, !firrtl.uint<1>, !firrtl.uint<1> {eventControl = 0 : i32, isConcurrent = false}
+    ; CHECK: firrtl.assume %clock, %pred, %en, "X equals Y when Z is valid" {eventControl = 0 : i32, isConcurrent = false}
     assume(clock, pred, en, "X equals Y when Z is valid")
-    ; CHECK: firrtl.assume %clock, %pred, %en, "X equals Y when Z is valid" : !firrtl.clock, !firrtl.uint<1>, !firrtl.uint<1> {eventControl = 0 : i32, isConcurrent = false, name = "assume_0"}
+    ; CHECK: firrtl.assume %clock, %pred, %en, "X equals Y when Z is valid" {eventControl = 0 : i32, isConcurrent = false, name = "assume_0"}
     assume(clock, pred, en, "X equals Y when Z is valid") : assume_0
-    ; CHECK: firrtl.assume %clock, %pred, %en, "pred=%d, en=%d"(%pred, %en) : !firrtl.clock, !firrtl.uint<1>, !firrtl.uint<1>, !firrtl.uint<1>, !firrtl.uint<1> {eventControl = 0 : i32, isConcurrent = false, name = "assume_1"}
+    ; CHECK: firrtl.assume %clock, %pred, %en, "pred=%d, en=%d"(%pred, %en : !firrtl.uint<1>, !firrtl.uint<1>) {eventControl = 0 : i32, isConcurrent = false, name = "assume_1"}
     assume(clock, pred, en, "pred=%d, en=%d", pred, en) : assume_1
-    ; CHECK: firrtl.cover %clock, %pred, %en, "X equals Y when Z is valid" : !firrtl.clock, !firrtl.uint<1>, !firrtl.uint<1> {eventControl = 0 : i32, isConcurrent = false}
+    ; CHECK: firrtl.cover %clock, %pred, %en, "X equals Y when Z is valid" {eventControl = 0 : i32, isConcurrent = false}
     cover(clock, pred, en, "X equals Y when Z is valid")
-    ; CHECK: firrtl.cover %clock, %pred, %en, "X equals Y when Z is valid" : !firrtl.clock, !firrtl.uint<1>, !firrtl.uint<1> {eventControl = 0 : i32, isConcurrent = false, name = "cover_0"}
+    ; CHECK: firrtl.cover %clock, %pred, %en, "X equals Y when Z is valid" {eventControl = 0 : i32, isConcurrent = false, name = "cover_0"}
     cover(clock, pred, en, "X equals Y when Z is valid") : cover_0
 
   ; CHECK-LABEL: firrtl.module private @type_handling(
@@ -447,15 +447,15 @@ circuit MyModule :     ; CHECK: firrtl.circuit "MyModule"
     input in : UInt
     wire reset : UInt<1>
 
-  ; CHECK: firrtl.when {{.*}} : !firrtl.uint<1> {
+  ; CHECK: firrtl.when {{.*}} {
     when reset : @[Debug.scala 1176:37]
-    ; CHECK: firrtl.when {{.*}} : !firrtl.uint<1> {
+    ; CHECK: firrtl.when {{.*}} {
       when reset :
         connect out, in
     ; CHECK: }
     ; CHECK: } else {
     else :
-        ; CHECK: firrtl.when {{.*}} : !firrtl.uint<1> {
+        ; CHECK: firrtl.when {{.*}} {
       when reset : @[Debug.scala 1180:39]
         connect out, in
     ; CHECK: }
@@ -471,23 +471,23 @@ circuit MyModule :     ; CHECK: firrtl.circuit "MyModule"
     ; Memory ports should be declared in the scope of the cmemory, but should
     ; be enabled at the location of the mport.
 
-    ; CHECK: %memory = chirrtl.seqmem interesting_name Undefined  : !chirrtl.cmemory<vector<uint<1>, 9>, 256>
+    ; CHECK: %memory = chirrtl.seqmem interesting_name Undefined : !chirrtl.cmemory<vector<uint<1>, 9>, 256>
     smem memory : UInt<1>[9] [256]
 
     ; CHECK: %xyz0_data, %xyz0_port = chirrtl.memoryport Read %memory {name = "xyz0"} : (!chirrtl.cmemory<vector<uint<1>, 9>, 256>) -> (!firrtl.vector<uint<1>, 9>, !chirrtl.cmemoryport)
-    ; CHECK: firrtl.when %cond : !firrtl.uint<1> {
+    ; CHECK: firrtl.when %cond {
     ; CHECK:    chirrtl.memoryport.access %xyz0_port[%addr], %clock : !chirrtl.cmemoryport, !firrtl.uint, !firrtl.clock
     ; CHECK: }
     when cond :
       read mport xyz0 = memory[addr], clock
 
-    ; CHECK: firrtl.when %cond : !firrtl.uint<1> {
-    ; CHECK:    %n0 = firrtl.node interesting_name %xyz0_data  : !firrtl.vector<uint<1>, 9>
+    ; CHECK: firrtl.when %cond {
+    ; CHECK:    %n0 = firrtl.node interesting_name %xyz0_data : !firrtl.vector<uint<1>, 9>
     ; CHECK: }
     when cond :
       node n0 = xyz0
 
-    ; CHECK: %n1 = firrtl.node interesting_name %xyz0_data  : !firrtl.vector<uint<1>, 9>
+    ; CHECK: %n1 = firrtl.node interesting_name %xyz0_data : !firrtl.vector<uint<1>, 9>
     node n1 = xyz0
 
 
@@ -504,13 +504,13 @@ circuit MyModule :     ; CHECK: firrtl.circuit "MyModule"
 
     ;; Constants always get emitted to the top level.
     ; CHECK: [[CST7:%.+]] = firrtl.constant 7 : !firrtl.uint<4>
-    ; CHECK: firrtl.when %cond : !firrtl.uint<1> {
+    ; CHECK: firrtl.when %cond {
     when cond :
       ; CHECK: %c = firrtl.node interesting_name [[CST15]]
       node c = UInt<4>(15)
       ; CHECK: %d = firrtl.node interesting_name [[CST7]]
       node d = UInt<4>(7)
-      ; CHECK: firrtl.when %cond : !firrtl.uint<1> {
+      ; CHECK: firrtl.when %cond {
       when cond :
         ; CHECK:  %e = firrtl.node interesting_name [[CST7]]
         node e = UInt<4>(7)
@@ -542,7 +542,7 @@ circuit MyModule :     ; CHECK: firrtl.circuit "MyModule"
     ; CHECK: %n3 = firrtl.node interesting_name [[SUB]]
     node n3 = i.x
 
-    ; CHECK: firrtl.when %cond : !firrtl.uint<1> {
+    ; CHECK: firrtl.when %cond {
     when cond:
       ; CHECK: %n4 = firrtl.node interesting_name [[SUB]]
       node n4 = i.x
@@ -563,7 +563,7 @@ circuit MyModule :     ; CHECK: firrtl.circuit "MyModule"
     ; CHECK: %0 = firrtl.subfield %bf[int_1]
     ; CHECK: %_T = firrtl.node interesting_name %0
     node _T = bf.int_1
-    ; CHECK: firrtl.when %_T : !firrtl.uint<1> {
+    ; CHECK: firrtl.when %_T {
     when _T :
       skip
 
@@ -934,11 +934,11 @@ circuit MyModule :     ; CHECK: firrtl.circuit "MyModule"
     output o : UInt<8>
 
     ; CHECK: %c0_ui8 = firrtl.constant 0 : !firrtl.uint<8>
-    ; CHECK: %0 = firrtl.enumcreate Some(%c0_ui8) : (!firrtl.uint<8>) -> !firrtl.enum<Some: uint<8>, None>
+    ; CHECK: %0 = firrtl.enumcreate Some(%c0_ui8) : !firrtl.enum<Some: uint<8>, None>
     ; CHECK: %some = firrtl.node interesting_name %0 : !firrtl.enum<Some: uint<8>, None>
     node some = {|Some : UInt<8>, None|}(Some, UInt<8>(0))
     ; CHECK: %c0_ui0 = firrtl.constant 0 : !firrtl.uint<0>
-    ; CHECK: %1 = firrtl.enumcreate None(%c0_ui0) : (!firrtl.uint<0>) -> !firrtl.enum<Some: uint<8>, None>
+    ; CHECK: %1 = firrtl.enumcreate None(%c0_ui0) : !firrtl.enum<Some: uint<8>, None>
     ; CHECK: %none = firrtl.node {{.*}} %1 : !firrtl.enum<Some: uint<8>, None>
     node none = {|Some : UInt<8>, None|}(None)
 
@@ -1072,7 +1072,7 @@ circuit MyModule :     ; CHECK: firrtl.circuit "MyModule"
 
     ; CHECK: firrtl.matchingconnect %rc2_in_bounce, %in
     connect rc2.in, in
-   ; CHECK-NEXT: firrtl.when %rc2_in_bounce :
+   ; CHECK-NEXT: firrtl.when %rc2_in_bounce {
    ; CHECK-NEXT:   %[[RWPROBE_RC2_IN_BOUNCE_1:[^ ]+]] = firrtl.ref.rwprobe <@Refs::@[[RC2_IN_BOUNCE_SYM]]>
    ; CHECK-NEXT:   firrtl.ref.define %inst_rw, %[[RWPROBE_RC2_IN_BOUNCE_1]]
    ; CHECK-NEXT: }
@@ -1174,17 +1174,17 @@ circuit MyModule :     ; CHECK: firrtl.circuit "MyModule"
     input clock: Clock
     input i8: UInt<8>
 
-    ; CHECK:      firrtl.printf %clock, %c1_ui1, "%b, %0b, %8b" (%i8, %i8, %i8) : !firrtl.clock, !firrtl.uint<1>, !firrtl.uint<8>, !firrtl.uint<8>, !firrtl.uint<8>
+    ; CHECK:      firrtl.printf %clock, %c1_ui1, "%b, %0b, %8b" (%i8, %i8, %i8) : !firrtl.uint<8>, !firrtl.uint<8>, !firrtl.uint<8>
     printf(clock, UInt<1>(1), "%b, %0b, %8b", i8, i8, i8)
-    ; CHECK-NEXT: firrtl.printf %clock, %c1_ui1, "%d, %0d, %8d" (%i8, %i8, %i8) : !firrtl.clock, !firrtl.uint<1>, !firrtl.uint<8>, !firrtl.uint<8>, !firrtl.uint<8>
+    ; CHECK-NEXT: firrtl.printf %clock, %c1_ui1, "%d, %0d, %8d" (%i8, %i8, %i8) : !firrtl.uint<8>, !firrtl.uint<8>, !firrtl.uint<8>
     printf(clock, UInt<1>(1), "%d, %0d, %8d", i8, i8, i8)
-    ; CHECK-NEXT: firrtl.printf %clock, %c1_ui1, "%x, %0x, %8x" (%i8, %i8, %i8) : !firrtl.clock, !firrtl.uint<1>, !firrtl.uint<8>, !firrtl.uint<8>, !firrtl.uint<8>
+    ; CHECK-NEXT: firrtl.printf %clock, %c1_ui1, "%x, %0x, %8x" (%i8, %i8, %i8) : !firrtl.uint<8>, !firrtl.uint<8>, !firrtl.uint<8>
     printf(clock, UInt<1>(1), "%x, %0x, %8x", i8, i8, i8)
 
-    ; CHECK-NEXT: firrtl.printf %clock, %c1_ui1, "%c" (%i8) : !firrtl.clock, !firrtl.uint<1>, !firrtl.uint<8>
+    ; CHECK-NEXT: firrtl.printf %clock, %c1_ui1, "%c" (%i8) : !firrtl.uint<8>
     printf(clock, UInt<1>(1), "%c", i8)
 
-    ; CHECK-NEXT: firrtl.printf %clock, %c1_ui1, "%%" : !firrtl.clock, !firrtl.uint<1>
+    ; CHECK-NEXT: firrtl.printf %clock, %c1_ui1, "%%"
     printf(clock, UInt<1>(1), "%%")
 
     ; CHECK-NEXT: firrtl.fprintf %clock, %c1_ui1, "test.txt", "%%" : !firrtl.clock, !firrtl.uint<1>

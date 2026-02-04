@@ -79,14 +79,14 @@ firrtl.circuit "Foo" {
   firrtl.module private @Statements(in %ui1: !firrtl.uint<1>, in %someAddr: !firrtl.uint<8>, in %someClock: !firrtl.clock, in %someReset: !firrtl.reset, out %someOut: !firrtl.uint<1>, out %ref: !firrtl.probe<uint<1>>) {
     // CHECK: when ui1 :
     // CHECK:   skip
-    firrtl.when %ui1 : !firrtl.uint<1> {
+    firrtl.when %ui1 {
       firrtl.skip
     }
     // CHECK: when ui1 :
     // CHECK:   skip
     // CHECK: else :
     // CHECK:   skip
-    firrtl.when %ui1 : !firrtl.uint<1> {
+    firrtl.when %ui1 {
       firrtl.skip
     } else {
       firrtl.skip
@@ -95,35 +95,35 @@ firrtl.circuit "Foo" {
     // CHECK:   skip
     // CHECK: else when ui1 :
     // CHECK:   skip
-    firrtl.when %ui1 : !firrtl.uint<1> {
+    firrtl.when %ui1 {
       firrtl.skip
     } else {
-      firrtl.when %ui1 : !firrtl.uint<1> {
+      firrtl.when %ui1 {
         firrtl.skip
       }
     }
     // CHECK: wire someWire : UInt<1>
     %someWire = firrtl.wire : !firrtl.uint<1>
     // CHECK: reg someReg : UInt<1>, someClock
-    %someReg = firrtl.reg %someClock : !firrtl.clock, !firrtl.uint<1>
+    %someReg = firrtl.reg %someClock : !firrtl.uint<1>
     // CHECK: regreset someReg2 : UInt<1>, someClock, someReset, ui1
-    %someReg2 = firrtl.regreset %someClock, %someReset, %ui1 : !firrtl.clock, !firrtl.reset, !firrtl.uint<1>, !firrtl.uint<1>
+    %someReg2 = firrtl.regreset %someClock, %someReset, %ui1 : !firrtl.reset, !firrtl.uint<1>, !firrtl.uint<1>
     // CHECK: node someNode = ui1
     %someNode = firrtl.node %ui1 : !firrtl.uint<1>
     // CHECK: stop(someClock, ui1, 42) : foo
-    firrtl.stop %someClock, %ui1, 42 {name = "foo"} : !firrtl.clock, !firrtl.uint<1>
+    firrtl.stop %someClock, %ui1, 42 {name = "foo"} 
     // CHECK: skip
     firrtl.skip
     // CHECK: printf(someClock, ui1, "some\n magic\"stuff\"") : foo
-    firrtl.printf %someClock, %ui1, "some\n magic\"stuff\"" {name = "foo"} (%ui1, %someReset) : !firrtl.clock, !firrtl.uint<1>, !firrtl.uint<1>, !firrtl.reset
+    firrtl.printf %someClock, %ui1, "some\n magic\"stuff\"" {name = "foo"} (%ui1, %someReset) : !firrtl.uint<1>, !firrtl.reset
     // CHECK: fprintf(someClock, ui1, "test%d.txt", ui1, "some\n magic\"stuff\"") : foo
     firrtl.fprintf %someClock, %ui1, "test%d.txt"(%ui1), "some\n magic\"stuff\"" (%ui1, %someReset) {name = "foo"} : !firrtl.clock, !firrtl.uint<1>, !firrtl.uint<1>, !firrtl.uint<1>, !firrtl.reset
     // CHECK: assert(someClock, ui1, ui1, "msg") : foo
     // CHECK: assume(someClock, ui1, ui1, "msg") : foo
     // CHECK: cover(someClock, ui1, ui1, "msg") : foo
-    firrtl.assert %someClock, %ui1, %ui1, "msg" : !firrtl.clock, !firrtl.uint<1>, !firrtl.uint<1> {name = "foo"}
-    firrtl.assume %someClock, %ui1, %ui1, "msg" : !firrtl.clock, !firrtl.uint<1>, !firrtl.uint<1> {name = "foo"}
-    firrtl.cover %someClock, %ui1, %ui1, "msg" : !firrtl.clock, !firrtl.uint<1>, !firrtl.uint<1> {name = "foo"}
+    firrtl.assert %someClock, %ui1, %ui1, "msg"  {name = "foo"}
+    firrtl.assume %someClock, %ui1, %ui1, "msg"  {name = "foo"}
+    firrtl.cover %someClock, %ui1, %ui1, "msg"  {name = "foo"}
     // CHECK: connect someOut, ui1
     firrtl.connect %someOut, %ui1 : !firrtl.uint<1>, !firrtl.uint<1>
     // CHECK: inst someInst of Simple
@@ -323,7 +323,7 @@ firrtl.circuit "Foo" {
 
     %combmem = chirrtl.combmem : !chirrtl.cmemory<uint<3>, 256>
     %port0_data, %port0_port = chirrtl.memoryport Infer %combmem {name = "port0"} : (!chirrtl.cmemory<uint<3>, 256>) -> (!firrtl.uint<3>, !chirrtl.cmemoryport)
-    firrtl.when %ui1 : !firrtl.uint<1> {
+    firrtl.when %ui1 {
       chirrtl.memoryport.access %port0_port[%someAddr], %someClock : !chirrtl.cmemoryport, !firrtl.uint<8>, !firrtl.clock
     }
     // CHECK:      cmem combmem : UInt<3>[256]
@@ -332,7 +332,7 @@ firrtl.circuit "Foo" {
 
     %seqmem = chirrtl.seqmem Undefined : !chirrtl.cmemory<uint<3>, 256>
     %port1_data, %port1_port = chirrtl.memoryport Infer %seqmem {name = "port1"} : (!chirrtl.cmemory<uint<3>, 256>) -> (!firrtl.uint<3>, !chirrtl.cmemoryport)
-    firrtl.when %ui1 : !firrtl.uint<1> {
+    firrtl.when %ui1 {
       chirrtl.memoryport.access %port1_port[%someAddr], %someClock : !chirrtl.cmemoryport, !firrtl.uint<8>, !firrtl.clock
     }
     // CHECK:      smem seqmem : UInt<3>[256], undefined
@@ -343,7 +343,7 @@ firrtl.circuit "Foo" {
     // CHECK: connect port0, port1
 
     %invalid_clock = firrtl.invalidvalue : !firrtl.clock
-    %dummyReg = firrtl.reg %invalid_clock : !firrtl.clock, !firrtl.uint<42>
+    %dummyReg = firrtl.reg %invalid_clock : !firrtl.uint<42>
     // CHECK: wire [[INV:_invalid.*]] : Clock
     // CHECK-NEXT: invalidate [[INV]]
     // CHECK-NEXT: reg dummyReg : UInt<42>, [[INV]]
@@ -385,13 +385,13 @@ firrtl.circuit "Foo" {
       !firrtl.uint<1>, !firrtl.rwprobe<uint<1>>
     // CHECK-NEXT: when enable :
     // CHECK-NEXT:   force_initial(refSource.a_rwref, UInt<1>(0))
-    firrtl.when %enable : !firrtl.uint<1> {
+    firrtl.when %enable {
       firrtl.ref.force_initial %c1_ui1, %refSource_a_rwref, %c0_ui1 :
         !firrtl.uint<1>, !firrtl.rwprobe<uint<1>>, !firrtl.uint<1>
     }
     // CHECK-NEXT: when enable :
     // CHECK-NEXT:   release_initial(refSource.a_rwref)
-    firrtl.when %enable : !firrtl.uint<1> {
+    firrtl.when %enable {
       firrtl.ref.release_initial %c1_ui1, %refSource_a_rwref :
         !firrtl.uint<1>, !firrtl.rwprobe<uint<1>>
     }
@@ -502,10 +502,8 @@ firrtl.circuit "Foo" {
     // CHECK-NEXT: regreset `16` : UInt<1>, `0`, `1`, `3`
     // CHECK-NEXT: node `17` = `3`
     %_14 = firrtl.wire interesting_name {name = "14"} : !firrtl.uint<1>
-    %_15, %_15_ref = firrtl.reg %_0 forceable {name = "15"} :
-      !firrtl.clock, !firrtl.uint<1>, !firrtl.rwprobe<uint<1>>
-    %_16 = firrtl.regreset %_0, %_1, %_3 {name = "16"} :
-      !firrtl.clock, !firrtl.reset, !firrtl.uint<1>, !firrtl.uint<1>
+    %_15, %_15_ref = firrtl.reg %_0 forceable {name = "15"} : !firrtl.uint<1>, !firrtl.rwprobe<uint<1>>
+    %_16 = firrtl.regreset %_0, %_1, %_3 {name = "16"} : !firrtl.reset, !firrtl.uint<1>, !firrtl.uint<1>
     %_17 = firrtl.node %_3 {name = "17"} : !firrtl.uint<1>
 
     // CHECK:      connect `9`.`1`, `9`.`0`
@@ -588,8 +586,8 @@ firrtl.circuit "Foo" {
 
     // CHECK-NEXT: stop(`0`, `3`, 1) : `22`
     // CHECK-NEXT: assert(`0`, `3`, `3`, "message") : `23`
-    firrtl.stop %_0, %_3, 1 {name = "22"} : !firrtl.clock, !firrtl.uint<1>
-    firrtl.assert %_0, %_3, %_3, "message" : !firrtl.clock, !firrtl.uint<1>, !firrtl.uint<1>  {eventControl = 0 : i32, isConcurrent = false, name = "23"}
+    firrtl.stop %_0, %_3, 1 {name = "22"} 
+    firrtl.assert %_0, %_3, %_3, "message"  {eventControl = 0 : i32, isConcurrent = false, name = "23"}
 
     // CHECK-NEXT: define `12` = probe(`14`)
     // CHECK-NEXT: define `13` = rwprobe(`15`)
@@ -838,7 +836,7 @@ firrtl.circuit "Foo" {
     // Materialize node as needed when used multiple times.
     // CHECK-NEXT: node [[PAV:.+]]
     // CHECK-NEXT:   = intrinsic(circt_plusargs_value<FORMAT = "foo">
-    // CHECK-NEXT:                 : { found : UInt<1>, result : UInt<5> }
+    // CHECK-NEXT:                : { found : UInt<1>, result : UInt<5> }
     %3 = firrtl.int.generic "circt_plusargs_value" <FORMAT: none = "foo"> : () -> !firrtl.bundle<found: uint<1>, result: uint<5>>
     // CHECK-NEXT: connect io3, [[PAV]].found
     // CHECK-NEXT: connect io4, [[PAV]].result
@@ -896,18 +894,17 @@ firrtl.circuit "Foo" {
     %c1_ui1 = firrtl.constant 1 : !firrtl.uint<1>
 
     // CHECK: printf(clock, UInt<1>(1), "%b, %0b, %8b", i8, i8, i8)
-    firrtl.printf %clock, %c1_ui1, "%b, %0b, %8b" (%i8, %i8, %i8) : !firrtl.clock, !firrtl.uint<1>, !firrtl.uint<8>, !firrtl.uint<8>, !firrtl.uint<8>
+    firrtl.printf %clock, %c1_ui1, "%b, %0b, %8b" (%i8, %i8, %i8) : !firrtl.uint<8>, !firrtl.uint<8>, !firrtl.uint<8>
     // CHECK: printf(clock, UInt<1>(1), "%d, %0d, %8d", i8, i8, i8)
-    firrtl.printf %clock, %c1_ui1, "%d, %0d, %8d" (%i8, %i8, %i8) : !firrtl.clock, !firrtl.uint<1>, !firrtl.uint<8>, !firrtl.uint<8>, !firrtl.uint<8>
+    firrtl.printf %clock, %c1_ui1, "%d, %0d, %8d" (%i8, %i8, %i8) : !firrtl.uint<8>, !firrtl.uint<8>, !firrtl.uint<8>
     // CHECK: printf(clock, UInt<1>(1), "%x, %0x, %8x", i8, i8, i8)
-    firrtl.printf %clock, %c1_ui1, "%x, %0x, %8x" (%i8, %i8, %i8) : !firrtl.clock, !firrtl.uint<1>, !firrtl.uint<8>, !firrtl.uint<8>, !firrtl.uint<8>
+    firrtl.printf %clock, %c1_ui1, "%x, %0x, %8x" (%i8, %i8, %i8) : !firrtl.uint<8>, !firrtl.uint<8>, !firrtl.uint<8>
 
     // CHECK: printf(clock, UInt<1>(1), "%c", i8)
-    firrtl.printf %clock, %c1_ui1, "%c" (%i8) : !firrtl.clock, !firrtl.uint<1>, !firrtl.uint<8>
+    firrtl.printf %clock, %c1_ui1, "%c" (%i8) : !firrtl.uint<8>
 
     // CHECK: printf(clock, UInt<1>(1), "%%")
-    firrtl.printf %clock, %c1_ui1, "%%" : !firrtl.clock, !firrtl.uint<1>
-
+    firrtl.printf %clock, %c1_ui1, "%%" 
     // CHECK: fprintf(clock, UInt<1>(1), "test.txt", "%%")
     firrtl.fprintf %clock, %c1_ui1, "test.txt", "%%" : !firrtl.clock, !firrtl.uint<1>
 
@@ -921,7 +918,7 @@ firrtl.circuit "Foo" {
 
   // CHECK-LABEL: module Concat :
   firrtl.module @Concat(in %x: !firrtl.uint<1>, in %y: !firrtl.sint<1>, in %z: !firrtl.uint<1>) {
-    %cat_0_tmp = firrtl.cat  : () -> !firrtl.uint<0>
+    %cat_0_tmp = firrtl.cat : () -> !firrtl.uint<0>
     %cat_1_tmp = firrtl.cat %x : (!firrtl.uint<1>) -> !firrtl.uint<1>
     %cat_1_signed_tmp = firrtl.cat %y : (!firrtl.sint<1>) -> !firrtl.uint<1>
     %cat_2_tmp = firrtl.cat %x, %z : (!firrtl.uint<1>, !firrtl.uint<1>) -> !firrtl.uint<2>

@@ -54,7 +54,7 @@ firrtl.circuit "TestP" {
     // CHECK-NEXT: }
     // CHECK-NEXT: firrtl.matchingconnect %w, %d
     // CHECK-NEXT: firrtl.matchingconnect %p, %[[SUB]]
-    firrtl.when %cond : !firrtl.uint<1> {
+    firrtl.when %cond {
       firrtl.ref.define %w, %1 : !firrtl.probe<alias<T, bundle<foo: uint<1>, bar: uint<5>>>>
 
       %0 = firrtl.ref.sub %w[0] : !firrtl.probe<alias<T, bundle<foo: uint<1>, bar: uint<5>>>>
@@ -95,7 +95,7 @@ firrtl.circuit "DbgsMemPort" {
     // CHECK: %[[W:.+]] = firrtl.wire : !firrtl.vector<uint<1>, 2>
 
     // Not put under when usually, but for testing ensure handle.
-    firrtl.when %cond : !firrtl.uint<1> {
+    firrtl.when %cond {
       %port0_data = chirrtl.debugport %ram {name = "port0"} : (!chirrtl.cmemory<uint<1>, 2>) -> !firrtl.probe<vector<uint<1>, 2>>
       firrtl.ref.define %_a, %port0_data : !firrtl.probe<vector<uint<1>, 2>>
     }
@@ -103,7 +103,7 @@ firrtl.circuit "DbgsMemPort" {
     // CHECK: "ramport"
     %ramport_data, %ramport_port = chirrtl.memoryport Read %ram {name = "ramport"} : (!chirrtl.cmemory<uint<1>, 2>) -> (!firrtl.uint<1>, !chirrtl.cmemoryport)
   
-    firrtl.when %cond : !firrtl.uint<1> {
+    firrtl.when %cond {
       chirrtl.memoryport.access %ramport_port[%addr], %clock : !chirrtl.cmemoryport, !firrtl.uint<1>, !firrtl.clock
     }
 

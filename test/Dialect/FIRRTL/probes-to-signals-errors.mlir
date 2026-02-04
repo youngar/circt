@@ -5,8 +5,8 @@
 firrtl.circuit "RefProducer" {
   // expected-note @below {{destination here}}
   firrtl.module @RefProducer(in %a: !firrtl.uint<4>, in %en: !firrtl.uint<1>, in %clk: !firrtl.clock, out %thereg: !firrtl.probe<uint>) attributes {convention = #firrtl<convention scalarized>} {
-    firrtl.when %en : !firrtl.uint<1> {
-      %myreg = firrtl.reg interesting_name %clk : !firrtl.clock, !firrtl.uint
+    firrtl.when %en {
+      %myreg = firrtl.reg interesting_name %clk  : !firrtl.uint
       firrtl.connect %myreg, %a : !firrtl.uint, !firrtl.uint<4>
       // expected-note @below {{source here}}
       %0 = firrtl.ref.send %myreg : !firrtl.uint

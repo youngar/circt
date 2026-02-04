@@ -127,7 +127,7 @@ firrtl.module @wires4(in %in : !firrtl.uint<1>, out %out : !firrtl.uint<1>) {
 }
 
 firrtl.module @registers0(in %clock : !firrtl.clock, in %in : !firrtl.uint<1>, out %out : !firrtl.uint<1>) {
-  %0 = firrtl.reg %clock : !firrtl.clock, !firrtl.uint<1>
+  %0 = firrtl.reg %clock  : !firrtl.uint<1>
   // CHECK: firrtl.connect %0, %in : !firrtl.uint<1>
   // CHECK: firrtl.connect %out, %0 : !firrtl.uint<1>
   firrtl.connect %0, %in : !firrtl.uint<1>, !firrtl.uint<1>
@@ -135,8 +135,8 @@ firrtl.module @registers0(in %clock : !firrtl.clock, in %in : !firrtl.uint<1>, o
 }
 
 firrtl.module @registers1(in %clock : !firrtl.clock) {
-  %0 = firrtl.reg %clock : !firrtl.clock, !firrtl.uint<1>
-  %1 = firrtl.reg %clock : !firrtl.clock, !firrtl.uint<1>
+  %0 = firrtl.reg %clock  : !firrtl.uint<1>
+  %1 = firrtl.reg %clock  : !firrtl.uint<1>
   // CHECK: firrtl.connect %0, %1
   firrtl.connect %0, %1 : !firrtl.uint<1>, !firrtl.uint<1>
 }
@@ -144,7 +144,7 @@ firrtl.module @registers1(in %clock : !firrtl.clock) {
 // Connections can occur within conditioned whens
 // CHECK-LABEL: firrtl.module @ConstConditionConstAssign
 firrtl.module @ConstConditionConstAssign(in %cond: !firrtl.uint<1>, in %in1: !firrtl.sint<2>, in %in2: !firrtl.sint<2>, out %out: !firrtl.sint<2>) {
-  firrtl.when %cond : !firrtl.uint<1> {
+  firrtl.when %cond {
     firrtl.matchingconnect %out, %in1 : !firrtl.sint<2>
   } else {
     firrtl.matchingconnect %out, %in2 : !firrtl.sint<2>
@@ -154,7 +154,7 @@ firrtl.module @ConstConditionConstAssign(in %cond: !firrtl.uint<1>, in %in1: !fi
 // Connections can occur within conditioned whens
 // CHECK-LABEL: firrtl.module @ConstConditionNonConstAssign
 firrtl.module @ConstConditionNonConstAssign(in %cond: !firrtl.uint<1>, in %in1: !firrtl.sint<2>, in %in2: !firrtl.sint<2>, out %out: !firrtl.sint<2>) {
-  firrtl.when %cond : !firrtl.uint<1> {
+  firrtl.when %cond {
     firrtl.matchingconnect %out, %in1 : !firrtl.sint<2>
   } else {
     firrtl.matchingconnect %out, %in2 : !firrtl.sint<2>
@@ -164,7 +164,7 @@ firrtl.module @ConstConditionNonConstAssign(in %cond: !firrtl.uint<1>, in %in1: 
 // Connections can occur when the destination is local to a conditioned when block
 // CHECK-LABEL: firrtl.module @NonConstWhenLocalConstAssign
 firrtl.module @NonConstWhenLocalConstAssign(in %cond: !firrtl.uint<1>) {
-  firrtl.when %cond : !firrtl.uint<1> {
+  firrtl.when %cond {
     %w = firrtl.wire : !firrtl.uint<9>
     %c = firrtl.constant 0 : !firrtl.uint<9>
     firrtl.matchingconnect %w, %c : !firrtl.uint<9>
@@ -175,9 +175,9 @@ firrtl.module @NonConstWhenLocalConstAssign(in %cond: !firrtl.uint<1>) {
 // and the connection is inside a nested conditioned when block
 // CHECK-LABEL: firrtl.module @NonConstWhenLocalConstNestedConstWhenAssign
 firrtl.module @NonConstWhenLocalConstNestedConstWhenAssign(in %cond: !firrtl.uint<1>, in %constCond: !firrtl.uint<1>) {
-  firrtl.when %cond : !firrtl.uint<1> {
+  firrtl.when %cond {
     %w = firrtl.wire : !firrtl.uint<9>
-    firrtl.when %constCond : !firrtl.uint<1> {
+    firrtl.when %constCond {
       %c = firrtl.constant 0 : !firrtl.uint<9>
       firrtl.matchingconnect %w, %c : !firrtl.uint<9>
     } else {
@@ -189,14 +189,14 @@ firrtl.module @NonConstWhenLocalConstNestedConstWhenAssign(in %cond: !firrtl.uin
 
 // Connections to flip destinations are allowed within when blocks
 firrtl.module @NonConstWhenConstFlipAssign(in %p: !firrtl.uint<1>, in %in: !firrtl.bundle<a flip: uint<2>>, out %out: !firrtl.bundle<a flip: uint<2>>) {
-  firrtl.when %p : !firrtl.uint<1> {
+  firrtl.when %p {
     firrtl.connect %out, %in : !firrtl.bundle<a flip: uint<2>>, !firrtl.bundle<a flip: uint<2>>
   }
 }
 
 // Connections to nested flip destinations are allowed within when blocks
 firrtl.module @NonConstWhenNestedConstFlipAssign(in %p: !firrtl.uint<1>, in %in: !firrtl.bundle<a flip: uint<2>>, out %out: !firrtl.bundle<a flip: uint<2>>) {
-  firrtl.when %p : !firrtl.uint<1> {
+  firrtl.when %p {
     firrtl.connect %out, %in : !firrtl.bundle<a flip: uint<2>>, !firrtl.bundle<a flip: uint<2>>
   }
 }
@@ -204,7 +204,7 @@ firrtl.module @NonConstWhenNestedConstFlipAssign(in %p: !firrtl.uint<1>, in %in:
 // Connections to flip sources can occur when the source is local to a conditioned when block
 // CHECK-LABEL: firrtl.module @NonConstWhenLocalConstFlipAssign
 firrtl.module @NonConstWhenLocalConstFlipAssign(in %cond: !firrtl.uint<1>, out %out : !firrtl.bundle<a flip: uint<2>>) {
-  firrtl.when %cond : !firrtl.uint<1> {
+  firrtl.when %cond {
     %w = firrtl.wire : !firrtl.bundle<a flip: uint<2>>
     firrtl.connect %out, %w : !firrtl.bundle<a flip: uint<2>>, !firrtl.bundle<a flip: uint<2>>
   }
@@ -213,7 +213,7 @@ firrtl.module @NonConstWhenLocalConstFlipAssign(in %cond: !firrtl.uint<1>, out %
 // Connections to nested flip sources can occur when the source is local to a conditioned when block
 // CHECK-LABEL: firrtl.module @NonConstWhenLocalNestedConstFlipAssign
 firrtl.module @NonConstWhenLocalNestedConstFlipAssign(in %cond: !firrtl.uint<1>, out %out : !firrtl.bundle<a flip: uint<2>>) {
-  firrtl.when %cond : !firrtl.uint<1> {
+  firrtl.when %cond {
     %w = firrtl.wire : !firrtl.bundle<a flip: uint<2>>
     firrtl.connect %out, %w : !firrtl.bundle<a flip: uint<2>>, !firrtl.bundle<a flip: uint<2>>
   }

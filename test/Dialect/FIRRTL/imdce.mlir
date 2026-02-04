@@ -11,10 +11,10 @@ firrtl.circuit "top" {
     %dead_wire = firrtl.wire : !firrtl.uint<1>
     firrtl.matchingconnect %dead_wire, %dead_node : !firrtl.uint<1>
 
-    %dead_reg = firrtl.reg %clock : !firrtl.clock, !firrtl.uint<1>
+    %dead_reg = firrtl.reg %clock  : !firrtl.uint<1>
     firrtl.matchingconnect %dead_reg, %dead_wire : !firrtl.uint<1>
 
-    %dead_reg_reset = firrtl.regreset %clock, %reset, %dead_reg  : !firrtl.clock, !firrtl.uint<1>, !firrtl.uint<1>, !firrtl.uint<1>
+    %dead_reg_reset = firrtl.regreset %clock, %reset, %dead_reg   : !firrtl.uint<1>, !firrtl.uint<1>, !firrtl.uint<1>
     firrtl.matchingconnect %dead_reg_reset, %dead_reg : !firrtl.uint<1>
 
     %not = firrtl.not %dead_reg_reset : (!firrtl.uint<1>) -> !firrtl.uint<1>
@@ -86,7 +86,7 @@ firrtl.circuit "top"  {
   }
   // CHECK-NOT: @Child2
   firrtl.module private @Child2(in %input: !firrtl.uint<1>, in %clock: !firrtl.clock, out %output: !firrtl.uint<1>) {
-    %r = firrtl.reg %clock  : !firrtl.clock, !firrtl.uint<1>
+    %r = firrtl.reg %clock   : !firrtl.uint<1>
     firrtl.matchingconnect %r, %input : !firrtl.uint<1>
     firrtl.matchingconnect %output, %r : !firrtl.uint<1>
   }
@@ -323,7 +323,7 @@ firrtl.circuit "DeleteInstance" {
       %invalid_ui289 = firrtl.invalidvalue : !firrtl.uint<289>
   }
   firrtl.module private @SideEffect1(in %a: !firrtl.uint<1>, in %clock: !firrtl.clock) {
-    firrtl.printf %clock, %a, "foo"  : !firrtl.clock, !firrtl.uint<1>
+    firrtl.printf %clock, %a, "foo"  
   }
   firrtl.module private @SideEffect2(in %a: !firrtl.uint<1>, in %clock: !firrtl.clock) {
     %s1_a, %s1_clock = firrtl.instance s1 @SideEffect1(in a: !firrtl.uint<1>, in clock: !firrtl.clock)

@@ -343,7 +343,7 @@ firrtl.circuit "WhenBlock" attributes {
     // CHECK-NEXT: %[[invalid:[a-zA-Z0-9_]+]] = firrtl.invalidvalue
     // CHECK-NEXT: firrtl.matchingconnect %[[foo]], %[[invalid]]
     // CHECK-NEXT: firrtl.when
-    firrtl.when %a : !firrtl.uint<1> {
+    firrtl.when %a {
       // CHECK-NEXT: firrtl.instance
       %0, %1, %2, %3 = firrtl.instance mem @mem(
         in waddr: !firrtl.uint<1>,

@@ -10,8 +10,8 @@ firrtl.circuit "ifElseFatalToSVA" {
     in %cond: !firrtl.uint<1>,
     in %enable: !firrtl.uint<1>
   ) {
-    firrtl.assert %clock, %cond, %enable, "assert0" : !firrtl.clock, !firrtl.uint<1>, !firrtl.uint<1> {isConcurrent = true, format = "ifElseFatal"}
-    firrtl.assume %clock, %cond, %enable, "assert0" : !firrtl.clock, !firrtl.uint<1>, !firrtl.uint<1> {isConcurrent = true, guards = ["USE_PROPERTY_AS_CONSTRAINT"]}
+    firrtl.assert %clock, %cond, %enable, "assert0"  {isConcurrent = true, format = "ifElseFatal"}
+    firrtl.assume %clock, %cond, %enable, "assert0"  {isConcurrent = true, guards = ["USE_PROPERTY_AS_CONSTRAINT"]}
     // CHECK-NEXT: [[CLK:%.+]] = seq.from_clock %clock
     // SVA: sv.assert.concurrent posedge [[CLK]], {{%.+}} message "assert0"
 
@@ -40,7 +40,7 @@ firrtl.circuit "ifElseFatalToSVA" {
     in %cond: !firrtl.uint<1>,
     in %enable: !firrtl.uint<1>
   ) {
-    firrtl.assert %clock, %cond, %enable, "assert1" : !firrtl.clock, !firrtl.uint<1>, !firrtl.uint<1>
+    firrtl.assert %clock, %cond, %enable, "assert1" 
     // SVA: sv.assert.concurrent
     // IF_ELSE_FATAL: sv.if
     // IMMEDIATE: sv.assert

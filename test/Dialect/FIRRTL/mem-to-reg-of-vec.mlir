@@ -18,27 +18,27 @@ firrtl.circuit "Mem" attributes {annotations = [{class = "sifive.enterprise.firr
   }
     // CHECK-LABEL: firrtl.circuit "Mem" {
     // CHECK:         firrtl.module public @Mem(
-    // CHECK:           %mem_read = firrtl.wire  : !firrtl.bundle<addr: uint<3>, en: uint<1>, clk: clock, data flip: uint<8>>
+    // CHECK:           %mem_read = firrtl.wire : !firrtl.bundle<addr: uint<3>, en: uint<1>, clk: clock, data flip: uint<8>>
     // CHECK:           %[[v0:.+]] = firrtl.subfield %mem_read[addr]
     // CHECK:           %[[v1:.+]] = firrtl.subfield %mem_read[en]
     // CHECK:           %[[v2:.+]] = firrtl.subfield %mem_read[clk]
     // CHECK:           %[[v3:.+]] = firrtl.subfield %mem_read[data]
-    // CHECK:           %mem = firrtl.reg %[[v6:.+]]  : !firrtl.clock, !firrtl.vector<uint<8>, 8>
+    // CHECK:           %mem = firrtl.reg %[[v6:.+]] : !firrtl.vector<uint<8>, 8>
     // CHECK:           %[[v23:.+]] = firrtl.subaccess %mem[%[[v4:.+]]]
     // CHECK:           %invalid_ui8 = firrtl.invalidvalue : !firrtl.uint<8>
     // CHECK:           firrtl.matchingconnect %[[v3]], %invalid_ui8 : !firrtl.uint<8>
-    // CHECK:           firrtl.when %[[v1]] : !firrtl.uint<1> {
+    // CHECK:           firrtl.when %[[v1]] {
     // CHECK:             firrtl.matchingconnect %[[v3]], %[[v23]]
     // CHECK:           }
-    // CHECK:           %mem_write = firrtl.wire  : !firrtl.bundle<addr: uint<3>, en: uint<1>, clk: clock, data: uint<8>, mask: uint<1>>
+    // CHECK:           %mem_write = firrtl.wire : !firrtl.bundle<addr: uint<3>, en: uint<1>, clk: clock, data: uint<8>, mask: uint<1>>
     // CHECK:           %[[v5:.+]] = firrtl.subfield %mem_write[addr]
     // CHECK:           %[[v6:.+]] = firrtl.subfield %mem_write[en]
     // CHECK:           %[[v7:.+]] = firrtl.subfield %mem_write[clk]
     // CHECK:           %[[v8:.+]] = firrtl.subfield %mem_write[data]
     // CHECK:           %[[v9:.+]] = firrtl.subfield %mem_write[mask]
     // CHECK:           %[[v10:.+]] = firrtl.subaccess %mem[%[[v5]]]
-    // CHECK:           firrtl.when %[[v6]] : !firrtl.uint<1> {
-    // CHECK:             firrtl.when %[[v9]] : !firrtl.uint<1> {
+    // CHECK:           firrtl.when %[[v6]] {
+    // CHECK:             firrtl.when %[[v9]] {
     // CHECK:               firrtl.matchingconnect %[[v10]], %[[v8]] : !firrtl.uint<8>
     // CHECK:             }
     // CHECK:           }
@@ -64,7 +64,7 @@ firrtl.circuit "Mem_Ignore" {
         !firrtl.bundle<addr: uint<3>, en: uint<1>, clk: clock, data: uint<8>, mask: uint<1>>
     // CHECK:      %mem_read, %mem_write = firrtl.mem Undefined
     // CHECK-SAME:   {depth = 8 : i64, name = "mem", portNames = ["read", "write"], readLatency = 0 : i32, writeLatency = 1 : i32}
-    // CHECK-SAME:   : !firrtl.bundle<addr: uint<3>, en: uint<1>, clk: clock, data flip: uint<8>>,
+    // CHECK-SAME:  : !firrtl.bundle<addr: uint<3>, en: uint<1>, clk: clock, data flip: uint<8>>,
     // CHECK-SAME:     !firrtl.bundle<addr: uint<3>, en: uint<1>, clk: clock, data: uint<8>, mask: uint<1>>
   }
 }
@@ -151,7 +151,7 @@ firrtl.circuit  "GCTModule" attributes {annotations = [
       // CHECK-SAME:      {circt.fieldID = 5 : i64, class = "firrtl.transforms.DontTouchAnnotation"},
       // CHECK-SAME:      {circt.fieldID = 6 : i64, class = "firrtl.transforms.DontTouchAnnotation"},
       // CHECK-SAME:      {circt.fieldID = 7 : i64, class = "firrtl.transforms.DontTouchAnnotation"},
-      // CHECK-SAME:      {circt.fieldID = 8 : i64, class = "firrtl.transforms.DontTouchAnnotation"}]} : !firrtl.clock, !firrtl.vector<uint<8>, 8>
+      // CHECK-SAME:      {circt.fieldID = 8 : i64, class = "firrtl.transforms.DontTouchAnnotation"}]} : !firrtl.vector<uint<8>, 8>
   }
 }
 
@@ -170,8 +170,8 @@ firrtl.circuit "WriteMask" attributes {annotations = [
     } : !firrtl.bundle<addr: uint<3>, en: uint<1>, clk: clock, data flip: vector<uint<8>, 2>>,
         !firrtl.bundle<addr: uint<3>, en: uint<1>, clk: clock, data: vector<uint<8>, 2>, mask: vector<uint<1>, 2>>
     // CHECK-LABEL: firrtl.module public @WriteMask()
-    // CHECK:         %mem = firrtl.reg %2  : !firrtl.clock, !firrtl.vector<vector<uint<8>, 2>, 8>
-    // CHECK:         %mem_write = firrtl.wire  : !firrtl.bundle<addr: uint<3>, en: uint<1>, clk: clock, data: vector<uint<8>, 2>, mask: vector<uint<1>, 2>>
+    // CHECK:         %mem = firrtl.reg %2 : !firrtl.vector<vector<uint<8>, 2>, 8>
+    // CHECK:         %mem_write = firrtl.wire : !firrtl.bundle<addr: uint<3>, en: uint<1>, clk: clock, data: vector<uint<8>, 2>, mask: vector<uint<1>, 2>>
     // CHECK:         %[[v5:.+]] = firrtl.subfield %mem_write[addr]
     // CHECK:         %[[v6:.+]] = firrtl.subfield %mem_write[en]
     // CHECK:         %[[v7:.+]] = firrtl.subfield %mem_write[clk]
@@ -184,11 +184,11 @@ firrtl.circuit "WriteMask" attributes {annotations = [
     // CHECK:         %[[v14:.+]] = firrtl.subindex
     // CHECK:         %[[v15:.+]] = firrtl.subindex
     // CHECK:         %[[v16:.+]] = firrtl.subindex
-    // CHECK:         firrtl.when %[[v6]] : !firrtl.uint<1> {
-    // CHECK:           firrtl.when %[[v13]] : !firrtl.uint<1> {
+    // CHECK:         firrtl.when %[[v6]] {
+    // CHECK:           firrtl.when %[[v13]] {
     // CHECK:             firrtl.matchingconnect %[[v11]], %[[v12]] : !firrtl.uint<8>
     // CHECK:           }
-    // CHECK:           firrtl.when %[[v16]] : !firrtl.uint<1> {
+    // CHECK:           firrtl.when %[[v16]] {
     // CHECK:             firrtl.matchingconnect %[[v14]], %[[v15]] : !firrtl.uint<8>
     // CHECK:           }
   }

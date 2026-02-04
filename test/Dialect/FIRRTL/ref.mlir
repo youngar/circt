@@ -146,7 +146,7 @@ firrtl.circuit "RefTypeVector" {
 // https://github.com/llvm/circt/issues/3715
 firrtl.circuit "Issue3715" {
   firrtl.module private @Test(in %p: !firrtl.uint<1>, out %x: !firrtl.probe<uint<2>>) {
-    firrtl.when %p : !firrtl.uint<1> {
+    firrtl.when %p {
       %zero = firrtl.constant 1 : !firrtl.uint<2>
       %w = firrtl.wire : !firrtl.uint<2>
       %1 = firrtl.ref.send %w : !firrtl.uint<2>
@@ -213,10 +213,10 @@ firrtl.circuit "Forceable" {
     firrtl.ref.define %wire_ref, %w_f : !firrtl.rwprobe<uint>
     firrtl.connect %w, %value : !firrtl.uint, !firrtl.uint<2>
 
-    %reg, %reg_f = firrtl.reg %clock forceable : !firrtl.clock, !firrtl.uint<2>, !firrtl.rwprobe<uint<2>>
+    %reg, %reg_f = firrtl.reg %clock forceable  : !firrtl.uint<2>, !firrtl.rwprobe<uint<2>>
     firrtl.ref.define %reg_ref, %reg_f : !firrtl.rwprobe<uint<2>>
 
-    %regreset, %regreset_f = firrtl.regreset %clock, %reset, %value forceable : !firrtl.clock, !firrtl.uint<1>, !firrtl.uint<2>, !firrtl.uint<2>, !firrtl.rwprobe<uint<2>>
+    %regreset, %regreset_f = firrtl.regreset %clock, %reset, %value forceable  : !firrtl.uint<1>, !firrtl.uint<2>, !firrtl.uint<2>, !firrtl.rwprobe<uint<2>>
     firrtl.ref.define %regreset_ref, %regreset_f : !firrtl.rwprobe<uint<2>>
   }
 }

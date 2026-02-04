@@ -144,7 +144,7 @@ def PrintFOp : FIRRTLOp<"printf"> {
 
   let assemblyFormat = [{
     $clock `,` $cond `,` $formatString `` custom<PrintfAttrs>(attr-dict) ` `
-    (`(` $substitutions^ `)`)? `:` type($clock) `,` type($cond) (`,` qualified(type($substitutions))^)?
+    (`(` $substitutions^ `)` `:` qualified(type($substitutions)))?
   }];
 }
 
@@ -214,7 +214,7 @@ def StopOp : FIRRTLOp<"stop"> {
                        StrAttr:$name);
   let results = (outs);
 
-  let assemblyFormat = "$clock `,` $cond `,` $exitCode `` custom<StopAttrs>(attr-dict) `:` type($clock) `,` type($cond)";
+  let assemblyFormat = "$clock `,` $cond `,` $exitCode `` custom<StopAttrs>(attr-dict)";
 }
 
 class VerifOp<string mnemonic, list<Trait> traits = []> :
@@ -234,7 +234,7 @@ class VerifOp<string mnemonic, list<Trait> traits = []> :
 
   let assemblyFormat = [{
     $clock `,` $predicate `,` $enable `,`
-    $message (`(` $substitutions^ `)`)? `:` type($clock) `,` type($predicate) `,` type($enable) (`,` qualified(type($substitutions))^)?
+    $message (`(` $substitutions^ `:` qualified(type($substitutions)) `)`)?
     custom<VerifAttrs>(attr-dict)
   }];
 }
@@ -272,7 +272,7 @@ def WhenOp : FIRRTLOp<"when", [SingleBlock, NoTerminator, NoRegionArguments]> {
   ];
 
   let assemblyFormat =
-    "$condition `:` type($condition) $thenRegion (`else` $elseRegion^)? attr-dict-with-keyword";
+    "$condition $thenRegion (`else` $elseRegion^)? attr-dict-with-keyword";
 
   let extraClassDeclaration = [{
 

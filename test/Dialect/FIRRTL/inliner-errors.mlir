@@ -6,7 +6,7 @@ firrtl.circuit "InlineIntoWhen" {
   firrtl.module private @Child () attributes {annotations = [{class = "firrtl.passes.InlineAnnotation"}]} {}
   firrtl.module @InlineIntoWhen(in %cond : !firrtl.uint<1>) {
     // expected-note @below {{containing operation 'firrtl.when' not safe to inline into}}
-    firrtl.when %cond : !firrtl.uint<1> {
+    firrtl.when %cond {
       // expected-error @below {{cannot inline instance}}
       firrtl.instance c @Child()
     }
@@ -21,7 +21,7 @@ firrtl.circuit "FlattenThroughWhen" {
   firrtl.module private @GChild () {}
   firrtl.module private @Child (in %cond : !firrtl.uint<1>) {
     // expected-note @below {{containing operation 'firrtl.when' not safe to inline into}}
-    firrtl.when %cond : !firrtl.uint<1> {
+    firrtl.when %cond {
       // expected-error @below {{cannot inline instance}}
       firrtl.instance c @GChild()
     }

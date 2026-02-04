@@ -195,7 +195,7 @@ firrtl.circuit "Foo" {
   firrtl.module @Foo(in %clk: !firrtl.clock, in %reset: !firrtl.uint<2>) {
     %zero = firrtl.constant 0 : !firrtl.uint<1>
     // expected-error @+1 {{'firrtl.regreset' op operand #1 must be Reset, but got '!firrtl.uint<2>'}}
-    %a = firrtl.regreset %clk, %reset, %zero {name = "a"} : !firrtl.clock, !firrtl.uint<2>, !firrtl.uint<1>, !firrtl.uint<1>
+    %a = firrtl.regreset %clk, %reset, %zero {name = "a"} : !firrtl.uint<2>, !firrtl.uint<1>, !firrtl.uint<1>
   }
 }
 
@@ -756,7 +756,7 @@ firrtl.circuit "MemoryPortsWithDifferentTypes" {
 
 firrtl.circuit "SubfieldOpWithIntegerFieldIndex" {
   firrtl.module @SubfieldOpFieldError() {
-    %w = firrtl.wire  : !firrtl.bundle<a: uint<2>, b: uint<2>>
+    %w = firrtl.wire : !firrtl.bundle<a: uint<2>, b: uint<2>>
     // expected-error @+1 {{'firrtl.subfield' expected valid keyword or string}}
     %w_a = firrtl.subfield %w[2] : !firrtl.bundle<a : uint<2>, b : uint<2>>
   }
@@ -766,7 +766,7 @@ firrtl.circuit "SubfieldOpWithIntegerFieldIndex" {
 
 firrtl.circuit "SubfieldOpFieldUnknown" {
   firrtl.module @SubfieldOpFieldError() {
-    %w = firrtl.wire  : !firrtl.bundle<a: uint<2>, b: uint<2>>
+    %w = firrtl.wire : !firrtl.bundle<a: uint<2>, b: uint<2>>
     // expected-error @+1 {{'firrtl.subfield' unknown field c in bundle type '!firrtl.bundle<a: uint<2>, b: uint<2>>'}}
     %w_a = firrtl.subfield %w[c] : !firrtl.bundle<a : uint<2>, b : uint<2>>
   }
@@ -967,7 +967,7 @@ firrtl.circuit "Top" {
 firrtl.circuit "AnalogRegister" {
   firrtl.module @AnalogRegister(in %clock: !firrtl.clock) {
     // expected-error @+1 {{'firrtl.reg' op result #0 must be a passive base type that does not contain analog, but got '!firrtl.analog'}}
-    %r = firrtl.reg %clock : !firrtl.clock, !firrtl.analog
+    %r = firrtl.reg %clock : !firrtl.analog
   }
 }
 
@@ -976,7 +976,7 @@ firrtl.circuit "AnalogRegister" {
 firrtl.circuit "AnalogVectorRegister" {
   firrtl.module @AnalogVectorRegister(in %clock: !firrtl.clock) {
     // expected-error @+1 {{'firrtl.reg' op result #0 must be a passive base type that does not contain analog, but got '!firrtl.vector<analog, 2>'}}
-    %r = firrtl.reg %clock : !firrtl.clock, !firrtl.vector<analog, 2>
+    %r = firrtl.reg %clock : !firrtl.vector<analog, 2>
   }
 }
 
@@ -986,7 +986,7 @@ firrtl.circuit "MismatchedRegister" {
   firrtl.module @MismatchedRegister(in %clock: !firrtl.clock, in %reset: !firrtl.asyncreset, out %z: !firrtl.vector<uint<1>, 1>) {
     %c0_ui1 = firrtl.constant 0 : !firrtl.uint<1>
     // expected-error @+1 {{type mismatch between register '!firrtl.vector<uint<1>, 1>' and reset value '!firrtl.uint<1>'}}
-    %r = firrtl.regreset %clock, %reset, %c0_ui1  : !firrtl.clock, !firrtl.asyncreset, !firrtl.uint<1>, !firrtl.vector<uint<1>, 1>
+    %r = firrtl.regreset %clock, %reset, %c0_ui1  : !firrtl.asyncreset, !firrtl.uint<1>, !firrtl.vector<uint<1>, 1>
     firrtl.connect %z, %r : !firrtl.vector<uint<1>, 1>, !firrtl.vector<uint<1>, 1>
   }
 }
@@ -1122,7 +1122,7 @@ firrtl.module @NonRefNode() {
 firrtl.circuit "NonRefRegister" {
   firrtl.module @NonRefRegister(in %clock: !firrtl.clock) {
     // expected-error @+1 {{'firrtl.reg' op result #0 must be a passive base type that does not contain analog}}
-    %r = firrtl.reg %clock : !firrtl.clock, !firrtl.probe<uint<8>>
+    %r = firrtl.reg %clock : !firrtl.probe<uint<8>>
   }
 }
 
@@ -1478,7 +1478,7 @@ firrtl.circuit "RefReleaseProbe" {
 firrtl.circuit "EnumCreateNoCase" {
 firrtl.module @EnumCreateNoCase(in %in : !firrtl.uint<8>) {
   // expected-error @below {{unknown field SomeOther in enum type}}
-  %some = firrtl.enumcreate SomeOther(%in) : (!firrtl.uint<8>) -> !firrtl.enum<None: uint<0>, Some: uint<8>>
+  %some = firrtl.enumcreate SomeOther(%in) : !firrtl.enum<None: uint<0>, Some: uint<8>>
 }
 
 // -----
@@ -1487,7 +1487,7 @@ firrtl.circuit "EnumCreateWrongType" {
   // expected-note @below {{prior use here}}
 firrtl.module @EnumCreateWrongType(in %in : !firrtl.uint<7>) {
   // expected-error @below {{expects different type than prior uses}}
-  %some = firrtl.enumcreate Some(%in) : (!firrtl.uint<8>) -> !firrtl.enum<None: uint<0>, Some: uint<8>>
+  %some = firrtl.enumcreate Some(%in) : !firrtl.enum<None: uint<0>, Some: uint<8>>
 }
 
 // -----
@@ -1659,7 +1659,7 @@ firrtl.circuit "LayerBlockDrivesSinksOutside" {
     %b = firrtl.wire : !firrtl.bundle<c: uint<1>>
     // expected-note @below {{enclosing layer block is defined here}}
     firrtl.layerblock @A {
-      firrtl.when %cond : !firrtl.uint<1> {
+      firrtl.when %cond {
         %b_c = firrtl.subfield %b[c] : !firrtl.bundle<c: uint<1>>
         // expected-error @below {{'firrtl.matchingconnect' op connects to a destination which is defined outside its enclosing layer block}}
         firrtl.matchingconnect %b_c, %a : !firrtl.uint<1>
@@ -1799,7 +1799,7 @@ firrtl.circuit "RWProbeInstance" {
 
 firrtl.circuit "RWProbeUseDef" {
   firrtl.module @RWProbeUseDef(in %cond : !firrtl.uint<1>) {
-    firrtl.when %cond : !firrtl.uint<1> {
+    firrtl.when %cond {
       // expected-note @below {{target here}}
       %w = firrtl.wire sym @x : !firrtl.uint<1>
     } else {
