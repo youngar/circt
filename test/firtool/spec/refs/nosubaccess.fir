@@ -9,7 +9,7 @@ circuit NoSubAccessesWithProbes :
   ; SPEC EXAMPLE BEGIN:
   public module NoSubAccessesWithProbes :
     input i : UInt<5>
-    input c : const UInt<5>
+    input c : UInt<5>
     output p : Probe<UInt<2>>
 
     inst e of Ext

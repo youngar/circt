@@ -112,7 +112,7 @@ void circt::firrtl::emitConnect(ImplicitLocOpBuilder &builder, Value dst,
 
   if ((dstType.hasUninferredReset() || srcType.hasUninferredReset()) &&
       dstType != srcType) {
-    srcType = dstType.getConstType(srcType.isConst());
+    srcType = dstType;
     src = UninferredResetCastOp::create(builder, srcType, src);
   }
 
@@ -123,13 +123,7 @@ void circt::firrtl::emitConnect(ImplicitLocOpBuilder &builder, Value dst,
     // If one of these types has an uninferred width, we connect them with a
     // regular connect operation.
 
-    // Const-cast as needed, using widthless version of dest.
-    // (dest is either widthless already, or source is and if the types
-    //  can be const-cast'd, do so)
-    if (dstType != srcType && dstType.getWidthlessType() != srcType &&
-        areTypesConstCastable(dstType.getWidthlessType(), srcType)) {
-      src = ConstCastOp::create(builder, dstType.getWidthlessType(), src);
-    }
+    // Const has been removed, no const-cast needed
 
     ConnectOp::create(builder, dst, src);
     return;
@@ -138,27 +132,20 @@ void circt::firrtl::emitConnect(ImplicitLocOpBuilder &builder, Value dst,
   // The source must be extended or truncated.
   if (dstWidth < srcWidth) {
     // firrtl.tail always returns uint even for sint operands.
-    IntType tmpType =
-        type_cast<IntType>(dstType).getConstType(srcType.isConst());
+    IntType tmpType = type_cast<IntType>(dstType);
     bool isSignedDest = tmpType.isSigned();
     if (isSignedDest)
-      tmpType =
-          UIntType::get(dstType.getContext(), dstWidth, srcType.isConst());
+      tmpType = UIntType::get(dstType.getContext(), dstWidth);
     src = TailPrimOp::create(builder, tmpType, src, srcWidth - dstWidth);
     // Insert the cast back to signed if needed.
     if (isSignedDest)
-      src = AsSIntPrimOp::create(builder,
-                                 dstType.getConstType(tmpType.isConst()), src);
+      src = AsSIntPrimOp::create(builder, dstType, src);
   } else if (srcWidth < dstWidth) {
     // Need to extend arg.
     src = PadPrimOp::create(builder, src, dstWidth);
   }
 
-  if (auto srcType = type_cast<FIRRTLBaseType>(src.getType());
-      srcType && dstType != srcType &&
-      areTypesConstCastable(dstType, srcType)) {
-    src = ConstCastOp::create(builder, dstType, src);
-  }
+  // Const has been removed, no const-cast needed
 
   // Strict connect requires the types to be completely equal, including
   // connecting uint<1> to abstract reset types.
@@ -519,7 +506,7 @@ FieldRef circt::firrtl::getDeltaRef(Value value, bool lookThroughCasts) {
   // dispatch to index operations' getAccesssedField(),
   // or return no delta.
   return TypeSwitch<Operation *, FieldRef>(op)
-      .Case<RefCastOp, ConstCastOp, UninferredResetCastOp>(
+      .Case<RefCastOp, UninferredResetCastOp>(
           [lookThroughCasts](auto op) {
             if (!lookThroughCasts)
               return FieldRef();

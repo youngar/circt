@@ -269,8 +269,8 @@ firrtl.circuit "Simple"   attributes {annotations = [{class =
     %31 = firrtl.dshr %25, %18 : (!firrtl.sint<4>, !firrtl.uint<14>) -> !firrtl.sint<4>
 
     // Noop.
-    %c0_ui1 = firrtl.constant 0 : !firrtl.const.uint<1>
-    %32 = firrtl.dshr %in1, %c0_ui1 { name = "test" } : (!firrtl.uint<4>, !firrtl.const.uint<1>) -> !firrtl.uint<4>
+    %c0_ui1 = firrtl.constant 0 : !firrtl.uint<1>
+    %32 = firrtl.dshr %in1, %c0_ui1 { name = "test" } : (!firrtl.uint<4>, !firrtl.uint<1>) -> !firrtl.uint<4>
 
     // CHECK: comb.icmp bin ule {{.*}}, {{.*}} : i4
     %41 = firrtl.leq %in1, %4 : (!firrtl.uint<4>, !firrtl.uint<4>) -> !firrtl.uint<1>
@@ -1673,25 +1673,25 @@ firrtl.circuit "TypeAlias" {
 // CHECK:    hw.output %2 : !hw.typealias<@TypeAlias__TYPESCOPE_::@bar_0, i64>
 
   firrtl.module @TypeAlias(in %in: !firrtl.alias<A, uint<1>>,
-                           in %const: !firrtl.const.alias<B, const.uint<1>>,
+                           in %const: !firrtl.alias<B, uint<1>>,
                            out %out: !firrtl.alias<C, alias<baz, uint<1>>>,
-                           out %out2: !firrtl.const.alias<D, const.uint<1>>) {
+                           out %out2: !firrtl.alias<D, uint<1>>) {
     firrtl.matchingconnect %out, %in: !firrtl.alias<C, alias<baz, uint<1>>>,!firrtl.alias<A, uint<1>>
     %wire = firrtl.wire : !firrtl.alias<baz, uint<1>>
     firrtl.connect %wire, %in :!firrtl.alias<baz, uint<1>> , !firrtl.alias<A, uint<1>>
-    %wire2 = firrtl.wire : !firrtl.const.alias<baf, const.uint<1>>
-    firrtl.matchingconnect %wire2, %const :!firrtl.const.alias<baf, const.uint<1>> , !firrtl.const.alias<B, const.uint<1>>
-    firrtl.matchingconnect %out2, %wire2 :!firrtl.const.alias<D, const.uint<1>> , !firrtl.const.alias<baf, const.uint<1>>
+    %wire2 = firrtl.wire : !firrtl.alias<baf, uint<1>>
+    firrtl.matchingconnect %wire2, %const :!firrtl.alias<baf, uint<1>> , !firrtl.alias<B, uint<1>>
+    firrtl.matchingconnect %out2, %wire2 :!firrtl.alias<D, uint<1>> , !firrtl.alias<baf, uint<1>>
   }
-  firrtl.module private @SimpleStruct(in %source: !firrtl.alias<bar, bundle<valid: const.uint<1>, ready: uint<1>, data: uint<64>>>,
+  firrtl.module private @SimpleStruct(in %source: !firrtl.alias<bar, bundle<valid: uint<1>, ready: uint<1>, data: uint<64>>>,
                               out %fldout: !firrtl.alias<bar, uint<64>>) {
-    %wire = firrtl.wire : !firrtl.bundle<valid: const.uint<1>, ready: uint<1>, data: uint<64>>
-    firrtl.matchingconnect %wire, %source : !firrtl.bundle<valid: const.uint<1>, ready: uint<1>, data: uint<64>>, !firrtl.alias<bar, bundle<valid: const.uint<1>, ready: uint<1>, data: uint<64>>>
-    %2 = firrtl.subfield %wire[data] : !firrtl.bundle<valid: const.uint<1>, ready: uint<1>, data: uint<64>>
-    %wire2 = firrtl.wire : !firrtl.const.alias<baf, const.uint<1>>
+    %wire = firrtl.wire : !firrtl.bundle<valid: uint<1>, ready: uint<1>, data: uint<64>>
+    firrtl.matchingconnect %wire, %source : !firrtl.bundle<valid: uint<1>, ready: uint<1>, data: uint<64>>, !firrtl.alias<bar, bundle<valid: uint<1>, ready: uint<1>, data: uint<64>>>
+    %2 = firrtl.subfield %wire[data] : !firrtl.bundle<valid: uint<1>, ready: uint<1>, data: uint<64>>
+    %wire2 = firrtl.wire : !firrtl.alias<baf, uint<1>>
     firrtl.connect %fldout, %2 : !firrtl.alias<bar, uint<64>>, !firrtl.uint<64>
-    %0 = firrtl.subfield %wire[valid] : !firrtl.bundle<valid: const.uint<1>, ready: uint<1>, data: uint<64>>
-    firrtl.matchingconnect %wire2, %0 : !firrtl.const.alias<baf, const.uint<1>>, !firrtl.const.uint<1>
+    %0 = firrtl.subfield %wire[valid] : !firrtl.bundle<valid: uint<1>, ready: uint<1>, data: uint<64>>
+    firrtl.matchingconnect %wire2, %0 : !firrtl.alias<baf, uint<1>>, !firrtl.uint<1>
   }
 }
 

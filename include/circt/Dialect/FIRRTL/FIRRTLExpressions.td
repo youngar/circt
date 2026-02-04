@@ -1109,13 +1109,7 @@ def VerbatimWireOp : FIRRTLOp<"verbatim.wire",
 // Special inference Operations
 //===----------------------------------------------------------------------===//
 
-// This assumes operands are ground types without explicitly checking
-class SameGroundTypeOperandConstness<string a, string b>
-  : PredOpTrait<
-      "operand constness must match",
-      CPred<"isConst($" # a # ".getType()) == isConst($" # b # ".getType())">>;
-
-def UninferredResetCastOp : FIRRTLOp<"resetCast", [HasCustomSSAName, Pure, SameGroundTypeOperandConstness<"input", "result">]> {
+def UninferredResetCastOp : FIRRTLOp<"resetCast", [HasCustomSSAName, Pure]> {
   let description = [{
     Cast between reset types.  This is used to enable matchingconnects early in
     the pipeline by isolating all uninferred reset connections to a single op.
@@ -1123,20 +1117,6 @@ def UninferredResetCastOp : FIRRTLOp<"resetCast", [HasCustomSSAName, Pure, SameG
   let arguments = (ins AnyResetType:$input);
   let results = (outs AnyResetType:$result);
   let hasFolder = 1;
-  let assemblyFormat =
-    "$input attr-dict `:` functional-type($input, $result)";
-}
-
-def ConstCastOp : FIRRTLOp<"constCast", [HasCustomSSAName, Pure]> {
-  let description = [{
-    Cast from a 'const' to a non-'const' type.
-    ```
-    %result = firrtl.constCast %in : (!firrtl.const.t1) -> !firrtl.t1
-    ```
-  }];
-  let arguments = (ins PassiveType:$input);
-  let results = (outs PassiveType:$result);
-  let hasVerifier = 1;
   let assemblyFormat =
     "$input attr-dict `:` functional-type($input, $result)";
 }

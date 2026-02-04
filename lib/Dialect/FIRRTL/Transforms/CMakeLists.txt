@@ -8,7 +8,6 @@ add_circt_dialect_library(CIRCTFIRRTLTransforms
   CheckRecursiveInstantiation.cpp
   CreateSiFiveMetadata.cpp
   Dedup.cpp
-  DropConst.cpp
   DropName.cpp
   EliminateWires.cpp
   ExpandWhens.cpp

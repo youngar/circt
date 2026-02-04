@@ -1083,9 +1083,6 @@ ParseResult FIRParser::parseType(FIRRTLType &result, const Twine &message) {
     if (!innerType.isPassive())
       return emitError(loc, "probe inner type must be passive");
 
-    if (forceable && innerType.containsConst())
-      return emitError(loc, "rwprobe cannot contain const");
-
     SymbolRefAttr layer;
     if (!layers.empty()) {
       auto nestedLayers =
@@ -1163,26 +1160,6 @@ ParseResult FIRParser::parseType(FIRRTLType &result, const Twine &message) {
     }
     result = it->second;
     break;
-  }
-
-  case FIRToken::kw_const: {
-    consumeToken(FIRToken::kw_const);
-    auto nextToken = getToken();
-    auto loc = nextToken.getLoc();
-
-    // Guard against multiple 'const' specifications
-    if (nextToken.is(FIRToken::kw_const))
-      return emitError(loc, "'const' can only be specified once on a type");
-
-    if (failed(parseType(result, message)))
-      return failure();
-
-    auto baseType = type_dyn_cast<FIRRTLBaseType>(result);
-    if (!baseType)
-      return emitError(loc, "only hardware types can be 'const'");
-
-    result = baseType.getConstType(true);
-    return success();
   }
 
   case FIRToken::kw_String:
@@ -2610,8 +2587,7 @@ ParseResult FIRStmtParser::parseIntegerLiteralExp(Value &result) {
     return failure();
 
   // Construct an integer attribute of the right width.
-  // Literals are parsed as 'const' types.
-  auto type = IntType::get(builder.getContext(), isSigned, width, true);
+  auto type = IntType::get(builder.getContext(), isSigned, width);
 
   IntegerType::SignednessSemantics signedness =
       isSigned ? IntegerType::Signed : IntegerType::Unsigned;
@@ -3542,7 +3518,7 @@ ParseResult FIRStmtParser::parseEnumExp(Value &value) {
   if (consumeIf(FIRToken::r_paren)) {
     // If the payload is not specified, we create a 0 bit unsigned integer
     // constant.
-    auto type = IntType::get(builder.getContext(), false, 0, true);
+    auto type = IntType::get(builder.getContext(), false, 0);
     Type attrType = IntegerType::get(getContext(), 0, IntegerType::Unsigned);
     auto attr = builder.getIntegerAttr(attrType, APInt(0, 0, false));
     input = ConstantOp::create(builder, type, attr);
@@ -3851,13 +3827,13 @@ ParseResult FIRStmtParser::parseRWProbeStaticRefExp(FieldRef &refResult,
         if (auto bundle = type_dyn_cast<BundleType>(type)) {
           if (auto index = bundle.getElementIndex(fieldName)) {
             refResult = refResult.getSubField(bundle.getFieldID(*index));
-            type = bundle.getElementTypePreservingConst(*index);
+            type = bundle.getElement(*index).type;
             continue;
           }
         } else if (auto bundle = type_dyn_cast<OpenBundleType>(type)) {
           if (auto index = bundle.getElementIndex(fieldName)) {
             refResult = refResult.getSubField(bundle.getFieldID(*index));
-            type = bundle.getElementTypePreservingConst(*index);
+            type = bundle.getElement(*index).type;
             continue;
           }
         } else {
@@ -3883,13 +3859,13 @@ ParseResult FIRStmtParser::parseRWProbeStaticRefExp(FieldRef &refResult,
       if (auto vector = type_dyn_cast<FVectorType>(type)) {
         if ((unsigned)index < vector.getNumElements()) {
           refResult = refResult.getSubField(vector.getFieldID(index));
-          type = vector.getElementTypePreservingConst();
+          type = vector.getElementType();
           continue;
         }
       } else if (auto vector = type_dyn_cast<OpenVectorType>(type)) {
         if ((unsigned)index < vector.getNumElements()) {
           refResult = refResult.getSubField(vector.getFieldID(index));
-          type = vector.getElementTypePreservingConst();
+          type = vector.getElementType();
           continue;
         }
       } else {
@@ -4185,10 +4161,9 @@ ParseResult FIRStmtParser::parseRefForce() {
   locationProcessor.setLoc(startTok.getLoc());
 
   // Cast ref to accommodate uninferred sources.
-  auto noConstSrcType = srcBaseType.getAllConstDroppedType();
-  if (noConstSrcType != ref.getType()) {
-    // Try to cast destination to rwprobe of source type (dropping const).
-    auto compatibleRWProbe = RefType::get(noConstSrcType, true, ref.getLayer());
+  if (srcBaseType != ref.getType()) {
+    // Try to cast destination to rwprobe of source type.
+    auto compatibleRWProbe = RefType::get(srcBaseType, true, ref.getLayer());
     if (areTypesRefCastable(compatibleRWProbe, ref))
       dest = RefCastOp::create(builder, compatibleRWProbe, dest);
     else
@@ -4235,10 +4210,9 @@ ParseResult FIRStmtParser::parseRefForceInitial() {
   locationProcessor.setLoc(startTok.getLoc());
 
   // Cast ref to accommodate uninferred sources.
-  auto noConstSrcType = srcBaseType.getAllConstDroppedType();
-  if (noConstSrcType != ref.getType()) {
-    // Try to cast destination to rwprobe of source type (dropping const).
-    auto compatibleRWProbe = RefType::get(noConstSrcType, true, ref.getLayer());
+  if (srcBaseType != ref.getType()) {
+    // Try to cast destination to rwprobe of source type.
+    auto compatibleRWProbe = RefType::get(srcBaseType, true, ref.getLayer());
     if (areTypesRefCastable(compatibleRWProbe, ref))
       dest = RefCastOp::create(builder, compatibleRWProbe, dest);
     else

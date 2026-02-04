@@ -734,7 +734,7 @@ FailureOr<MappingInfo> Visitor::mapType(Type type, Location errorLoc,
                 return FIRRTLBaseType{};
               }
 
-              return BundleType::get(context, hwElements, obTy.isConst());
+              return BundleType::get(context, hwElements);
             })
             .template Case<OpenVectorType>([&](OpenVectorType ovTy)
                                                -> FailureOr<FIRRTLBaseType> {
@@ -760,8 +760,7 @@ FailureOr<MappingInfo> Visitor::mapType(Type type, Location errorLoc,
                 return FIRRTLBaseType{};
               }
 
-              return FVectorType::get(convert, ovTy.getNumElements(),
-                                      ovTy.isConst());
+              return FVectorType::get(convert, ovTy.getNumElements());
             })
             .template Case<RefType>([&](RefType ref) {
               auto f = NonHWField{ref, fieldID, flip, {}};

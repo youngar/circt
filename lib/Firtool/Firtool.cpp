@@ -100,8 +100,6 @@ LogicalResult firtool::populateCHIRRTLToLowFIRRTL(mlir::PassManager &pm,
 
   pm.nest<firrtl::CircuitOp>().addPass(firrtl::createInferResets());
 
-  pm.nest<firrtl::CircuitOp>().addPass(firrtl::createDropConst());
-
   if (opt.shouldDedup()) {
     firrtl::DedupOptions opts;
     opts.dedupClasses = opt.shouldDedupClasses();

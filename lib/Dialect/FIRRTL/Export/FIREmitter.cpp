@@ -134,7 +134,6 @@ struct Emitter {
   void emitExpression(RWProbeOp op);
   void emitExpression(RefCastOp op);
   void emitExpression(UninferredResetCastOp op);
-  void emitExpression(ConstCastOp op);
   void emitExpression(StringConstantOp op);
   void emitExpression(FIntegerConstantOp op);
   void emitExpression(BoolConstantOp op);
@@ -202,7 +201,7 @@ struct Emitter {
   void emitAttribute(RUWBehaviorAttr attr);
 
   // Types
-  void emitType(Type type, bool includeConst = true);
+  void emitType(Type type);
   void emitTypeWithColon(Type type) {
     ps << PP::space << ":" << PP::nbsp;
     emitType(type);
@@ -1440,7 +1439,7 @@ void Emitter::emitExpression(Value value) {
           CvtPrimOp, NegPrimOp, NotPrimOp, AndRPrimOp, OrRPrimOp, XorRPrimOp,
           // Miscellaneous
           BitsPrimOp, HeadPrimOp, TailPrimOp, PadPrimOp, MuxPrimOp, ShlPrimOp,
-          ShrPrimOp, UninferredResetCastOp, ConstCastOp, StringConstantOp,
+          ShrPrimOp, UninferredResetCastOp, StringConstantOp,
           FIntegerConstantOp, BoolConstantOp, DoubleConstantOp, ListCreateOp,
           UnresolvedPathOp, GenericIntrinsicOp, CatPrimOp, UnsafeDomainCastOp,
           UnknownValueOp,
@@ -1458,8 +1457,7 @@ void Emitter::emitExpression(Value value) {
 }
 
 void Emitter::emitExpression(ConstantOp op) {
-  // Don't include 'const' on the type in a literal expression
-  emitType(op.getType(), false);
+  emitType(op.getType());
   // TODO: Add option to control base-2/8/10/16 output here.
   ps << "(";
   ps.addAsString(op.getValue());
@@ -1636,8 +1634,6 @@ void Emitter::emitExpression(GenericIntrinsicOp op) {
   emitGenericIntrinsic(op);
 }
 
-void Emitter::emitExpression(ConstCastOp op) { emitExpression(op.getInput()); }
-
 void Emitter::emitPrimExpr(StringRef mnemonic, Operation *op,
                            ArrayRef<uint32_t> attrs) {
   ps << mnemonic << "(" << PP::ibox0;
@@ -1653,7 +1649,7 @@ void Emitter::emitExpression(CatPrimOp op) {
   switch (numOperands) {
   case 0:
     // Emit "UInt<0>(0)"
-    emitType(op.getType(), false);
+    emitType(op.getType());
     ps << "(0)";
     return;
   case 1: {
@@ -1728,9 +1724,7 @@ void Emitter::emitAttribute(RUWBehaviorAttr attr) {
 }
 
 /// Emit a FIRRTL type into the output.
-void Emitter::emitType(Type type, bool includeConst) {
-  if (includeConst && isConst(type))
-    ps << "const ";
+void Emitter::emitType(Type type) {
   auto emitWidth = [&](std::optional<int32_t> width) {
     if (width) {
       ps << "<";

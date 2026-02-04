@@ -26,8 +26,8 @@ firrtl.circuit "A" {
     // CHECK:      firrtl.regreset
     // CHECK-SAME:   {name = "reg"}
     %derp = firrtl.reg %clock : !firrtl.clock, !firrtl.uint<1>
-    %c1_ui1 = firrtl.constant 1 : !firrtl.const.uint<1>
-    %herp = firrtl.regreset %clock, %reset, %c1_ui1 : !firrtl.clock, !firrtl.reset, !firrtl.const.uint<1>, !firrtl.uint<1>
+    %c1_ui1 = firrtl.constant 1 : !firrtl.uint<1>
+    %herp = firrtl.regreset %clock, %reset, %c1_ui1 : !firrtl.clock, !firrtl.reset, !firrtl.uint<1>, !firrtl.uint<1>
   }
   // CHECK:      firrtl.module @Foo
   // CHECK-SAME:   in %clk: !firrtl.clock

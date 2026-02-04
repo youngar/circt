@@ -242,10 +242,6 @@ void testTypeDiscriminantsAndQueries(MlirContext ctx) {
       ctx, mlirFlatSymbolRefAttrGet(ctx, mlirStringRefCreateFromCString("cls")),
       ARRAY_SIZE(classElements), classElements);
 
-  assert(firrtlTypeIsConst(
-      firrtlTypeGetConstType(firrtlTypeGetUInt(ctx, 32), true)));
-  assert(firrtlTypeIsConst(firrtlTypeGetConstType(
-      firrtlTypeGetConstType(firrtlTypeGetUInt(ctx, 32), false), true)));
   assert(firrtlTypeIsAUInt(firrtlTypeGetUInt(ctx, 32)));
   assert(firrtlTypeIsASInt(firrtlTypeGetSInt(ctx, 32)));
   assert(firrtlTypeIsAClock(firrtlTypeGetClock(ctx)));
@@ -265,11 +261,6 @@ void testTypeDiscriminantsAndQueries(MlirContext ctx) {
   assert(firrtlTypeIsAPath(firrtlTypeGetPath(ctx)));
   assert(firrtlTypeIsAList(firrtlTypeGetList(ctx, firrtlTypeGetInteger(ctx))));
   assert(firrtlTypeIsAClass(cls));
-  assert(!firrtlTypeIsConst(firrtlTypeGetUInt(ctx, 32)));
-  assert(!firrtlTypeIsConst(
-      firrtlTypeGetConstType(firrtlTypeGetUInt(ctx, 32), false)));
-  assert(!firrtlTypeIsConst(firrtlTypeGetConstType(
-      firrtlTypeGetConstType(firrtlTypeGetUInt(ctx, 32), true), false)));
   assert(!firrtlTypeIsAUInt(firrtlTypeGetSInt(ctx, 32)));
   assert(!firrtlTypeIsASInt(firrtlTypeGetUInt(ctx, 32)));
   assert(!firrtlTypeIsAClock(firrtlTypeGetReset(ctx)));

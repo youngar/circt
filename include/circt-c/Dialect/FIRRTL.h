@@ -112,13 +112,6 @@ MLIR_DECLARE_CAPI_DIALECT_REGISTRATION(FIRRTL, firrtl);
 // Type API.
 //===----------------------------------------------------------------------===//
 
-/// Returns `true` if this is a const type whose value is guaranteed to be
-/// unchanging at circuit execution time.
-MLIR_CAPI_EXPORTED bool firrtlTypeIsConst(MlirType type);
-
-/// Returns a const or non-const version of this type.
-MLIR_CAPI_EXPORTED MlirType firrtlTypeGetConstType(MlirType type, bool isConst);
-
 /// Gets the bit width for this type, returns -1 if unknown.
 ///
 /// It recursively computes the bit width of aggregate types. For bundle and

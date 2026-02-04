@@ -266,8 +266,8 @@ public:
                PatternRewriter &rewriter) override {
     auto bty = gi.getOutputBundle().getType();
     auto newop = PlusArgsValueIntrinsicOp::create(
-        rewriter, gi.op.getLoc(), bty.getElementTypePreservingConst(0),
-        bty.getElementTypePreservingConst(1),
+        rewriter, gi.op.getLoc(), bty.getElement(0).type,
+        bty.getElement(1).type,
         gi.getParamValue<StringAttr>("FORMAT"));
     rewriter.replaceOpWithNewOp<BundleCreateOp>(
         gi.op, bty, ValueRange({newop.getFound(), newop.getResult()}));

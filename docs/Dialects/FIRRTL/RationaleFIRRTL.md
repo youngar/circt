@@ -615,11 +615,6 @@ operations to the target dialect and we need a mechanism to have the lowered
 values be passed around the FIRRTL module hierarchy untouched alongside the
 FIRRTL ops that are yet to be lowered.
 
-### Const Types
-
-FIRRTL hardware types can be specified as `const`, meaning they can only be
-assigned compile-time constant values or values of other `const` types.
-
 ## Operations
 
 ### Multiple result `firrtl.instance` operation

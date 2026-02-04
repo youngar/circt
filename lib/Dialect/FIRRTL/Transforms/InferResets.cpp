@@ -119,14 +119,12 @@ inline bool operator!=(const ResetDomain &a, const ResetDomain &b) {
 /// Construct a zero value of the given type using the given builder.
 static Value createZeroValue(ImplicitLocOpBuilder &builder, FIRRTLBaseType type,
                              SmallDenseMap<FIRRTLBaseType, Value> &cache) {
-  // The zero value's type is a const version of `type`.
-  type = type.getConstType(true);
   auto it = cache.find(type);
   if (it != cache.end())
     return it->second;
   auto nullBit = [&]() {
     return createZeroValue(
-        builder, UIntType::get(builder.getContext(), 1, /*isConst=*/true),
+        builder, UIntType::get(builder.getContext(), 1),
         cache);
   };
   auto value =
@@ -152,15 +150,14 @@ static Value createZeroValue(ImplicitLocOpBuilder &builder, FIRRTLBaseType type,
             }
             auto value = ConstantOp::create(builder,
                                             UIntType::get(builder.getContext(),
-                                                          type.getBitWidth(),
-                                                          /*isConst=*/true),
+                                                          type.getBitWidth()),
                                             APInt::getZero(type.getBitWidth()));
             return BitCastOp::create(builder, type, value);
           })
           .Case<BundleType>([&](auto type) {
             auto wireOp = WireOp::create(builder, type);
             for (unsigned i = 0, e = type.getNumElements(); i < e; ++i) {
-              auto fieldType = type.getElementTypePreservingConst(i);
+              auto fieldType = type.getElement(i).type;
               auto zero = createZeroValue(builder, fieldType, cache);
               auto acc =
                   SubfieldOp::create(builder, fieldType, wireOp.getResult(), i);
@@ -171,7 +168,7 @@ static Value createZeroValue(ImplicitLocOpBuilder &builder, FIRRTLBaseType type,
           .Case<FVectorType>([&](auto type) {
             auto wireOp = WireOp::create(builder, type);
             auto zero = createZeroValue(
-                builder, type.getElementTypePreservingConst(), cache);
+                builder, type.getElementType(), cache);
             for (unsigned i = 0, e = type.getNumElements(); i < e; ++i) {
               auto acc = SubindexOp::create(builder, zero.getType(),
                                             wireOp.getResult(), i);
@@ -827,7 +824,7 @@ void InferResetsPass::traceResets(CircuitOp circuit) {
             traceResets(baseType, op.getResult(), 0, baseType.getPassiveType(),
                         ref.getValue(), ref.getFieldID(), op.getLoc());
           })
-          .Case<UninferredResetCastOp, ConstCastOp, RefCastOp>([&](auto op) {
+          .Case<UninferredResetCastOp, RefCastOp>([&](auto op) {
             traceResets(op.getResult(), op.getInput(), op.getLoc());
           })
           .Case<InvalidValueOp>([&](auto op) {
@@ -1149,7 +1146,7 @@ LogicalResult InferResetsPass::updateReset(ResetNetwork net, ResetKind kind) {
     Value value = signal.field.getValue();
     if (!isa<BlockArgument>(value) &&
         !isa_and_nonnull<WireOp, RegOp, RegResetOp, InstanceOp, InvalidValueOp,
-                         ConstCastOp, RefCastOp, UninferredResetCastOp,
+                         RefCastOp, UninferredResetCastOp,
                          RWProbeOp>(value.getDefiningOp()))
       continue;
     if (updateReset(signal.field, resetType)) {
@@ -1240,10 +1237,10 @@ LogicalResult InferResetsPass::updateReset(ResetNetwork net, ResetKind kind) {
 /// Update the type of a single field within a type.
 static FIRRTLBaseType updateType(FIRRTLBaseType oldType, unsigned fieldID,
                                  FIRRTLBaseType fieldType) {
-  // If this is a ground type, simply replace it, preserving constness.
+  // If this is a ground type, simply replace it.
   if (oldType.isGround()) {
     assert(fieldID == 0);
-    return fieldType.getConstType(oldType.isConst());
+    return fieldType;
   }
 
   // If this is a bundle type, update the corresponding field.
@@ -1253,15 +1250,14 @@ static FIRRTLBaseType updateType(FIRRTLBaseType oldType, unsigned fieldID,
                                                   bundleType.end());
     fields[index].type = updateType(
         fields[index].type, fieldID - getFieldID(bundleType, index), fieldType);
-    return BundleType::get(oldType.getContext(), fields, bundleType.isConst());
+    return BundleType::get(oldType.getContext(), fields);
   }
 
   // If this is a vector type, update the element type.
   if (auto vectorType = type_dyn_cast<FVectorType>(oldType)) {
     auto newType = updateType(vectorType.getElementType(),
                               fieldID - getFieldID(vectorType), fieldType);
-    return FVectorType::get(newType, vectorType.getNumElements(),
-                            vectorType.isConst());
+    return FVectorType::get(newType, vectorType.getNumElements());
   }
 
   llvm_unreachable("unknown aggregate type");

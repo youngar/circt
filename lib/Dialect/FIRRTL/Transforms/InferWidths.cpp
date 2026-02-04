@@ -1544,7 +1544,7 @@ LogicalResult InferenceMapping::mapOperation(Operation *op) {
       })
 
       // Handle operations whose output width matches the input width.
-      .Case<NotPrimOp, AsSIntPrimOp, AsUIntPrimOp, ConstCastOp>(
+      .Case<NotPrimOp, AsSIntPrimOp, AsUIntPrimOp>(
           [&](auto op) { setExpr(op.getResult(), getExpr(op.getInput())); })
       .Case<mlir::UnrealizedConversionCastOp>(
           [&](auto op) { setExpr(op.getResult(0), getExpr(op.getOperand(0))); })
@@ -2139,13 +2139,13 @@ static FIRRTLBaseType resizeType(FIRRTLBaseType type, uint32_t newWidth) {
   auto *context = type.getContext();
   return FIRRTLTypeSwitch<FIRRTLBaseType, FIRRTLBaseType>(type)
       .Case<UIntType>([&](auto type) {
-        return UIntType::get(context, newWidth, type.isConst());
+        return UIntType::get(context, newWidth);
       })
       .Case<SIntType>([&](auto type) {
-        return SIntType::get(context, newWidth, type.isConst());
+        return SIntType::get(context, newWidth);
       })
       .Case<AnalogType>([&](auto type) {
-        return AnalogType::get(context, newWidth, type.isConst());
+        return AnalogType::get(context, newWidth);
       })
       .Default([&](auto type) { return type; });
 }
@@ -2209,7 +2209,7 @@ FailureOr<bool> InferenceTypeUpdate::updateValue(Value value) {
           return {};
         elements.emplace_back(element.name, element.isFlip, updatedBase);
       }
-      return BundleType::get(context, elements, bundleType.isConst());
+      return BundleType::get(context, elements);
     }
     if (auto vecType = type_dyn_cast<FVectorType>(type)) {
       fieldID++;
@@ -2220,8 +2220,7 @@ FailureOr<bool> InferenceTypeUpdate::updateValue(Value value) {
         auto updatedBase = updateBase(vecType.getElementType());
         if (!updatedBase)
           return {};
-        auto newType = FVectorType::get(updatedBase, vecType.getNumElements(),
-                                        vecType.isConst());
+        auto newType = FVectorType::get(updatedBase, vecType.getNumElements());
         fieldID = save + vecType.getMaxFieldID();
         return newType;
       }

@@ -861,12 +861,11 @@ struct SimplifyResets : public OpReduction<CircuitOp> {
   }
 
   LogicalResult rewrite(CircuitOp circuit) override {
-    auto uint1Type = UIntType::get(circuit->getContext(), 1, false);
-    auto constUint1Type = UIntType::get(circuit->getContext(), 1, true);
+    auto uint1Type = UIntType::get(circuit->getContext(), 1);
 
     AttrTypeReplacer replacer;
     replacer.addReplacement([&](ResetType type) {
-      return type.isConst() ? constUint1Type : uint1Type;
+      return uint1Type;
     });
     replacer.recursivelyReplaceElementsIn(circuit, /*replaceAttrs=*/true,
                                           /*replaceLocs=*/false,

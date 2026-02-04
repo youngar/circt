@@ -757,22 +757,6 @@ circuit ForceBadTypesWithFlips:
 
 ;// -----
 
-FIRRTL version 4.0.0
-circuit RWProbeConst:
-  extmodule RWProbeConst:
-    output p : RWProbe<{a: const UInt}> ; expected-error {{rwprobe cannot contain const}}
-
-;// -----
-
-FIRRTL version 4.0.0
-circuit RWProbeConstPort:
-  public module RWProbeConstPort:
-    input in : const UInt<1>[2]
-    output p : RWProbe<UInt<1>>
-    define p = rwprobe(in[1]) ; expected-error {{cannot force target of type '!firrtl.const.uint<1>'}}
-
-;// -----
-
 FIRRTL version 2.0.0
 circuit PartialConnect_v2p0p0:
   module PartialConnect_v2p0p0:
@@ -806,20 +790,6 @@ circuit NodeProbe:
   public module NodeProbe:
     inst r of Ref
     node n = r.x ; expected-error {{Node cannot be analog and must be passive or passive under a flip}}
-
-;// -----
-
-FIRRTL version 4.0.0
-circuit ConstProbe:
-  public module ConstProbe:
-    output x : const Probe<UInt<1>> ; expected-error {{only hardware types can be 'const'}}
-
-;// -----
-
-FIRRTL version 4.0.0
-circuit MultiConst:
-  public module MultiConst:
-    output x : const const UInt<1> ; expected-error {{'const' can only be specified once on a type}}
 
 ;// -----
 
@@ -1275,15 +1245,6 @@ circuit Top:
     output out : Bool
     ; expected-error @below {{expected true or false in Bool expression}}
     propassign out, Bool(0)
-
-;// -----
-; Properties can't be const.
-FIRRTL version 5.1.0
-
-circuit Top:
-  public module Top:
-    ; expected-error @below {{only hardware types can be 'const'}}
-    output out : const Bool
 
 ;// -----
 ; AnyRef not yet supported.

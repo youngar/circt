@@ -73,8 +73,6 @@ struct RecursiveTypeProperties {
   bool containsReference : 1;
   /// Whether the type contains an analog type.
   bool containsAnalog : 1;
-  /// Whether the type contains a const type.
-  bool containsConst : 1;
   /// Whether the type contains a type alias.
   bool containsTypeAlias : 1;
   /// Whether the type has any uninferred bit widths.
@@ -98,9 +96,6 @@ public:
   //===--------------------------------------------------------------------===//
   // Convenience methods for accessing recursive type properties
   //===--------------------------------------------------------------------===//
-
-  /// Returns true if this is or contains a 'const' type.
-  bool containsConst() { return getRecursiveTypeProperties().containsConst; }
 
   /// Return true if this is or contains an Analog type.
   bool containsAnalog() { return getRecursiveTypeProperties().containsAnalog; }
@@ -132,10 +127,6 @@ public:
   /// Return true if this is a 'ground' type, aka a non-aggregate type.
   bool isGround();
 
-  /// Returns true if this is a 'const' type that can only hold compile-time
-  /// constant values
-  bool isConst() const;
-
 protected:
   using Type::Type;
 };
@@ -147,10 +138,6 @@ class FIRRTLBaseType
 public:
   using Base::Base;
 
-  /// Returns true if this is a 'const' type that can only hold compile-time
-  /// constant values
-  bool isConst() const;
-
   /// Return true if this is a "passive" type - one that contains no "flip"
   /// types recursively within itself.
   bool isPassive() const { return getRecursiveTypeProperties().isPassive; }
@@ -161,12 +148,6 @@ public:
   /// Return this type with any type alias types recursively removed from
   /// itself.
   FIRRTLBaseType getAnonymousType();
-
-  /// Return a 'const' or non-'const' version of this type.
-  FIRRTLBaseType getConstType(bool isConst) const;
-
-  /// Return this type with a 'const' modifiers dropped
-  FIRRTLBaseType getAllConstDroppedType();
 
   /// Return this type with all ground types replaced with UInt<1>.  This is
   /// used for `mem` operations.
@@ -190,22 +171,14 @@ public:
                       OpenVectorType, FStringType, DomainType>(type);
   }
 
-  /// Returns true if this is a non-const "passive" that which is not analog.
+  /// Returns true if this is a "passive" that which is not analog.
   bool isRegisterType() {
-    return isPassive() && !containsAnalog() && !containsConst();
+    return isPassive() && !containsAnalog();
   }
 
   /// Return true if this is a valid "reset" type.
   bool isResetType();
 };
-
-/// Returns true if this is a 'const' type whose value is guaranteed to be
-/// unchanging at circuit execution time
-bool isConst(Type type);
-
-/// Returns true if the type is or contains a 'const' type whose value is
-/// guaranteed to be unchanging at circuit execution time
-bool containsConst(Type type);
 
 /// Return true if the type has zero bit width.
 bool hasZeroBitWidth(FIRRTLType type);
@@ -215,8 +188,6 @@ bool hasZeroBitWidth(FIRRTLType type);
 /// compared have any outer flips that encode FIRRTL module directions (input or
 /// output), these should be stripped before using this method.
 bool areTypesEquivalent(FIRRTLType destType, FIRRTLType srcType,
-                        bool destOuterTypeIsConst = false,
-                        bool srcOuterTypeIsConst = false,
                         bool requireSameWidths = false);
 
 /// Returns true if two types are weakly equivalent.  See the FIRRTL spec,
@@ -224,13 +195,7 @@ bool areTypesEquivalent(FIRRTLType destType, FIRRTLType srcType,
 /// (the types with any flips pushed to the leaves) must match.  This allows for
 /// types with flips in different positions to be equivalent.
 bool areTypesWeaklyEquivalent(FIRRTLType destType, FIRRTLType srcType,
-                              bool destFlip = false, bool srcFlip = false,
-                              bool destOuterTypeIsConst = false,
-                              bool srcOuterTypeIsConst = false);
-
-/// Returns whether the srcType can be const-casted to the destType.
-bool areTypesConstCastable(FIRRTLType destType, FIRRTLType srcType,
-                           bool srcOuterTypeIsConst = false);
+                              bool destFlip = false, bool srcFlip = false);
 
 /// Return true if destination ref type can be cast from source ref type,
 /// per FIRRTL spec rules they must be identical or destination has
@@ -299,19 +264,15 @@ class IntType : public FIRRTLBaseType, public WidthQualifiedTypeTrait<IntType> {
 public:
   using FIRRTLBaseType::FIRRTLBaseType;
 
-  /// Return an SIntType or UIntType with the specified signedness, width, and
-  /// constness.
+  /// Return an SIntType or UIntType with the specified signedness and width.
   static IntType get(MLIRContext *context, bool isSigned,
-                     int32_t widthOrSentinel = -1, bool isConst = false);
+                     int32_t widthOrSentinel = -1);
 
   bool isSigned() { return mlir::isa<SIntType>(*this); }
   bool isUnsigned() { return mlir::isa<UIntType>(*this); }
 
   /// Return the width of this type, or -1 if it has none specified.
   int32_t getWidthOrSentinel() const;
-
-  /// Return a 'const' or non-'const' version of this type.
-  IntType getConstType(bool isConst) const;
 
   static bool classof(Type type) { return mlir::isa<SIntType, UIntType>(type); }
 };

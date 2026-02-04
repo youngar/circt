@@ -154,7 +154,7 @@ struct GenericIntrinsic {
       return emitError() << " output element " << n << " is named "
                          << elementName << " not " << name;
     if (!std::invoke(std::forward<C>(call),
-                     ty.getElementTypePreservingConst(n)))
+                     ty.getElement(n).type))
       return emitError() << " output element " << n << " " << msg;
     return success();
   }

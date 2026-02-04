@@ -455,41 +455,6 @@ firrtl.circuit "Foo" {
   // CHECK-NEXT:    parameter FORMAT = "xyz_timeout=%d\n"
   // CHECK-NEXT:    parameter WIDTH = 32
 
-  // CHECK-LABEL: module ConstTypes :
-  firrtl.module private @ConstTypes(
-    // CHECK-NEXT: input a00 : const Clock
-    // CHECK-NEXT: input a01 : const Reset
-    // CHECK-NEXT: input a02 : const AsyncReset
-    // CHECK-NEXT: input a03 : const UInt
-    // CHECK-NEXT: input a04 : const SInt
-    // CHECK-NEXT: input a05 : const Analog
-    // CHECK-NEXT: input a06 : const UInt<42>
-    // CHECK-NEXT: input a07 : const SInt<42>
-    // CHECK-NEXT: input a08 : const Analog<42>
-    // CHECK-NEXT: input a09 : const { a : UInt, flip b : UInt }
-    // CHECK-NEXT: input a10 : { a : const UInt, flip b : UInt }
-    // CHECK-NEXT: input a11 : const UInt[42]
-    // CHECK-NEXT: output b0 : const UInt<42>
-    in %a00: !firrtl.const.clock,
-    in %a01: !firrtl.const.reset,
-    in %a02: !firrtl.const.asyncreset,
-    in %a03: !firrtl.const.uint,
-    in %a04: !firrtl.const.sint,
-    in %a05: !firrtl.const.analog,
-    in %a06: !firrtl.const.uint<42>,
-    in %a07: !firrtl.const.sint<42>,
-    in %a08: !firrtl.const.analog<42>,
-    in %a09: !firrtl.const.bundle<a: uint, b flip: uint>,
-    in %a10: !firrtl.bundle<a: const.uint, b flip: uint>,
-    in %a11: !firrtl.const.vector<uint, 42>,
-    out %b0: !firrtl.const.uint<42>
-  ) {
-    // Make sure literals strip the 'const' prefix
-    // CHECK: connect b0, UInt<42>(1)
-    %c = firrtl.constant 1 : !firrtl.const.uint<42>
-    firrtl.matchingconnect %b0, %c : !firrtl.const.uint<42>
-  }
-
   // Test that literal identifiers work.
   // CHECK-LABEL: module `0Bar` :
   firrtl.module @"0Bar"(
@@ -616,11 +581,10 @@ firrtl.circuit "Foo" {
     %_21_data, %_21_port = chirrtl.memoryport Write %_19 {name = "21"} : (!chirrtl.cmemory<bundle<"0": uint<8>>, 32>) -> (!firrtl.bundle<"0": uint<8>>, !chirrtl.cmemoryport)
     %16 = firrtl.subfield %_21_data["0"] : !firrtl.bundle<"0": uint<8>>
     %_20 = chirrtl.seqmem Undefined  {name = "20"} : !chirrtl.cmemory<bundle<"0": uint<8>>, 32>
-    %c8_ui5 = firrtl.constant 8 : !firrtl.const.uint<5>
-    chirrtl.memoryport.access %_21_port[%c8_ui5], %_0 : !chirrtl.cmemoryport, !firrtl.const.uint<5>, !firrtl.clock
-    %c0_ui8 = firrtl.constant 0 : !firrtl.const.uint<8>
-    %17 = firrtl.constCast %c0_ui8 : (!firrtl.const.uint<8>) -> !firrtl.uint<8>
-    firrtl.matchingconnect %16, %17 : !firrtl.uint<8>
+    %c8_ui5 = firrtl.constant 8 : !firrtl.uint<5>
+    chirrtl.memoryport.access %_21_port[%c8_ui5], %_0 : !chirrtl.cmemoryport, !firrtl.uint<5>, !firrtl.clock
+    %c0_ui8 = firrtl.constant 0 : !firrtl.uint<8>
+    firrtl.matchingconnect %16, %c0_ui8 : !firrtl.uint<8>
 
     // CHECK-NEXT: stop(`0`, `3`, 1) : `22`
     // CHECK-NEXT: assert(`0`, `3`, `3`, "message") : `23`
@@ -929,30 +893,30 @@ firrtl.circuit "Foo" {
 
   // CHECK-LABEL: module Printf
   firrtl.module @Printf(in %clock: !firrtl.clock, in %i8: !firrtl.uint<8>) attributes {convention = #firrtl<convention scalarized>} {
-    %c1_ui1 = firrtl.constant 1 : !firrtl.const.uint<1>
+    %c1_ui1 = firrtl.constant 1 : !firrtl.uint<1>
 
     // CHECK: printf(clock, UInt<1>(1), "%b, %0b, %8b", i8, i8, i8)
-    firrtl.printf %clock, %c1_ui1, "%b, %0b, %8b" (%i8, %i8, %i8) : !firrtl.clock, !firrtl.const.uint<1>, !firrtl.uint<8>, !firrtl.uint<8>, !firrtl.uint<8>
+    firrtl.printf %clock, %c1_ui1, "%b, %0b, %8b" (%i8, %i8, %i8) : !firrtl.clock, !firrtl.uint<1>, !firrtl.uint<8>, !firrtl.uint<8>, !firrtl.uint<8>
     // CHECK: printf(clock, UInt<1>(1), "%d, %0d, %8d", i8, i8, i8)
-    firrtl.printf %clock, %c1_ui1, "%d, %0d, %8d" (%i8, %i8, %i8) : !firrtl.clock, !firrtl.const.uint<1>, !firrtl.uint<8>, !firrtl.uint<8>, !firrtl.uint<8>
+    firrtl.printf %clock, %c1_ui1, "%d, %0d, %8d" (%i8, %i8, %i8) : !firrtl.clock, !firrtl.uint<1>, !firrtl.uint<8>, !firrtl.uint<8>, !firrtl.uint<8>
     // CHECK: printf(clock, UInt<1>(1), "%x, %0x, %8x", i8, i8, i8)
-    firrtl.printf %clock, %c1_ui1, "%x, %0x, %8x" (%i8, %i8, %i8) : !firrtl.clock, !firrtl.const.uint<1>, !firrtl.uint<8>, !firrtl.uint<8>, !firrtl.uint<8>
+    firrtl.printf %clock, %c1_ui1, "%x, %0x, %8x" (%i8, %i8, %i8) : !firrtl.clock, !firrtl.uint<1>, !firrtl.uint<8>, !firrtl.uint<8>, !firrtl.uint<8>
 
     // CHECK: printf(clock, UInt<1>(1), "%c", i8)
-    firrtl.printf %clock, %c1_ui1, "%c" (%i8) : !firrtl.clock, !firrtl.const.uint<1>, !firrtl.uint<8>
+    firrtl.printf %clock, %c1_ui1, "%c" (%i8) : !firrtl.clock, !firrtl.uint<1>, !firrtl.uint<8>
 
     // CHECK: printf(clock, UInt<1>(1), "%%")
-    firrtl.printf %clock, %c1_ui1, "%%" : !firrtl.clock, !firrtl.const.uint<1>
+    firrtl.printf %clock, %c1_ui1, "%%" : !firrtl.clock, !firrtl.uint<1>
 
     // CHECK: fprintf(clock, UInt<1>(1), "test.txt", "%%")
-    firrtl.fprintf %clock, %c1_ui1, "test.txt", "%%" : !firrtl.clock, !firrtl.const.uint<1>
+    firrtl.fprintf %clock, %c1_ui1, "test.txt", "%%" : !firrtl.clock, !firrtl.uint<1>
 
     // CHECK: fflush(clock, UInt<1>(1))
-    firrtl.fflush %clock, %c1_ui1 : !firrtl.clock, !firrtl.const.uint<1>
+    firrtl.fflush %clock, %c1_ui1 : !firrtl.clock, !firrtl.uint<1>
 
     // CHECK{LITERAL}: fflush(clock, UInt<1>(1), "test%d{{SimulationTime}}.txt", UInt<1>(1))
     %time = firrtl.fstring.time : !firrtl.fstring
-    firrtl.fflush %clock, %c1_ui1, "test%d{{}}.txt"(%c1_ui1, %time) : !firrtl.clock, !firrtl.const.uint<1>, !firrtl.const.uint<1>, !firrtl.fstring
+    firrtl.fflush %clock, %c1_ui1, "test%d{{}}.txt"(%c1_ui1, %time) : !firrtl.clock, !firrtl.uint<1>, !firrtl.uint<1>, !firrtl.fstring
   }
 
   // CHECK-LABEL: module Concat :

@@ -966,7 +966,7 @@ firrtl.circuit "Top" {
 
 firrtl.circuit "AnalogRegister" {
   firrtl.module @AnalogRegister(in %clock: !firrtl.clock) {
-    // expected-error @+1 {{'firrtl.reg' op result #0 must be a passive non-'const' base type that does not contain analog, but got '!firrtl.analog'}}
+    // expected-error @+1 {{'firrtl.reg' op result #0 must be a passive base type that does not contain analog, but got '!firrtl.analog'}}
     %r = firrtl.reg %clock : !firrtl.clock, !firrtl.analog
   }
 }
@@ -975,7 +975,7 @@ firrtl.circuit "AnalogRegister" {
 
 firrtl.circuit "AnalogVectorRegister" {
   firrtl.module @AnalogVectorRegister(in %clock: !firrtl.clock) {
-    // expected-error @+1 {{'firrtl.reg' op result #0 must be a passive non-'const' base type that does not contain analog, but got '!firrtl.vector<analog, 2>'}}
+    // expected-error @+1 {{'firrtl.reg' op result #0 must be a passive base type that does not contain analog, but got '!firrtl.vector<analog, 2>'}}
     %r = firrtl.reg %clock : !firrtl.clock, !firrtl.vector<analog, 2>
   }
 }
@@ -1121,7 +1121,7 @@ firrtl.module @NonRefNode() {
 
 firrtl.circuit "NonRefRegister" {
   firrtl.module @NonRefRegister(in %clock: !firrtl.clock) {
-    // expected-error @+1 {{'firrtl.reg' op result #0 must be a passive non-'const' base type that does not contain analog}}
+    // expected-error @+1 {{'firrtl.reg' op result #0 must be a passive base type that does not contain analog}}
     %r = firrtl.reg %clock : !firrtl.clock, !firrtl.probe<uint<8>>
   }
 }
@@ -1320,19 +1320,6 @@ firrtl.circuit "CastPromoteToRWProbe" {
 }
 
 // -----
-// Can't add const-ness via ref.cast
-
-firrtl.circuit "CastToMoreConst" {
-  firrtl.module @CastToMoreConst(out %r: !firrtl.probe<const.uint<3>>) {
-    %zero = firrtl.wire : !firrtl.uint<3>
-    %zref = firrtl.ref.send %zero : !firrtl.uint<3>
-    // expected-error @below {{reference result must be compatible with reference input: recursively same or uninferred of same}}
-    %zconst_ref= firrtl.ref.cast %zref : (!firrtl.probe<uint<3>>) -> !firrtl.probe<const.uint<3>>
-    firrtl.ref.define %r, %zconst_ref : !firrtl.probe<const.uint<3>>
-  }
-}
-
-// -----
 // Check that you can't drive a source.
 
 firrtl.circuit "PropertyDriveSource" {
@@ -1464,38 +1451,6 @@ firrtl.circuit "ForceableTypeMismatch" {
 
 // -----
 
-// Check rwprobe<const T> is rejected.
-firrtl.circuit "ForceableConstWire" {
-  firrtl.module @ForceableConstWire() {
-    // expected-error @below {{forceable reference base type cannot contain const}}
-    %w, %w_f = firrtl.wire forceable : !firrtl.const.uint, !firrtl.rwprobe<const.uint>
-  }
-}
-
-// -----
-
-// Check forceable declarations of const-type w/o explicit ref type are rejected.
-firrtl.circuit "ForceableConstNode" {
-  firrtl.module @ForceableConstNode() {
-    %w = firrtl.wire : !firrtl.const.uint
-    // expected-error @below {{cannot force a node of type}}
-    %n, %n_ref = firrtl.node %w forceable : !firrtl.const.uint
-  }
-}
-
-// -----
-
-// Check forceable declarations of const-type w/o explicit ref type are rejected.
-firrtl.circuit "ForceableBundleConstNode" {
-  firrtl.module @ForceableBundleConstNode() {
-    %w = firrtl.wire : !firrtl.bundle<a: const.uint>
-    // expected-error @below {{cannot force a node of type}}
-    %n, %n_ref = firrtl.node %w forceable : !firrtl.bundle<a: const.uint>
-  }
-}
-
-// -----
-
 firrtl.circuit "RefForceProbe" {
   firrtl.module @RefForceProbe() {
     %a = firrtl.wire : !firrtl.uint<1>
@@ -1544,266 +1499,6 @@ firrtl.module @SubtagNoCase(in %in : !firrtl.enum<None: uint<0>, Some: uint<8>>)
 }
 
 // -----
-// 'const' firrtl.reg is invalid
-
-firrtl.circuit "ConstReg" {
-firrtl.module @ConstReg(in %clock: !firrtl.clock) {
-  // expected-error @+1 {{'firrtl.reg' op result #0 must be a passive non-'const' base type that does not contain analog, but got '!firrtl.const.uint<1>'}}
-  %r = firrtl.reg %clock : !firrtl.clock, !firrtl.const.uint<1>
-}
-}
-
-// -----
-// 'const' firrtl.reg is invalid
-
-firrtl.circuit "ConstBundleReg" {
-firrtl.module @ConstBundleReg(in %clock: !firrtl.clock) {
-  // expected-error @+1 {{'firrtl.reg' op result #0 must be a passive non-'const' base type that does not contain analog, but got '!firrtl.const.bundle<a: uint<1>>'}}
-  %r = firrtl.reg %clock : !firrtl.clock, !firrtl.const.bundle<a: uint<1>>
-}
-}
-
-// -----
-// 'const' firrtl.reg is invalid
-
-firrtl.circuit "ConstVectorReg" {
-firrtl.module @ConstVectorReg(in %clock: !firrtl.clock) {
-  // expected-error @+1 {{'firrtl.reg' op result #0 must be a passive non-'const' base type that does not contain analog, but got '!firrtl.const.vector<uint<1>, 3>'}}
-  %r = firrtl.reg %clock : !firrtl.clock, !firrtl.const.vector<uint<1>, 3>
-}
-}
-
-// -----
-// 'const' firrtl.reg is invalid
-
-firrtl.circuit "ConstEnumReg" {
-firrtl.module @ConstEnumReg(in %clock: !firrtl.clock) {
-  // expected-error @+1 {{'firrtl.reg' op result #0 must be a passive non-'const' base type that does not contain analog, but got '!firrtl.const.enum<a: uint<1>>'}}
-  %r = firrtl.reg %clock : !firrtl.clock, !firrtl.const.enum<a: uint<1>>
-}
-}
-
-// -----
-// 'const' firrtl.regreset is invalid
-
-firrtl.circuit "ConstRegReset" {
-firrtl.module @ConstRegReset(in %clock: !firrtl.clock, in %reset: !firrtl.asyncreset, in %resetVal: !firrtl.const.uint<1>) {
-  // expected-error @+1 {{'firrtl.regreset' op result #0 must be a passive non-'const' base type that does not contain analog, but got '!firrtl.const.uint<1>'}}
-  %r = firrtl.regreset %clock, %reset, %resetVal : !firrtl.clock, !firrtl.asyncreset, !firrtl.const.uint<1>, !firrtl.const.uint<1>
-}
-}
-
-// -----
-// 'const' firrtl.regreset is invalid
-
-firrtl.circuit "ConstRegReset" {
-firrtl.module @ConstRegReset(in %clock: !firrtl.clock, in %reset: !firrtl.asyncreset, in %resetVal: !firrtl.const.uint<1>) {
-  // expected-error @+1 {{'firrtl.regreset' op result #0 must be a passive non-'const' base type that does not contain analog, but got '!firrtl.const.uint<1>'}}
-  %r = firrtl.regreset %clock, %reset, %resetVal : !firrtl.clock, !firrtl.asyncreset, !firrtl.const.uint<1>, !firrtl.const.uint<1>
-}
-}
-
-// -----
-// 'const' firrtl.regreset is invalid
-
-firrtl.circuit "ConstBundleRegReset" {
-firrtl.module @ConstBundleRegReset(in %clock: !firrtl.clock, in %reset: !firrtl.asyncreset, in %resetVal: !firrtl.const.bundle<a: uint<1>>) {
-  // expected-error @+1 {{'firrtl.regreset' op result #0 must be a passive non-'const' base type that does not contain analog, but got '!firrtl.const.bundle<a: uint<1>>'}}
-  %r = firrtl.regreset %clock, %reset, %resetVal : !firrtl.clock, !firrtl.asyncreset, !firrtl.const.bundle<a: uint<1>>, !firrtl.const.bundle<a: uint<1>>
-}
-}
-
-// -----
-// 'const' firrtl.regreset is invalid
-
-firrtl.circuit "ConstVectorRegReset" {
-firrtl.module @ConstVectorRegReset(in %clock: !firrtl.clock, in %reset: !firrtl.asyncreset, in %resetVal: !firrtl.const.vector<uint<1>, 3>) {
-  // expected-error @+1 {{'firrtl.regreset' op result #0 must be a passive non-'const' base type that does not contain analog, but got '!firrtl.const.vector<uint<1>, 3>'}}
-  %r = firrtl.regreset %clock, %reset, %resetVal : !firrtl.clock, !firrtl.asyncreset, !firrtl.const.vector<uint<1>, 3>, !firrtl.const.vector<uint<1>, 3>
-}
-}
-
-// -----
-// 'const' firrtl.regreset is invalid
-
-firrtl.circuit "ConstEnumRegReset" {
-firrtl.module @ConstEnumRegReset(in %clock: !firrtl.clock, in %reset: !firrtl.asyncreset, in %resetVal: !firrtl.const.enum<a: uint<1>>) {
-  // expected-error @+1 {{'firrtl.regreset' op result #0 must be a passive non-'const' base type that does not contain analog, but got '!firrtl.const.enum<a: uint<1>>'}}
-  %r = firrtl.regreset %clock, %reset, %resetVal : !firrtl.clock, !firrtl.asyncreset, !firrtl.const.enum<a: uint<1>>, !firrtl.const.enum<a: uint<1>>
-}
-}
-
-// -----
-// nested 'const' firrtl.reg is invalid
-
-firrtl.circuit "BundleNestedConstReg" {
-firrtl.module @BundleNestedConstReg(in %clock: !firrtl.clock) {
-  // expected-error @+1 {{'firrtl.reg' op result #0 must be a passive non-'const' base type that does not contain analog, but got '!firrtl.bundle<a: const.uint<1>>'}}
-  %r = firrtl.reg %clock : !firrtl.clock, !firrtl.bundle<a: const.uint<1>>
-}
-}
-
-// -----
-// nested 'const' firrtl.reg is invalid
-
-firrtl.circuit "VectorNestedConstReg" {
-firrtl.module @VectorNestedConstReg(in %clock: !firrtl.clock) {
-  // expected-error @+1 {{'firrtl.reg' op result #0 must be a passive non-'const' base type that does not contain analog, but got '!firrtl.vector<const.uint<1>, 3>'}}
-  %r = firrtl.reg %clock : !firrtl.clock, !firrtl.vector<const.uint<1>, 3>
-}
-}
-
-// -----
-// nested 'const' firrtl.regreset is invalid
-
-firrtl.circuit "BundleNestedConstRegReset" {
-firrtl.module @BundleNestedConstRegReset(in %clock: !firrtl.clock, in %reset: !firrtl.asyncreset, in %resetVal: !firrtl.const.bundle<a: uint<1>>) {
-  // expected-error @+1 {{'firrtl.regreset' op result #0 must be a passive non-'const' base type that does not contain analog, but got '!firrtl.bundle<a: const.uint<1>>'}}
-  %r = firrtl.regreset %clock, %reset, %resetVal : !firrtl.clock, !firrtl.asyncreset, !firrtl.const.bundle<a: uint<1>>, !firrtl.bundle<a: const.uint<1>>
-}
-}
-
-// -----
-// 'const' firrtl.regreset is invalid
-
-firrtl.circuit "VectorNestedConstRegReset" {
-firrtl.module @VectorNestedConstRegReset(in %clock: !firrtl.clock, in %reset: !firrtl.asyncreset, in %resetVal: !firrtl.vector<const.uint<1>, 3>) {
-  // expected-error @+1 {{'firrtl.regreset' op result #0 must be a passive non-'const' base type that does not contain analog, but got '!firrtl.vector<const.uint<1>, 3>'}}
-  %r = firrtl.regreset %clock, %reset, %resetVal : !firrtl.clock, !firrtl.asyncreset, !firrtl.vector<const.uint<1>, 3>, !firrtl.vector<const.uint<1>, 3>
-}
-}
-
-// -----
-// 'const' firrtl.regreset is invalid
-
-firrtl.circuit "EnumNestedConstRegReset" {
-firrtl.module @EnumNestedConstRegReset(in %clock: !firrtl.clock, in %reset: !firrtl.asyncreset, in %resetVal: !firrtl.const.enum<a: uint<1>>) {
-  // expected-error @+1 {{'firrtl.regreset' op result #0 must be a passive non-'const' base type that does not contain analog, but got '!firrtl.const.enum<a: uint<1>>'}}
-  %r = firrtl.regreset %clock, %reset, %resetVal : !firrtl.clock, !firrtl.asyncreset, !firrtl.const.enum<a: uint<1>>, !firrtl.const.enum<a: uint<1>>
-}
-}
-
-// -----
-// const hardware firrtl.string is invalid
-
-firrtl.circuit "ConstHardwareString" {
-// expected-error @+1 {{strings cannot be const}}
-firrtl.module @ConstHardwareString(in %string: !firrtl.const.string) {}
-}
-
-// -----
-
-// Constcast non-const to const
-firrtl.circuit "ConstcastNonConstToConst" {
-  firrtl.module @ConstcastNonConstToConst(in %a: !firrtl.uint<1>) {
-    // expected-error @+1 {{'!firrtl.uint<1>' is not 'const'-castable to '!firrtl.const.uint<1>'}}
-    %b = firrtl.constCast %a : (!firrtl.uint<1>) -> !firrtl.const.uint<1>
-  }
-}
-
-// -----
-
-// Constcast non-const to const-containing
-firrtl.circuit "ConstcastNonConstToConst" {
-  firrtl.module @ConstcastNonConstToConst(in %a: !firrtl.bundle<a: uint<1>>) {
-    // expected-error @+1 {{'!firrtl.bundle<a: uint<1>>' is not 'const'-castable to '!firrtl.bundle<a: const.uint<1>>'}}
-    %b = firrtl.constCast %a : (!firrtl.bundle<a: uint<1>>) -> !firrtl.bundle<a: const.uint<1>>
-  }
-}
-
-// -----
-
-// Constcast different types
-firrtl.circuit "ConstcastDifferentTypes" {
-  firrtl.module @ConstcastDifferentTypes(in %a: !firrtl.const.uint<1>) {
-    // expected-error @+1 {{'!firrtl.const.uint<1>' is not 'const'-castable to '!firrtl.sint<1>'}}
-    %b = firrtl.constCast %a : (!firrtl.const.uint<1>) -> !firrtl.sint<1>
-  }
-}
-
-// -----
-
-// Bitcast non-const to const
-firrtl.circuit "BitcastNonConstToConst" {
-  firrtl.module @BitcastNonConstToConst(in %a: !firrtl.uint<1>) {
-    // expected-error @+1 {{cannot cast non-'const' input type '!firrtl.uint<1>' to 'const' result type '!firrtl.const.sint<1>'}}
-    %b = firrtl.bitcast %a : (!firrtl.uint<1>) -> !firrtl.const.sint<1>
-  }
-}
-
-// -----
-
-// Bitcast non-const to const-containing
-firrtl.circuit "BitcastNonConstToConstContaining" {
-  firrtl.module @BitcastNonConstToConstContaining(in %a: !firrtl.bundle<a: uint<1>>) {
-    // expected-error @+1 {{cannot cast non-'const' input type '!firrtl.bundle<a: uint<1>>' to 'const' result type '!firrtl.bundle<a: const.sint<1>>'}}
-    %b = firrtl.bitcast %a : (!firrtl.bundle<a: uint<1>>) -> !firrtl.bundle<a: const.sint<1>>
-  }
-}
-
-// -----
-
-// Uninferred reset cast non-const to const
-firrtl.circuit "UninferredWidthCastNonConstToConst" {
-  firrtl.module @UninferredWidthCastNonConstToConst(in %a: !firrtl.reset) {
-    // expected-error @+1 {{operand constness must match}}
-    %b = firrtl.resetCast %a : (!firrtl.reset) -> !firrtl.const.asyncreset
-  }
-}
-
-// -----
-
-// Primitive ops with all 'const' operands must have a 'const' result type
-firrtl.circuit "PrimOpConstOperandsNonConstResult" {
-firrtl.module @PrimOpConstOperandsNonConstResult(in %a: !firrtl.const.uint<4>, in %b: !firrtl.const.uint<4>) {
-  // expected-error @below {{failed to infer returned types}}
-  // expected-error @+1 {{'firrtl.and' op inferred type(s) '!firrtl.const.uint<4>' are incompatible with return type(s) of operation '!firrtl.uint<4>'}}
-  %0 = firrtl.and %a, %b : (!firrtl.const.uint<4>, !firrtl.const.uint<4>) -> !firrtl.uint<4>
-}
-}
-
-// -----
-
-// Primitive ops with mixed 'const' operands must have a non-'const' result type
-firrtl.circuit "PrimOpMixedConstOperandsConstResult" {
-firrtl.module @PrimOpMixedConstOperandsConstResult(in %a: !firrtl.const.uint<4>, in %b: !firrtl.uint<4>) {
-  // expected-error @below {{failed to infer returned types}}
-  // expected-error @+1 {{'firrtl.and' op inferred type(s) '!firrtl.uint<4>' are incompatible with return type(s) of operation '!firrtl.const.uint<4>'}}
-  %0 = firrtl.and %a, %b : (!firrtl.const.uint<4>, !firrtl.uint<4>) -> !firrtl.const.uint<4>
-}
-}
-
-// -----
-
-// A 'const' bundle can only be created with 'const' operands
-firrtl.circuit "ConstBundleCreateNonConstOperands" {
-firrtl.module @ConstBundleCreateNonConstOperands(in %a: !firrtl.uint<1>) {
-  // expected-error @+1 {{type of element doesn't match bundle for field "a"}}
-  %0 = firrtl.bundlecreate %a : (!firrtl.uint<1>) -> !firrtl.const.bundle<a: uint<1>>
-}
-}
-
-// -----
-
-// A 'const' vector can only be created with 'const' operands
-firrtl.circuit "ConstVectorCreateNonConstOperands" {
-firrtl.module @ConstVectorCreateNonConstOperands(in %a: !firrtl.uint<1>) {
-  // expected-error @+1 {{type of element doesn't match vector element}}
-  %0 = firrtl.vectorcreate %a : (!firrtl.uint<1>) -> !firrtl.const.vector<uint<1>, 1>
-}
-}
-
-// -----
-
-// A 'const' enum can only be created with 'const' operands
-firrtl.circuit "ConstEnumCreateNonConstOperands" {
-firrtl.module @ConstEnumCreateNonConstOperands(in %a: !firrtl.uint<1>) {
-  // expected-error @+1 {{type of element doesn't match enum element}}
-  %0 = firrtl.enumcreate Some(%a) : (!firrtl.uint<1>) -> !firrtl.const.enum<None: uint<0>, Some: uint<1>>
-}
-}
-
-// -----
 
 // Enum types must be passive
 firrtl.circuit "EnumNonPassive" {
@@ -1837,14 +1532,6 @@ firrtl.circuit "EnumUninferredReset" {
 
 // -----
 
-// An enum that contains 'const' elements must be 'const'
-firrtl.circuit "NonConstEnumConstElements" {
-// expected-error @+1 {{enum with 'const' elements must be 'const'}}
-firrtl.module @NonConstEnumConstElements(in %a: !firrtl.enum<None: uint<0>, Some: const.uint<1>>) {}
-}
-
-// -----
-
 firrtl.circuit "EnumDupVarName" {
   // expected-error @+1 {{duplicate variant name "a" in enum}}
   firrtl.module @EnumDupVarName(in %enum : !firrtl.enum<a, a>) { }
@@ -1855,14 +1542,6 @@ firrtl.circuit "EnumDupVarName" {
 firrtl.circuit "EnumDupVarValue" {
   // expected-error @+1 {{enum variant "b" has value 0 : ui0 which is not greater than previous variant 0 : ui0}}
   firrtl.module @EnumDupVarValue(in %enum : !firrtl.enum<a, b=0>) { }
-}
-
-// -----
-// No const with probes within.
-
-firrtl.circuit "ConstOpenVector" {
-  // expected-error @below {{vector cannot be const with references}}
-  firrtl.extmodule @ConstOpenVector(out out : !firrtl.const.openvector<probe<uint<1>>, 2>)
 }
 
 // -----
@@ -1879,14 +1558,6 @@ firrtl.circuit "DupFieldsBundle" {
 firrtl.circuit "DupFieldsOpenBundle" {
   // expected-error @below {{duplicate field name "a" in openbundle}}
   firrtl.extmodule @DupFieldsOpenBundle(out out : !firrtl.openbundle<a: uint<1>, a: uint<1>>)
-}
-
-// -----
-// No const with probes within.
-
-firrtl.circuit "ConstOpenBundle" {
-  // expected-error @below {{'const' bundle cannot have references, but element "x" has type '!firrtl.probe<uint<1>>'}}
-  firrtl.extmodule @ConstOpenBundle(out out : !firrtl.const.openbundle<x: probe<uint<1>>>)
 }
 
 // -----
@@ -2184,14 +1855,6 @@ firrtl.circuit "ClassTypeWrongPortType" {
   firrtl.class @MyClass(out %str: !firrtl.string) {}
   // expected-error @below {{'firrtl.module' op port "str" has wrong type, got '!firrtl.integer', expected '!firrtl.string'}}
   firrtl.module @ClassTypeWrongPortType(out %port: !firrtl.class<@MyClass(out str: !firrtl.integer)>) {}
-}
-
-// -----
-
-firrtl.circuit "ConstClassType" {
-  firrtl.class @MyClass(out %str: !firrtl.string) {}
-  // expected-error @below {{classes cannot be const}}
-  firrtl.module @ConstClassType(out %port: !firrtl.const.class<@MyClass(in str: !firrtl.string)>) {}
 }
 
 // -----

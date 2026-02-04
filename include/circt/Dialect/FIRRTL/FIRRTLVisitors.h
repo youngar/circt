@@ -63,7 +63,7 @@ public:
             RefResolveOp, RefSubOp, RWProbeOp, XMRRefOp, XMRDerefOp,
             UnsafeDomainCastOp,
             // Casts to deal with weird stuff
-            UninferredResetCastOp, ConstCastOp, RefCastOp,
+            UninferredResetCastOp, RefCastOp,
             // Property expressions.
             StringConstantOp, FIntegerConstantOp, BoolConstantOp,
             DoubleConstantOp, ListCreateOp, ListConcatOp, UnresolvedPathOp,
@@ -212,7 +212,6 @@ public:
   // Conversions.
   HANDLE(HWStructCastOp, Unhandled);
   HANDLE(UninferredResetCastOp, Unhandled);
-  HANDLE(ConstCastOp, Unhandled);
   HANDLE(BitCastOp, Unhandled);
   HANDLE(RefCastOp, Unhandled);
 

@@ -26,9 +26,7 @@ class FIRRTLImplType<string name,
   // inherit from FIRRTLBaseTypeStorage
   let genStorageClass = false;
 
-  // MLIR generates awkward accessor "getIsConst" for the "isConst" parameter,
-  // which is common on FIRRTLBaseType anyway, so we generate the other
-  // accessors manually
+  // TODO: with const removed, start generating accessors.
   let genAccessors = false;
 }
 
@@ -40,10 +38,10 @@ def SIntImpl : FIRRTLImplType<"SInt",
                               [WidthQualifiedTypeTrait],
                               "::circt::firrtl::IntType"> {
   let summary = "A signed integer type, whose width may not be known.";
-  let parameters = (ins "int32_t":$widthOrSentinel, "bool":$isConst);
+  let parameters = (ins "int32_t":$widthOrSentinel);
   let storageClass = "WidthTypeStorage";
   let builders = [
-    TypeBuilder<(ins "std::optional<int32_t>":$width, CArg<"bool", "false">:$isConst)>,
+    TypeBuilder<(ins "std::optional<int32_t>":$width)>,
     TypeBuilder<(ins)>,
   ];
   let genVerifyDecl = true;
@@ -52,7 +50,6 @@ def SIntImpl : FIRRTLImplType<"SInt",
     using WidthQualifiedTypeTrait<SIntType>::getWidth;
     using WidthQualifiedTypeTrait<SIntType>::hasWidth;
     int32_t getWidthOrSentinel() const;
-    SIntType getConstType(bool isConst) const;
   }];
 }
 
@@ -60,10 +57,10 @@ def UIntImpl : FIRRTLImplType<"UInt",
                               [WidthQualifiedTypeTrait],
                               "::circt::firrtl::IntType"> {
   let summary = "An unsigned integer type, whose width may not be known.";
-  let parameters = (ins "int32_t":$widthOrSentinel, "bool":$isConst);
+  let parameters = (ins "int32_t":$widthOrSentinel);
   let storageClass = "WidthTypeStorage";
   let builders = [
-    TypeBuilder<(ins "std::optional<int32_t>":$width, CArg<"bool", "false">:$isConst)>,
+    TypeBuilder<(ins "std::optional<int32_t>":$width)>,
     TypeBuilder<(ins)>,
   ];
   let genVerifyDecl = true;
@@ -72,68 +69,57 @@ def UIntImpl : FIRRTLImplType<"UInt",
     using WidthQualifiedTypeTrait<UIntType>::getWidth;
     using WidthQualifiedTypeTrait<UIntType>::hasWidth;
     int32_t getWidthOrSentinel() const;
-    UIntType getConstType(bool isConst) const;
   }];
 }
 
 def ClockTypeImpl : FIRRTLImplType<"Clock"> {
   let summary = "Clock signal";
-  let parameters = (ins "bool":$isConst);
+  let parameters = (ins);
   let storageClass = "FIRRTLBaseTypeStorage";
   let typeName = "firrtl.clock";
   let builders = [
     TypeBuilder<(ins), [{
-      return $_get($_ctxt, false);
+      return $_get($_ctxt);
     }]>
   ];
-  let extraClassDeclaration = [{
-    ClockType getConstType(bool isConst) const;
-  }];
 }
 
 def ResetTypeImpl : FIRRTLImplType<"Reset"> {
   let summary = "Reset Signal";
-  let parameters = (ins "bool":$isConst);
+  let parameters = (ins);
   let storageClass = "FIRRTLBaseTypeStorage";
   let typeName = "firrtl.reset";
   let builders = [
     TypeBuilder<(ins), [{
-      return $_get($_ctxt, false);
+      return $_get($_ctxt);
     }]>
   ];
-  let extraClassDeclaration = [{
-    ResetType getConstType(bool isConst) const;
-  }];
 }
 
 def AsyncResetTypeImpl : FIRRTLImplType<"AsyncReset"> {
   let summary = "AsyncReset signal";
-  let parameters = (ins "bool":$isConst);
+  let parameters = (ins);
   let storageClass = "FIRRTLBaseTypeStorage";
   let typeName = "firrtl.asyncreset";
   let builders = [
     TypeBuilder<(ins), [{
-      return $_get($_ctxt, false);
+      return $_get($_ctxt);
     }]>
   ];
-  let extraClassDeclaration = [{
-    AsyncResetType getConstType(bool isConst) const;
-  }];
 }
 
 def AnalogTypeImpl : FIRRTLImplType<"Analog",
   [WidthQualifiedTypeTrait]> {
   let summary = "Analog signal";
-  let parameters = (ins "int32_t":$widthOrSentinel, "bool":$isConst);
+  let parameters = (ins "int32_t":$widthOrSentinel);
   let storageClass = "WidthTypeStorage";
   let typeName = "firrtl.analog";
   let builders = [
-    TypeBuilder<(ins "std::optional<int32_t>":$width, CArg<"bool", "false">:$isConst)>,
+    TypeBuilder<(ins "std::optional<int32_t>":$width)>,
     TypeBuilder<(ins)>,
   ];
   let extraClassDeclaration = [{
     int32_t getWidthOrSentinel() const;
-    AnalogType getConstType(bool isConst) const;
   }];
   let genVerifyDecl = true;
 }
@@ -143,16 +129,14 @@ class BaseVectorTypeImpl<string name, string ElementType, list<Trait> traits = [
   let summary = "a fixed size collection of elements, like an array.";
   let parameters = (ins
       TypeParameter<ElementType, "Type of vector elements">:$elementType,
-     "size_t":$numElements,
-     "bool":$isConst
+     "size_t":$numElements
   );
   let storageClass = name # "TypeStorage";
   let skipDefaultBuilders = true;
   let builders = [
     TypeBuilderWithInferredContext<(ins
       ElementType:$elementType,
-      "size_t":$numElements,
-       CArg<"bool", "false">:$isConst)
+      "size_t":$numElements)
     >
   ];
 
@@ -168,13 +152,6 @@ class BaseVectorTypeImpl<string name, string ElementType, list<Trait> traits = [
     /// Return the recursive properties of the type.
     RecursiveTypeProperties getRecursiveTypeProperties() const;
 
-    /// Const support.
-    bool isConst() const;
-    ElementType getElementTypePreservingConst();
-
-    /// Return a 'const' or non-'const' version of this type.
-    }] # name # [{Type getConstType(bool isConst) const;
-
   }] # firrtlExtraClassDeclaration;
 }
 
@@ -183,9 +160,6 @@ def FVectorImpl : BaseVectorTypeImpl<"FVector","::circt::firrtl::FIRRTLBaseType"
   let firrtlExtraClassDeclaration = [{
     /// Return this type with any flip types recursively removed from itself.
     FIRRTLBaseType getPassiveType();
-
-    /// Return this type with a 'const' modifiers dropped
-    FVectorType getAllConstDroppedType();
 
     /// Return this type with any type alias types recursively removed from itself.
     FIRRTLBaseType getAnonymousType();
@@ -200,11 +174,11 @@ def OpenVectorImpl : BaseVectorTypeImpl<"OpenVector","::circt::firrtl::FIRRTLTyp
 class BaseBundleTypeImpl<string name, string ElementType, list<Trait> traits = [], string BaseType = ElementType>
  : FIRRTLImplType<name, traits # [DeclareTypeInterfaceMethods<FieldIDTypeInterface>], BaseType> {
   let summary = "an aggregate of named elements. This is effectively a struct.";
-  let parameters = (ins "ArrayRef<BundleElement>":$elements, "bool":$isConst);
+  let parameters = (ins "ArrayRef<BundleElement>":$elements);
   let storageClass = name # "TypeStorage";
   let skipDefaultBuilders = true;
   let builders = [
-    TypeBuilder<(ins "ArrayRef<BundleElement>":$elements, CArg<"bool", "false">:$isConst)>
+    TypeBuilder<(ins "ArrayRef<BundleElement>":$elements)>
   ];
 
   // Additional class declarations to emit.
@@ -267,13 +241,6 @@ class BaseBundleTypeImpl<string name, string ElementType, list<Trait> traits = [
     iterator begin() const { return getElements().begin(); }
     iterator end() const { return getElements().end(); }
 
-    /// Const support.
-    bool isConst() const;
-    ElementType getElementTypePreservingConst(size_t index);
-
-    /// Return a 'const' or non-'const' version of this type.
-    }] # name # [{Type getConstType(bool isConst) const;
-
   }] # firrtlExtraClassDeclaration;
 }
 
@@ -283,9 +250,6 @@ def BundleImpl : BaseBundleTypeImpl<"Bundle","::circt::firrtl::FIRRTLBaseType"> 
   let firrtlExtraClassDeclaration = [{
     /// Return this type with any flip types recursively removed from itself.
     FIRRTLBaseType getPassiveType();
-
-    /// Return this type with a 'const' modifiers dropped
-    BundleType getAllConstDroppedType();
 
     /// Return this type with any type alias types recursively removed from itself.
     FIRRTLBaseType getAnonymousType();
@@ -299,13 +263,13 @@ def OpenBundleImpl : BaseBundleTypeImpl<"OpenBundle","::circt::firrtl::FIRRTLTyp
 
 def FEnumImpl : FIRRTLImplType<"FEnum"> {
   let summary = "a sum type of named elements.";
-  let parameters = (ins "ArrayRef<EnumElement>":$elements, "bool":$isConst);
+  let parameters = (ins "ArrayRef<EnumElement>":$elements);
   let storageClass = "FEnumTypeStorage";
   let genVerifyDecl = true;
   let typeName = "firrtl.enum";
   let skipDefaultBuilders = true;
   let builders = [
-    TypeBuilder<(ins "ArrayRef<EnumElement>":$elements, CArg<"bool", "false">:$isConst)>
+    TypeBuilder<(ins "ArrayRef<EnumElement>":$elements)>
   ];
   let extraClassDeclaration = [{
     /// Each element of an enum, which is a name and type.
@@ -336,11 +300,6 @@ def FEnumImpl : FIRRTLImplType<"FEnum"> {
     ArrayRef<EnumElement> getElements() const;
 
     size_t getNumElements() const { return getElements().size(); }
-
-    FEnumType getConstType(bool isConst) const;
-
-    /// Return this type with a 'const' modifiers dropped
-    FEnumType getAllConstDroppedType();
 
     /// Return this type with any type alias types recursively removed from itself.
     FIRRTLBaseType getAnonymousType();
@@ -382,7 +341,6 @@ def FEnumImpl : FIRRTLImplType<"FEnum"> {
 
     /// Look up an element type by index.
     FIRRTLBaseType getElementType(size_t index) const;
-    FIRRTLBaseType getElementTypePreservingConst(size_t index);
 
     /// Return the recursive properties of the type.
     RecursiveTypeProperties getRecursiveTypeProperties() const;
@@ -472,8 +430,6 @@ def BaseTypeAliasImpl : FIRRTLImplType<"BaseTypeAlias", [DeclareTypeInterfaceMet
       // FIRRTLBaseType utils.
       FIRRTLBaseType getAnonymousType();
       FIRRTLBaseType getPassiveType();
-      FIRRTLBaseType getConstType(bool isConst) const;
-      FIRRTLBaseType getAllConstDroppedType();
 
       /// Return the recursive properties of the type.
       RecursiveTypeProperties getRecursiveTypeProperties() const;

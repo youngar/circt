@@ -3850,11 +3850,6 @@ firrtl.module @multibit_mux_drop_front(in %vec_0: !firrtl.uint<8>, in %vec_1: !f
   firrtl.matchingconnect %c, %1 : !firrtl.uint<8>
 }
 
-firrtl.module private @Issue7562(in %sel : !firrtl.uint<1>, in %a : !firrtl.const.uint<1>, out %out : !firrtl.uint) {
-  %res = firrtl.mux(%sel, %a, %a) : (!firrtl.uint<1>, !firrtl.const.uint<1>, !firrtl.const.uint<1>) -> !firrtl.uint<1>
-  firrtl.connect %out, %res : !firrtl.uint, !firrtl.uint<1>
-}
-
 // CHECK-LABEL: firrtl.class @PropertyArithmetic
 firrtl.class @PropertyArithmetic(in %in: !firrtl.integer, out %out0: !firrtl.integer, out %out1: !firrtl.integer, out %out2: !firrtl.integer, out %out3: !firrtl.integer) {
   // CHECK: [[C4:%.+]] = firrtl.integer 4

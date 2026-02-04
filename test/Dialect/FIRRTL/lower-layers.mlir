@@ -513,8 +513,8 @@ firrtl.circuit "Test" {
     %0 = firrtl.xmr.ref @XmrRef_path : !firrtl.rwprobe<uint<1>, @A>
     firrtl.layerblock @A {
       %a = firrtl.wire sym @a : !firrtl.uint<1>
-      %c1_ui1 = firrtl.constant 1 : !firrtl.const.uint<1>
-      firrtl.ref.force_initial %c1_ui1, %0, %c1_ui1 : !firrtl.const.uint<1>, !firrtl.rwprobe<uint<1>, @A>, !firrtl.const.uint<1>
+      %c1_ui1 = firrtl.constant 1 : !firrtl.uint<1>
+      firrtl.ref.force_initial %c1_ui1, %0, %c1_ui1 : !firrtl.uint<1>, !firrtl.rwprobe<uint<1>, @A>, !firrtl.uint<1>
     }
   }
 

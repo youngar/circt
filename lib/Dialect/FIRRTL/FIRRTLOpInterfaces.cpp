@@ -205,7 +205,7 @@ RefType circt::firrtl::detail::getForceableResultType(bool forceable,
                                                       Type type) {
   auto base = dyn_cast_or_null<FIRRTLBaseType>(type);
   // TODO: Find a way to not check same things RefType::get/verify does.
-  if (!forceable || !base || base.containsConst())
+  if (!forceable || !base)
     return {};
   return circt::firrtl::RefType::get(base.getPassiveType(), forceable);
 }
@@ -221,8 +221,6 @@ LogicalResult circt::firrtl::detail::verifyForceableOp(Forceable op) {
   auto baseType = type_dyn_cast<FIRRTLBaseType>(data.getType());
   if (!baseType)
     return op.emitOpError("has data that is not a base type");
-  if (baseType.containsConst())
-    return op.emitOpError("cannot force a declaration of constant type");
   auto expectedRefType = getForceableResultType(forceable, baseType);
   if (ref.getType() != expectedRefType)
     return op.emitOpError("reference result of incorrect type, found ")

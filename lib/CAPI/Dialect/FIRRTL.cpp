@@ -37,12 +37,6 @@ MLIR_DEFINE_CAPI_DIALECT_REGISTRATION(FIRRTL, firrtl,
 // Type API.
 //===----------------------------------------------------------------------===//
 
-bool firrtlTypeIsConst(MlirType type) { return isConst(unwrap(type)); }
-
-MlirType firrtlTypeGetConstType(MlirType type, bool isConst) {
-  return wrap(cast<FIRRTLBaseType>(unwrap(type)).getConstType(isConst));
-}
-
 int64_t firrtlTypeGetBitWidth(MlirType type, bool ignoreFlip) {
   return getBitWidth(cast<FIRRTLBaseType>(unwrap(type)), ignoreFlip)
       .value_or(-1);
