@@ -52,7 +52,7 @@ firrtl.circuit "loop"   {
 // Node combinational loop
 // CHECK-NOT: firrtl.circuit "hasloops"
 firrtl.circuit "hasloops"   {
-  // expected-error @below {{detected combinational cycle in a FIRRTL module, sample path: hasloops.{y <- z <- ... <- y}}}
+  // expected-error @below {{detected combinational cycle in a FIRRTL module, sample path: hasloops.{y <- ... <- z <- y}}}
   firrtl.module @hasloops(in %clk: !firrtl.clock, in %a: !firrtl.uint<1>, in %b: !firrtl.uint<1>, out %c: !firrtl.uint<1>, out %d: !firrtl.uint<1>) {
     %y = firrtl.wire  : !firrtl.uint<1>
     firrtl.connect %c, %b : !firrtl.uint<1>, !firrtl.uint<1>
@@ -68,7 +68,7 @@ firrtl.circuit "hasloops"   {
 // Combinational loop through a combinational memory read port
 // CHECK-NOT: firrtl.circuit "hasloops"
 firrtl.circuit "hasloops"   {
-  // expected-error @below {{detected combinational cycle in a FIRRTL module, sample path: hasloops.{m.r.addr <- y <- z <- m.r.data <- m.r.addr}}}
+  // expected-error @below {{detected combinational cycle in a FIRRTL module, sample path: hasloops.{m.r.addr <- m.r.data <- z <- y <- m.r.addr}}}
   firrtl.module @hasloops(in %clk: !firrtl.clock, in %a: !firrtl.uint<1>, in %b: !firrtl.uint<1>, out %c: !firrtl.uint<1>, out %d: !firrtl.uint<1>) {
     %y = firrtl.wire  : !firrtl.uint<1>
     %z = firrtl.wire  : !firrtl.uint<1>
@@ -115,7 +115,7 @@ firrtl.circuit "hasloops"   {
 // Multiple simple loops in one SCC
 // CHECK-NOT: firrtl.circuit "hasloops"
 firrtl.circuit "hasloops"   {
-  // expected-error @below {{hasloops.{b <- ... <- d <- ... <- e <- b}}}
+  // expected-error @below {{hasloops.{b <- e <- ... <- d <- ... <- b}}}
   firrtl.module @hasloops(in %i: !firrtl.uint<1>, out %o: !firrtl.uint<1>) {
     %a = firrtl.wire  : !firrtl.uint<1>
     %b = firrtl.wire  : !firrtl.uint<1>

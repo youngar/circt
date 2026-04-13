@@ -30,6 +30,8 @@
 // and continue the analysis through the instance graph.
 //===----------------------------------------------------------------------===//
 
+#include "CycleDetection.h"
+#include "CycleReporting.h"
 #include "circt/Dialect/FIRRTL/CHIRRTLDialect.h"
 #include "circt/Dialect/FIRRTL/FIRRTLInstanceGraph.h"
 #include "circt/Dialect/FIRRTL/FIRRTLOps.h"
@@ -40,6 +42,7 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/EquivalenceClasses.h"
 #include "llvm/ADT/PostOrderIterator.h"
+#include "llvm/ADT/STLExtras.h"
 
 #define DEBUG_TYPE "check-comb-loops"
 
@@ -53,31 +56,25 @@ namespace firrtl {
 using namespace circt;
 using namespace firrtl;
 
-using DrivenBysMapType = DenseMap<FieldRef, DenseSet<FieldRef>>;
+//===----------------------------------------------------------------------===//
+// DiscoverLoops Class
+//===----------------------------------------------------------------------===//
+
+namespace {
 
 class DiscoverLoops {
 
-  /// Adjacency list representation.
-  /// Each entry is a pair, the first element is the FieldRef corresponding to
-  /// the graph vertex. The second element is the list of vertices, that have an
-  /// edge to this vertex.
-  /// The directed edges represent a connectivity relation, of a source that
-  /// drives the sink.
-  using DrivenByGraphType =
-      SmallVector<std::pair<FieldRef, SmallVector<unsigned>>, 64>;
-
 public:
-  DiscoverLoops(
-      FModuleOp module, InstanceGraph &instanceGraph,
-      const DenseMap<FModuleLike, DrivenBysMapType> &otherModulePortPaths,
-      DrivenBysMapType &thisModulePortPaths)
+  DiscoverLoops(FModuleOp module, InstanceGraph &instanceGraph,
+                const ModulePortPaths &otherModulePortPaths,
+                PortPaths &thisModulePortPaths)
       : module(module), instanceGraph(instanceGraph),
         modulePortPaths(otherModulePortPaths), portPaths(thisModulePortPaths) {}
 
   LogicalResult processModule() {
     LLVM_DEBUG(llvm::dbgs() << "\n processing module :" << module.getName());
     constructConnectivityGraph(module);
-    return dfsTraverse(drivenBy);
+    return dfsTraverse();
   }
 
   void constructConnectivityGraph(FModuleOp module) {
@@ -197,26 +194,15 @@ public:
   }
 
   // Get the node id if it exists, else add it to the graph.
-  unsigned getOrAddNode(FieldRef f) {
-    auto iter = nodes.find(f);
-    if (iter != nodes.end())
-      return iter->second;
-    // Add the fieldRef to the graph.
-    auto id = drivenBy.size();
-    // The node id can be used to index into the graph. The entry is a pair,
-    // first element is the corresponding FieldRef, and the second entry is a
-    // list of adjacent nodes.
-    drivenBy.push_back({f, {}});
-    nodes[f] = id;
-    return id;
-  }
+  // This wraps FieldRefGraph::getOrAddNode for consistency.
+  unsigned getOrAddNode(FieldRef f) { return graph.getOrAddNode(f); }
 
   // Construct the connectivity graph, by adding `dst` and `src` as new nodes,
   // if not already existing. Then add an edge from `src` to `dst`.
   void addDrivenBy(FieldRef dst, FieldRef src) {
-    auto srcNode = getOrAddNode(src);
-    auto dstNode = getOrAddNode(dst);
-    drivenBy[dstNode].second.push_back(srcNode);
+    unsigned srcNode = getOrAddNode(src);
+    unsigned dstNode = getOrAddNode(dst);
+    graph.addEdge(srcNode, dstNode);
   }
 
   // Add `dstVal` as being driven by `srcVal`.
@@ -327,7 +313,7 @@ public:
 
     assert(iter != rwProbeRefersTo.end());
     if (iter->second != dstNode)
-      drivenBy[iter->second].second.push_back(getOrAddNode(srcVal));
+      graph.addEdge(getOrAddNode(srcVal), iter->second);
   }
 
   // Helper to process instance ports for a given module and instance results.
@@ -424,7 +410,7 @@ public:
       // Add the base RWProbe port as a driver to all other RWProbe ports.
       for (auto probe : setOfEquivalentRWProbes)
         if (probe != basePortNode)
-          drivenBy[probe].second.push_back(basePortNode);
+          graph.addEdge(basePortNode, probe);
     }
   }
 
@@ -480,142 +466,72 @@ public:
     valToFieldRefs[result].emplace_back(base, fieldID);
   }
 
-  // Perform an iterative DFS traversal of the given graph. Record paths between
+  // Perform an iterative DFS traversal of the graph. Record paths between
   // the ports and detect and report any cycles in the graph.
-  LogicalResult dfsTraverse(const DrivenByGraphType &graph) {
-    auto numNodes = graph.size();
-    SmallVector<bool> onStack(numNodes, false);
-    SmallVector<unsigned> dfsStack;
+  LogicalResult dfsTraverse() {
+    // The graph is already built as a FieldRefGraph, no conversion needed!
 
-    auto hasCycle = [&](unsigned rootNode, DenseSet<unsigned> &visited,
-                        bool recordPortPaths = false) {
-      if (visited.contains(rootNode))
-        return success();
-      dfsStack.push_back(rootNode);
+    // Create CycleDetector with the graph
+    CycleDetector detector(graph);
 
-      while (!dfsStack.empty()) {
-        auto currentNode = dfsStack.back();
-
-        if (!visited.contains(currentNode)) {
-          visited.insert(currentNode);
-          onStack[currentNode] = true;
-          LLVM_DEBUG(llvm::dbgs()
-                     << "\n visiting :"
-                     << drivenBy[currentNode].first.getValue().getType()
-                     << drivenBy[currentNode].first.getValue() << ","
-                     << drivenBy[currentNode].first.getFieldID() << "\n"
-                     << getName(drivenBy[currentNode].first));
-
-          FieldRef currentF = drivenBy[currentNode].first;
-          if (recordPortPaths && currentNode != rootNode) {
-            if (isa<mlir::BlockArgument>(currentF.getValue()))
-              portPaths[drivenBy[rootNode].first].insert(currentF);
-            // Even if the current node is not a port, there can be RWProbes of
-            // the current node at the port.
-            addToPortPathsIfRWProbe(currentNode,
-                                    portPaths[drivenBy[rootNode].first]);
-          }
-        } else {
-          onStack[currentNode] = false;
-          dfsStack.pop_back();
-        }
-
-        for (auto neighbor : graph[currentNode].second) {
-          if (!visited.contains(neighbor)) {
-            dfsStack.push_back(neighbor);
-          } else if (onStack[neighbor]) {
-            // Cycle found !!
-            SmallVector<FieldRef, 16> path;
-            auto loopNode = neighbor;
-            // Construct the cyclic path.
-            do {
-              SmallVector<unsigned>::iterator it =
-                  llvm::find_if(drivenBy[loopNode].second,
-                                [&](unsigned node) { return onStack[node]; });
-              if (it == drivenBy[loopNode].second.end())
-                break;
-
-              path.push_back(drivenBy[loopNode].first);
-              loopNode = *it;
-            } while (loopNode != neighbor);
-
-            reportLoopFound(path, drivenBy[neighbor].first.getLoc());
-            return failure();
-          }
-        }
-      }
-      return success();
+    // Define callback for reporting cycles
+    auto cycleCallback = [&](const CycleDetector::Path &cyclicPath,
+                             mlir::Location loc) -> LogicalResult {
+      // Path is already in FieldRef format, can use directly
+      SmallVector<FieldRef, 16> path(cyclicPath.begin(), cyclicPath.end());
+      reportLoopFound(path, loc);
+      return failure();
     };
 
-    DenseSet<unsigned> visited;
-    for (unsigned node = 0; node < graph.size(); ++node) {
-      bool isPort = false;
-      if (auto arg = dyn_cast<BlockArgument>(drivenBy[node].first.getValue()))
-        if (module.getPortDirection(arg.getArgNumber()) == Direction::Out) {
-          // For output ports, reset the visited. Required to revisit the entire
-          // graph, to discover all the paths that exist from any input port.
-          visited.clear();
-          isPort = true;
-        }
+    // Define location getter
+    auto getNodeLoc = [&](const FieldRef &ref) -> mlir::Location {
+      return ref.getLoc();
+    };
 
-      if (hasCycle(node, visited, isPort).failed())
-        return failure();
+    // Detect cycles
+    if (failed(detector.detectCycles(cycleCallback, getNodeLoc)))
+      return failure();
+
+    // Record paths between ports for inter-module analysis
+    portPaths = recordPortPaths(module, graph);
+
+    // Handle RWProbe special case: add RWProbe-related ports to the port paths
+    // For each output port, check if any nodes in its dependency set have
+    // associated RWProbes that are also ports
+    for (auto &entry : portPaths) {
+      FieldRef outputPort = entry.first;
+      llvm::DenseSet<FieldRef> &inputPorts = entry.second;
+
+      // Traverse the graph again to find all nodes reachable from this output
+      llvm::DenseSet<FieldRef> visited;
+      (void)dfsFromNode(graph, outputPort, visited,
+                        [&](const FieldRef &from, const FieldRef &to) {
+                          auto idx = graph.getNodeIndex(to);
+                          if (idx) {
+                            addToPortPathsIfRWProbe(*idx, inputPorts);
+                          }
+                        });
     }
+
     return success();
   }
 
   void reportLoopFound(SmallVectorImpl<FieldRef> &path, Location loc) {
-    auto errorDiag = mlir::emitError(
-        module.getLoc(), "detected combinational cycle in a FIRRTL module");
-    // Find a value we can name
-    std::string firstName;
-    FieldRef *it = llvm::find_if(path, [&](FieldRef v) {
-      firstName = getName(v);
-      return !firstName.empty();
-    });
-    if (it == path.end()) {
-      errorDiag.append(", but unable to find names for any involved values.");
-      errorDiag.attachNote(loc) << "cycle detected here";
-      return;
-    }
-    // Begin the path from the "smallest string".
-    for (circt::FieldRef *findStartIt = it; findStartIt != path.end();
-         ++findStartIt) {
-      auto n = getName(*findStartIt);
-      if (!n.empty() && n < firstName) {
-        firstName = n;
-        it = findStartIt;
-      }
-    }
-    errorDiag.append(", sample path: ");
-
-    bool lastWasDots = false;
-    errorDiag << module.getName() << ".{" << getName(*it);
-    for (auto v : llvm::concat<FieldRef>(
-             llvm::make_range(std::next(it), path.end()),
-             llvm::make_range(path.begin(), std::next(it)))) {
-      auto name = getName(v);
-      if (!name.empty()) {
-        errorDiag << " <- " << name;
-        lastWasDots = false;
-      } else {
-        if (!lastWasDots)
-          errorDiag << " <- ...";
-        lastWasDots = true;
-      }
-    }
-    errorDiag << "}";
+    firrtl::reportCycle(module.getLoc(), module.getName(), "combinational",
+                        path);
   }
 
   void dumpMap() {
     LLVM_DEBUG({
       llvm::dbgs() << "\n Connectivity Graph ==>";
-      for (const auto &[index, i] : llvm::enumerate(drivenBy)) {
-        llvm::dbgs() << "\n ===>dst:" << getName(i.first)
-                     << "::" << i.first.getValue();
-        for (auto s : i.second)
-          llvm::dbgs() << "<---" << getName(drivenBy[s].first)
-                       << "::" << drivenBy[s].first.getValue();
+      for (unsigned nodeIdx = 0; nodeIdx < graph.getNumNodes(); ++nodeIdx) {
+        FieldRef node = graph.getNode(nodeIdx);
+        llvm::dbgs() << "\n ===>dst:" << getName(node)
+                     << "::" << node.getValue();
+        for (auto srcIdx : graph.getSuccessors(nodeIdx)) {
+          FieldRef src = graph.getNode(srcIdx);
+          llvm::dbgs() << "<---" << getName(src) << "::" << src.getValue();
+        }
       }
 
       llvm::dbgs() << "\n Value to FieldRef :";
@@ -632,8 +548,8 @@ public:
       }
       llvm::dbgs() << "\n rwprobes:";
       for (auto node : rwProbeRefersTo) {
-        llvm::dbgs() << "\n node:" << getName(drivenBy[node.first].first)
-                     << "=> probe:" << getName(drivenBy[node.second].first);
+        llvm::dbgs() << "\n node:" << getName(graph.getNode(node.first))
+                     << "=> probe:" << getName(graph.getNode(node.second));
       }
       for (const auto &i :
            rwProbeClasses) { // Iterate over all of the equivalence sets.
@@ -665,7 +581,7 @@ public:
   void addToPortPathsIfRWProbe(unsigned srcNode,
                                DenseSet<FieldRef> &inputPortPaths) {
     // Check if there exists any RWProbe for the srcNode.
-    auto baseFieldRef = drivenBy[srcNode].first;
+    auto baseFieldRef = graph.getNode(srcNode);
     if (auto defOp = dyn_cast_or_null<Forceable>(baseFieldRef.getDefiningOp()))
       if (defOp.isForceable() && !defOp.getDataRef().use_empty()) {
         // Assumption, the probe must exist in the equivalence classes.
@@ -674,7 +590,7 @@ public:
         // For all the probes, that are in the same eqv class, i.e., refer to
         // the same value.
         for (auto probe : rwProbeClasses.members(rwProbeNode)) {
-          auto probeVal = drivenBy[probe].first;
+          auto probeVal = graph.getNode(probe);
           // If the probe is a port, then record the path from the probe to the
           // input port.
           if (isa<BlockArgument>(probeVal.getValue())) {
@@ -693,19 +609,16 @@ private:
   DenseMap<Value, SmallVector<FieldRef>> valToFieldRefs;
   /// Comb paths that exist between module ports. This is maintained across
   /// modules.
-  const DenseMap<FModuleLike, DrivenBysMapType> &modulePortPaths;
+  const ModulePortPaths &modulePortPaths;
   /// The comb paths between the ports of this module. This is the final
   /// output of this intra-procedural analysis, that is used to construct the
   /// inter-procedural dataflow.
-  DrivenBysMapType &portPaths;
+  PortPaths &portPaths;
 
-  /// This is an adjacency list representation of the connectivity graph. This
-  /// can be indexed by the graph node id, and each entry is the list of graph
-  /// nodes that has an edge to it. Each graph node represents a FieldRef and
-  /// each edge represents a source that directly drives the sink node.
-  DrivenByGraphType drivenBy;
-  /// Map of FieldRef to its corresponding graph node.
-  DenseMap<FieldRef, size_t> nodes;
+  /// The connectivity graph using indexed representation.
+  /// Nodes are FieldRefs assigned stable integer IDs in insertion order.
+  /// Edges represent "src drives dst" relationships.
+  FieldRefGraph graph;
 
   /// The base value that the RWProbe refers to. Used to add an edge to the base
   /// value, when the probe is forced.
@@ -714,6 +627,12 @@ private:
   /// An eqv class of all the RWProbes that refer to the same base value.
   llvm::EquivalenceClasses<unsigned> rwProbeClasses;
 };
+
+} // namespace
+
+//===----------------------------------------------------------------------===//
+// CheckCombLoops Pass
+//===----------------------------------------------------------------------===//
 
 /// This pass constructs a local graph for each module to detect
 /// combinational cycles. To capture the cross-module combinational cycles,
@@ -724,7 +643,7 @@ class CheckCombLoopsPass
 public:
   void runOnOperation() override {
     auto &instanceGraph = getAnalysis<InstanceGraph>();
-    DenseMap<FModuleLike, DrivenBysMapType> modulePortPaths;
+    ModulePortPaths modulePortPaths;
 
     // Traverse modules in a post order to make sure the combinational paths
     // between IOs of a module have been detected and recorded in

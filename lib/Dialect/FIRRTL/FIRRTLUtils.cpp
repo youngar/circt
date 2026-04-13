@@ -686,6 +686,15 @@ circt::firrtl::getFieldName(const FieldRef &fieldRef, bool nameSafe) {
       name += element.name.getValue();
       type = element.type;
       localID = localID - classType.getFieldID(index);
+    } else if (auto domainType = type_dyn_cast<DomainType>(type)) {
+      // Handle domain types with fields (domain bundles/rows)
+      auto index = domainType.getIndexForFieldID(localID);
+      auto field = domainType.getField(index);
+      name += nameSafe ? "_" : ".";
+      name += field.getName().getValue();
+      // Domain fields are ground types, so localID becomes 0
+      type = field.getType();
+      localID = localID - domainType.getFieldID(index);
     } else {
       // If we reach here, the field ref is pointing inside some aggregate type
       // that isn't a bundle or a vector. If the type is a ground type, then the

@@ -476,6 +476,15 @@ def CheckCombLoops : Pass<"firrtl-check-comb-loops", "firrtl::CircuitOp"> {
   }];
 }
 
+def CheckDomainCycles : Pass<"firrtl-check-domain-cycles", "firrtl::CircuitOp"> {
+  let summary = "Check domain connectivity cycles and emit errors";
+  let description = [{
+    This pass checks for cycles in domain connectivity through domain.define
+    operations and module instances. It detects circular domain dependencies
+    that would be invalid.
+  }];
+}
+
 def SFCCompat : Pass<"firrtl-sfc-compat", "firrtl::FModuleOp"> {
   let summary = "Perform SFC Compatibility fixes";
 }
