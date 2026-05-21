@@ -1069,6 +1069,66 @@ LogicalResult StringToASCIIArrayOp::canonicalize(StringToASCIIArrayOp op,
 }
 
 //===----------------------------------------------------------------------===//
+// MutCreateOp
+//===----------------------------------------------------------------------===//
+
+void MutCreateOp::getEffects(
+    SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
+        &effects) {
+  effects.emplace_back(MemoryEffects::Allocate::get(), cast<OpResult>(getRef()),
+                       MutResource::get());
+}
+
+LogicalResult MutCreateOp::verify() {
+  auto mutTy = cast<MutType>(getRef().getType());
+  if (mutTy.getElementType() != getInitialValue().getType())
+    return emitOpError("initial value type ")
+           << getInitialValue().getType() << " does not match mut element type "
+           << mutTy.getElementType();
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// MutReadOp
+//===----------------------------------------------------------------------===//
+
+void MutReadOp::getEffects(
+    SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
+        &effects) {
+  effects.emplace_back(MemoryEffects::Read::get(), &getRefMutable(),
+                       MutResource::get());
+}
+
+LogicalResult MutReadOp::verify() {
+  auto mutTy = cast<MutType>(getRef().getType());
+  if (mutTy.getElementType() != getValue().getType())
+    return emitOpError("result type ")
+           << getValue().getType() << " does not match mut element type "
+           << mutTy.getElementType();
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// MutWriteOp
+//===----------------------------------------------------------------------===//
+
+void MutWriteOp::getEffects(
+    SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
+        &effects) {
+  effects.emplace_back(MemoryEffects::Write::get(), &getRefMutable(),
+                       MutResource::get());
+}
+
+LogicalResult MutWriteOp::verify() {
+  auto mutTy = cast<MutType>(getRef().getType());
+  if (mutTy.getElementType() != getNewValue().getType())
+    return emitOpError("new value type ")
+           << getNewValue().getType() << " does not match mut element type "
+           << mutTy.getElementType();
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // WithHandlersOp (algebraic effects)
 //===----------------------------------------------------------------------===//
 

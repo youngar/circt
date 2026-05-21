@@ -111,6 +111,7 @@ struct SymbolicComputationWithIdentityStorage;
 struct SymbolicComputationWithIdentityValue;
 struct SymbolicComputationStorage;
 struct OpaqueExternalStorage;
+struct MutStorage;
 struct ContinuationStorage;
 
 /// The abstract base class for elaborated values.
@@ -122,7 +123,7 @@ using ElaboratorValue =
                  MemoryBlockStorage *, SymbolicComputationWithIdentityStorage *,
                  SymbolicComputationWithIdentityValue *,
                  SymbolicComputationStorage *, OpaqueExternalStorage *,
-                 ContinuationStorage *>;
+                 MutStorage *, ContinuationStorage *>;
 
 // NOLINTNEXTLINE(readability-identifier-naming)
 llvm::hash_code hash_value(const ElaboratorValue &val) {
@@ -526,6 +527,15 @@ struct OpaqueExternalStorage : IdentityValue {
   OpaqueExternalStorage(Type type, Location loc) : IdentityValue(type, loc) {}
 };
 
+/// Storage object for '!rtg.mut<T>' — a mutable elaboration-time cell.
+/// Each rtg.mut_create produces a unique cell (identity value).
+struct MutStorage : IdentityValue {
+  MutStorage(ElaboratorValue initialValue, Type type, Location loc)
+      : IdentityValue(type, loc), value(std::move(initialValue)) {}
+
+  ElaboratorValue value;
+};
+
 /// Maps effect names to their handler regions within a single rtg.handle op.
 struct HandlerFrame {
   DenseMap<StringAttr, Region *> handlers;
@@ -759,6 +769,10 @@ static void print(const OpaqueExternalStorage *val, llvm::raw_ostream &os) {
   os << "<opaque-external " << val->type << ">";
 }
 
+static void print(const MutStorage *val, llvm::raw_ostream &os) {
+  os << "<mut " << val->value << " at " << val << ">";
+}
+
 static void print(const ContinuationStorage *val, llvm::raw_ostream &os) {
   os << "<continuation with " << val->remainingOps.size() << " ops at " << val
      << ">";
@@ -922,6 +936,7 @@ private:
   VISIT_UNSUPPORTED(SymbolicComputationWithIdentityValue)
   VISIT_UNSUPPORTED(SymbolicComputationStorage)
   VISIT_UNSUPPORTED(OpaqueExternalStorage)
+  VISIT_UNSUPPORTED(MutStorage)
   VISIT_UNSUPPORTED(ContinuationStorage)
 
 #undef VISIT_UNSUPPORTED
@@ -1338,6 +1353,12 @@ private:
     Value res = TupleCreateOp::create(builder, loc, materialized);
     materializedValues[val] = res;
     return res;
+  }
+
+  Value visit(MutStorage *val, Location loc,
+              function_ref<InFlightDiagnostic()> emitError) {
+    emitError() << "mutable cell cannot be materialized into IR";
+    return {};
   }
 
   Value visit(ContinuationStorage *val, Location loc,
@@ -2099,6 +2120,28 @@ public:
   FailureOr<DeletionKind> visitOp(MemorySizeOp op) {
     auto *memory = get<MemoryStorage *>(op.getMemory());
     state[op.getResult()] = memory->size;
+    return DeletionKind::Delete;
+  }
+
+  // Mutable cell ops
+  //===--------------------------------------------------------------------===//
+
+  FailureOr<DeletionKind> visitOp(MutCreateOp op) {
+    auto *mut = sharedState.internalizer.create<MutStorage>(
+        state.at(op.getInitialValue()), op.getRef().getType(), op.getLoc());
+    state[op.getRef()] = mut;
+    return DeletionKind::Delete;
+  }
+
+  FailureOr<DeletionKind> visitOp(MutReadOp op) {
+    auto *mut = std::get<MutStorage *>(state.at(op.getRef()));
+    state[op.getValue()] = mut->value;
+    return DeletionKind::Delete;
+  }
+
+  FailureOr<DeletionKind> visitOp(MutWriteOp op) {
+    auto *mut = std::get<MutStorage *>(state.at(op.getRef()));
+    mut->value = state.at(op.getNewValue());
     return DeletionKind::Delete;
   }
 

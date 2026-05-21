@@ -211,6 +211,19 @@ MlirType rtgStringTypeGet(MlirContext ctxt) {
   return wrap(StringType::get(unwrap(ctxt)));
 }
 
+ // MutType
+ //===----------------------------------------------------------------------===//
+ 
+ bool rtgTypeIsAMut(MlirType type) { return isa<MutType>(unwrap(type)); }
+ 
+ MlirType rtgMutTypeGet(MlirType elementType) {
+   return wrap(MutType::get(unwrap(elementType)));
+ }
+ 
+ MlirType rtgMutTypeGetElementType(MlirType type) {
+   return wrap(cast<MutType>(unwrap(type)).getElementType());
+ }
+ 
 // ContinuationType
 //===----------------------------------------------------------------------===//
 

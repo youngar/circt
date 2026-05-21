@@ -142,6 +142,15 @@ MLIR_CAPI_EXPORTED bool rtgTypeIsAString(MlirType type);
 /// Creates an RTG string type in the context.
 MLIR_CAPI_EXPORTED MlirType rtgStringTypeGet(MlirContext ctxt);
 
+/// If the type is an RTG mutable cell type.
+MLIR_CAPI_EXPORTED bool rtgTypeIsAMut(MlirType type);
+
+/// Creates an RTG mutable cell type with the given element type.
+MLIR_CAPI_EXPORTED MlirType rtgMutTypeGet(MlirType elementType);
+
+/// Returns the element type of an RTG mutable cell type.
+MLIR_CAPI_EXPORTED MlirType rtgMutTypeGetElementType(MlirType type);
+
 /// If the type is an RTG continuation type.
 MLIR_CAPI_EXPORTED bool rtgTypeIsAContinuation(MlirType type);
 

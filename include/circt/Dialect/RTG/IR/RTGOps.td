@@ -1224,6 +1224,80 @@ def SegmentOp : RTGISAOp<"segment", [
   let assemblyFormat = "$kind attr-dict-with-keyword $bodyRegion";
 }
 
+//===- Mutable Cell Operations -----------------------------------------------//
+
+def RTG_MutCreateOp : RTGOp<"mut_create", [
+  DeclareOpInterfaceMethods<MemoryEffectsOpInterface>,
+  TypesMatchWith<"ref element type must match initialValue type",
+                 "initialValue", "ref",
+                 "MutType::get($_self.getContext(), $_self)">,
+]> {
+  let summary = "create a mutable cell with an initial value";
+  let description = [{
+    Allocates a fresh mutable cell initialised to the given value.  Because
+    each call creates a *distinct* cell, `Allocate<MutResource>` prevents
+    CSE from merging two calls with the same operand.
+
+    Example:
+    ```mlir
+    %ref = rtg.mut_create %init : index
+    ```
+  }];
+
+  let arguments = (ins AnyType:$initialValue);
+  let results   = (outs RTG_MutType:$ref);
+
+  let assemblyFormat = "$initialValue attr-dict `:` type($initialValue)";
+  let hasVerifier = 1;
+}
+
+def RTG_MutReadOp : RTGOp<"mut_read", [
+  DeclareOpInterfaceMethods<MemoryEffectsOpInterface>,
+  TypesMatchWith<"result type must match ref element type",
+                 "ref", "value",
+                 "cast<MutType>($_self).getElementType()">,
+]> {
+  let summary = "read the current value of a mutable cell";
+  let description = [{
+    Returns the current content of the mutable cell.  `Read<MutResource>`
+    prevents hoisting above a `rtg.mut_write` to the same cell.
+
+    Example:
+    ```mlir
+    %v = rtg.mut_read %ref : !rtg.mut<index>
+    ```
+  }];
+
+  let arguments = (ins RTG_MutType:$ref);
+  let results   = (outs AnyType:$value);
+
+  let assemblyFormat = "$ref attr-dict `:` qualified(type($ref))";
+  let hasVerifier = 1;
+}
+
+def RTG_MutWriteOp : RTGOp<"mut_write", [
+  DeclareOpInterfaceMethods<MemoryEffectsOpInterface>,
+  TypesMatchWith<"newValue type must match ref element type",
+                 "ref", "newValue",
+                 "cast<MutType>($_self).getElementType()">,
+]> {
+  let summary = "overwrite a mutable cell with a new value";
+  let description = [{
+    Stores a new value into the mutable cell.  `Write<MutResource>` prevents
+    DCE from removing a write whose cell is not otherwise read.
+
+    Example:
+    ```mlir
+    rtg.mut_write %ref, %new_val : !rtg.mut<index>
+    ```
+  }];
+
+  let arguments = (ins RTG_MutType:$ref, AnyType:$newValue);
+
+  let assemblyFormat = "$ref `,` $newValue attr-dict `:` qualified(type($ref))";
+  let hasVerifier = 1;
+}
+
 //===- Algebraic Effect Handler Operations --------------------------------===//
 
 def EffectOp : RTGOp<"effect", [

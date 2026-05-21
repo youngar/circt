@@ -148,6 +148,17 @@ void circt::python::populateDialectRTGSubmodule(nb::module_ &m) {
             return cls(rtgStringTypeGet(ctxt));
           },
           nb::arg("self"), nb::arg("ctxt") = nullptr);
+  
+  mlir_type_subclass(m, "MutType", rtgTypeIsAMut)
+      .def_classmethod(
+          "get",
+          [](nb::object cls, MlirType elementType) {
+            return cls(rtgMutTypeGet(elementType));
+          },
+          nb::arg("self"), nb::arg("element_type"))
+      .def_property_readonly("element_type", [](MlirType self) {
+        return rtgMutTypeGetElementType(self);
+      });
 
   mlir_type_subclass(m, "ContinuationType", rtgTypeIsAContinuation)
       .def_classmethod(
