@@ -57,6 +57,11 @@ def _FromCirctValue(value: ir.Value) -> Value:
   if isinstance(type, rtg.MemoryBlockType):
     from .memories import MemoryBlock
     return MemoryBlock(value)
+  if isinstance(type, rtg.MutType):
+    from .mutable import Mut
+    m = object.__new__(Mut)
+    m._value = value
+    return m
   if isinstance(type, rtg.ContinuationType):
     from .effects import Continuation
     return Continuation(value)
@@ -114,6 +119,9 @@ def _FromCirctType(type: Union[ir.Type, Type]) -> Type:
   if isinstance(type, rtg.MemoryBlockType):
     from .memories import MemoryBlockType
     return MemoryBlockType(type.address_width)
+  if isinstance(type, rtg.MutType):
+    from .mutable import MutType
+    return MutType(_FromCirctType(type.element_type))
   if isinstance(type, rtg.ContinuationType):
     from .effects import ContinuationType
     resume = type.resume_type

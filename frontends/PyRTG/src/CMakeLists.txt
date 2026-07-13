@@ -39,6 +39,7 @@ declare_mlir_python_sources(PyRTGSources.Core
     integers.py
     labels.py
     memories.py
+    mutable.py
     rtg.py
     scf.py
     sequences.py

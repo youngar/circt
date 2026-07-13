@@ -26,6 +26,7 @@ from .control_flow import If, Else, EndIf, For, Foreach
 from .effects import (Continuation, ContinuationType, VoidType,
                       EffectDeclaration, effect, perform, effect_handler,
                       HandlerScope)
+from .mutable import Mut, MutType
 from .tuples import Tuple, TupleType
 from .memories import Memory, MemoryType, MemoryBlock, MemoryBlockType
 from .instructions import instruction, Instruction, SideEffect
